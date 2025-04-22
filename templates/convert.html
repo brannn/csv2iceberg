@@ -1,0 +1,120 @@
+{% extends 'base.html' %}
+
+{% block title %}CSV to Iceberg - Convert{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-lg-12">
+        <h2 class="mb-4">Convert CSV to Iceberg</h2>
+        <div class="card">
+            <div class="card-body">
+                <form action="{{ url_for('convert') }}" method="post" enctype="multipart/form-data">
+                    <div class="mb-3">
+                        <h5>CSV File</h5>
+                        <div class="alert alert-info">
+                            <strong>Note:</strong> Maximum file size is 50MB. For larger files, use the command-line interface.
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="csv_file" class="form-label">Select CSV File</label>
+                        <input type="file" class="form-control" id="csv_file" name="csv_file" required>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="delimiter" class="form-label">Delimiter</label>
+                        <input type="text" class="form-control" id="delimiter" name="delimiter" value="," maxlength="1">
+                        <div class="form-text">Default: comma (,)</div>
+                    </div>
+                    
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" class="form-check-input" id="has_header" name="has_header" value="true" checked>
+                        <label class="form-check-label" for="has_header">CSV has header row</label>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="quote_char" class="form-label">Quote Character</label>
+                        <input type="text" class="form-control" id="quote_char" name="quote_char" value="&quot;" maxlength="1">
+                        <div class="form-text">Default: double quote (")</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="batch_size" class="form-label">Batch Size</label>
+                        <input type="number" class="form-control" id="batch_size" name="batch_size" value="10000" min="1">
+                        <div class="form-text">Number of rows to process in each batch.</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <h5>Trino Connection</h5>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="trino_host" class="form-label">Trino Host</label>
+                        <input type="text" class="form-control" id="trino_host" name="trino_host" value="localhost" required>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="trino_port" class="form-label">Trino Port</label>
+                        <input type="number" class="form-control" id="trino_port" name="trino_port" value="8080" required>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="trino_catalog" class="form-label">Trino Catalog</label>
+                        <input type="text" class="form-control" id="trino_catalog" name="trino_catalog" value="hive" required>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="trino_schema" class="form-label">Trino Schema</label>
+                        <input type="text" class="form-control" id="trino_schema" name="trino_schema" value="default" required>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <h5>Hive Metastore</h5>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="hive_metastore_uri" class="form-label">Hive Metastore URI</label>
+                        <input type="text" class="form-control" id="hive_metastore_uri" name="hive_metastore_uri" value="localhost:9083" required>
+                        <div class="form-text">Format: host:port</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <h5>Target Table</h5>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="table_name" class="form-label">Table Name</label>
+                        <input type="text" class="form-control" id="table_name" name="table_name" required>
+                        <div class="form-text">Format: catalog.schema.table</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="mode" class="form-label">Write Mode</label>
+                        <select class="form-select" id="mode" name="mode">
+                            <option value="append" selected>Append</option>
+                            <option value="overwrite">Overwrite</option>
+                        </select>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <h5>Advanced Options</h5>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="sample_size" class="form-label">Schema Sample Size</label>
+                        <input type="number" class="form-control" id="sample_size" name="sample_size" value="1000" min="1">
+                        <div class="form-text">Number of rows to sample for schema inference.</div>
+                    </div>
+                    
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" class="form-check-input" id="verbose" name="verbose" value="true">
+                        <label class="form-check-label" for="verbose">Verbose Logging</label>
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary">Convert</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

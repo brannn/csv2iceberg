@@ -1,0 +1,187 @@
+"""
+Utility functions for CSV to Iceberg conversion
+"""
+import os
+import sys
+import logging
+import socket
+from typing import Dict, List, Any, Optional, Tuple
+
+def setup_logging() -> logging.Logger:
+    """
+    Set up logging configuration.
+    
+    Returns:
+        Logger instance
+    """
+    logger = logging.getLogger("csv_to_iceberg")
+    
+    # Create handlers
+    console_handler = logging.StreamHandler(sys.stdout)
+    file_handler = logging.FileHandler("csv_to_iceberg.log")
+    
+    # Set levels
+    logger.setLevel(logging.INFO)
+    console_handler.setLevel(logging.INFO)
+    file_handler.setLevel(logging.DEBUG)
+    
+    # Create formatters
+    console_format = logging.Formatter('%(levelname)s: %(message)s')
+    file_format = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    
+    # Set formatters
+    console_handler.setFormatter(console_format)
+    file_handler.setFormatter(file_format)
+    
+    # Add handlers
+    logger.addHandler(console_handler)
+    logger.addHandler(file_handler)
+    
+    return logger
+
+def validate_csv_file(file_path: str, delimiter: str, quote_char: str) -> bool:
+    """
+    Validate a CSV file.
+    
+    Args:
+        file_path: Path to the CSV file
+        delimiter: CSV delimiter character
+        quote_char: CSV quote character
+        
+    Returns:
+        True if the file is valid
+    """
+    logger = logging.getLogger("csv_to_iceberg")
+    
+    # Check if file exists
+    if not os.path.exists(file_path):
+        logger.error(f"File not found: {file_path}")
+        return False
+    
+    # Check if file is readable
+    if not os.access(file_path, os.R_OK):
+        logger.error(f"File is not readable: {file_path}")
+        return False
+    
+    # Check file size
+    file_size = os.path.getsize(file_path)
+    if file_size == 0:
+        logger.error(f"File is empty: {file_path}")
+        return False
+    
+    # Check file extension
+    if not file_path.lower().endswith('.csv'):
+        logger.warning(f"File does not have .csv extension: {file_path}")
+    
+    # Try to read first few lines to validate format
+    try:
+        with open(file_path, 'r') as file:
+            # Read first line
+            first_line = file.readline().strip()
+            if not first_line:
+                logger.error(f"File is empty or first line is blank: {file_path}")
+                return False
+            
+            # Check if delimiter is present in the first line
+            if delimiter not in first_line:
+                logger.warning(
+                    f"Delimiter '{delimiter}' not found in the first line. "
+                    f"File might not be using the specified delimiter."
+                )
+            
+            # Read a few more lines to check consistency
+            line_count = 1
+            field_count = first_line.count(delimiter) + 1
+            
+            for _ in range(5):  # Check up to 5 more lines
+                line = file.readline().strip()
+                if not line:
+                    break
+                
+                line_count += 1
+                current_field_count = line.count(delimiter) + 1
+                
+                if current_field_count != field_count:
+                    logger.warning(
+                        f"Inconsistent field count: line 1 has {field_count} fields, "
+                        f"line {line_count} has {current_field_count} fields"
+                    )
+        
+        return True
+    except Exception as e:
+        logger.error(f"Error validating CSV file: {str(e)}")
+        return False
+
+def validate_connection_params(host: str, port: int, uri: str) -> bool:
+    """
+    Validate connection parameters.
+    
+    Args:
+        host: Host name or IP address
+        port: Port number
+        uri: URI string
+        
+    Returns:
+        True if parameters are valid
+    """
+    logger = logging.getLogger("csv_to_iceberg")
+    
+    # Validate host
+    if not host:
+        logger.error("Host cannot be empty")
+        return False
+    
+    # Validate port
+    if port <= 0 or port > 65535:
+        logger.error(f"Invalid port number: {port}")
+        return False
+    
+    # Validate URI
+    if not uri:
+        logger.error("URI cannot be empty")
+        return False
+    
+    if ':' not in uri and not uri.isalpha():
+        logger.error(f"Invalid URI format: {uri}")
+        return False
+    
+    return True
+
+def get_table_location(catalog: str, schema: str, table: str, base_location: str = "/user/hive/warehouse") -> str:
+    """
+    Get the default location for an Iceberg table.
+    
+    Args:
+        catalog: Catalog name
+        schema: Schema name
+        table: Table name
+        base_location: Base warehouse location
+        
+    Returns:
+        Table location path
+    """
+    return f"{base_location}/{catalog}/{schema}.db/{table}"
+
+def check_port_availability(host: str, port: int, timeout: float = 1.0) -> bool:
+    """
+    Check if a port is available on a host.
+    
+    Args:
+        host: Host name or IP address
+        port: Port number
+        timeout: Connection timeout in seconds
+        
+    Returns:
+        True if the port is available/open
+    """
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.settimeout(timeout)
+    
+    try:
+        sock.connect((host, port))
+        sock.close()
+        return True
+    except (socket.timeout, ConnectionRefusedError):
+        return False
+    except Exception:
+        return False

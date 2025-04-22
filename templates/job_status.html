@@ -1,0 +1,153 @@
+{% extends 'base.html' %}
+
+{% block title %}CSV to Iceberg - Job Status{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-lg-12">
+        <h2 class="mb-4">Job Status</h2>
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span>Job ID: {{ job_id }}</span>
+                <a href="{{ url_for('jobs') }}" class="btn btn-secondary btn-sm">Back to Jobs</a>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <h5>Status</h5>
+                    {% if job.status == 'running' %}
+                        <div class="alert alert-info">
+                            <strong>Running</strong> - Conversion is in progress...
+                        </div>
+                        <div class="progress mb-3">
+                            <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" aria-valuenow="100" aria-valuemin="0" aria-valuemax="100" style="width: 100%"></div>
+                        </div>
+                    {% elif job.status == 'completed' %}
+                        <div class="alert alert-success">
+                            <strong>Completed</strong> - Conversion completed successfully.
+                        </div>
+                    {% else %}
+                        <div class="alert alert-danger">
+                            <strong>Failed</strong> - Conversion failed.
+                        </div>
+                    {% endif %}
+                </div>
+                
+                <div class="mb-3">
+                    <h5>File</h5>
+                    <p>{{ job.filename }}</p>
+                </div>
+                
+                <div class="mb-3">
+                    <h5>Table</h5>
+                    <p>{{ job.params.table_name }}</p>
+                </div>
+                
+                <div class="mb-3">
+                    <h5>Parameters</h5>
+                    <ul class="list-group">
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            Trino Host
+                            <span class="badge bg-primary rounded-pill">{{ job.params.trino_host }}</span>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            Trino Port
+                            <span class="badge bg-primary rounded-pill">{{ job.params.trino_port }}</span>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            Trino Catalog
+                            <span class="badge bg-primary rounded-pill">{{ job.params.trino_catalog }}</span>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            Trino Schema
+                            <span class="badge bg-primary rounded-pill">{{ job.params.trino_schema }}</span>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            Hive Metastore URI
+                            <span class="badge bg-primary rounded-pill">{{ job.params.hive_metastore_uri }}</span>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            Mode
+                            <span class="badge bg-primary rounded-pill">{{ job.params.mode }}</span>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            Delimiter
+                            <span class="badge bg-primary rounded-pill">{{ job.params.delimiter }}</span>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            Has Header
+                            <span class="badge bg-primary rounded-pill">{{ job.params.has_header }}</span>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            Quote Character
+                            <span class="badge bg-primary rounded-pill">{{ job.params.quote_char }}</span>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            Batch Size
+                            <span class="badge bg-primary rounded-pill">{{ job.params.batch_size }}</span>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            Sample Size
+                            <span class="badge bg-primary rounded-pill">{{ job.params.sample_size }}</span>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            Verbose
+                            <span class="badge bg-primary rounded-pill">{{ job.params.verbose }}</span>
+                        </li>
+                    </ul>
+                </div>
+                
+                {% if job.status != 'running' %}
+                    <div class="mb-3">
+                        <h5>Output</h5>
+                        <div class="card">
+                            <div class="card-body">
+                                <pre class="mb-0 p-3 bg-dark text-light rounded">{{ job.stdout }}</pre>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    {% if job.stderr %}
+                        <div class="mb-3">
+                            <h5>Errors</h5>
+                            <div class="card">
+                                <div class="card-body">
+                                    <pre class="mb-0 p-3 bg-dark text-light rounded">{{ job.stderr }}</pre>
+                                </div>
+                            </div>
+                        </div>
+                    {% endif %}
+                    
+                    {% if job.error %}
+                        <div class="mb-3">
+                            <h5>Exception</h5>
+                            <div class="card">
+                                <div class="card-body">
+                                    <pre class="mb-0 p-3 bg-dark text-light rounded">{{ job.error }}</pre>
+                                </div>
+                            </div>
+                        </div>
+                    {% endif %}
+                {% endif %}
+                
+                {% if job.status == 'running' %}
+                    <div class="d-flex justify-content-between mt-3">
+                        <span class="text-muted">The job is running. This page will refresh automatically.</span>
+                        <a href="{{ url_for('job_status', job_id=job_id) }}" class="btn btn-primary">Refresh</a>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{% if job.status == 'running' %}
+<script>
+    // Auto-refresh the page every 3 seconds if the job is still running
+    setTimeout(function() {
+        window.location.reload();
+    }, 3000);
+</script>
+{% endif %}
+{% endblock %}

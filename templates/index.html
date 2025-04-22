@@ -1,0 +1,41 @@
+{% extends 'base.html' %}
+
+{% block title %}CSV to Iceberg - Home{% endblock %}
+
+{% block content %}
+<div class="p-5 mb-4 bg-secondary rounded-3">
+    <div class="container-fluid py-5">
+        <h1 class="display-5 fw-bold">CSV to Iceberg Converter</h1>
+        <p class="col-md-8 fs-4">Convert CSV files to Apache Iceberg tables with ease using Trino and Hive metastore.</p>
+        <a href="{{ url_for('convert') }}" class="btn btn-primary btn-lg">Start Converting</a>
+    </div>
+</div>
+
+<div class="row align-items-md-stretch">
+    <div class="col-md-6">
+        <div class="h-100 p-5 bg-secondary rounded-3">
+            <h2>Features</h2>
+            <ul>
+                <li>Automatic schema inference from CSV files</li>
+                <li>Support for both append and overwrite modes</li>
+                <li>Batch processing for large CSV files</li>
+                <li>Progress tracking with percentage complete</li>
+                <li>Schema validation and compatibility checks</li>
+                <li>Configurable CSV parsing options (delimiter, quote character, headers)</li>
+            </ul>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="h-100 p-5 bg-secondary border rounded-3">
+            <h2>Requirements</h2>
+            <p>To convert CSV files to Iceberg tables, you'll need:</p>
+            <ul>
+                <li>Trino server</li>
+                <li>Hive metastore</li>
+                <li>CSV file with properly formatted data</li>
+            </ul>
+            <p>This web interface simplifies the process by providing a user-friendly way to configure and execute conversions.</p>
+        </div>
+    </div>
+</div>
+{% endblock %}
