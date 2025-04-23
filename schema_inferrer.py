@@ -95,6 +95,7 @@ def infer_schema_from_csv(
             # Create fields with string type as fallback
             fields = []
             for i, name in enumerate(column_names):
+                # Ensure required is explicitly a boolean value to avoid validation errors
                 fields.append(NestedField(field_id=i+1, name=name, field_type=StringType(), required=False))
                 
             schema = Schema(*fields)
@@ -120,7 +121,7 @@ def infer_schema_from_csv(
             # Convert PyArrow type to Iceberg type
             iceberg_type = _pyarrow_type_to_iceberg_type(field.type)
             
-            # Add field to schema (all are optional by default)
+            # Add field to schema with explicit boolean for required parameter
             fields.append(NestedField(field_id=i+1, name=clean_col_name, field_type=iceberg_type, required=False))
         
         # Create the PyIceberg Schema
@@ -279,7 +280,7 @@ def _infer_schema_from_large_csv(
             # Convert PyArrow type to Iceberg type
             iceberg_type = _pyarrow_type_to_iceberg_type(field.type)
             
-            # Add field to schema
+            # Add field to schema with explicit boolean for required parameter
             fields.append(NestedField(field_id=i+1, name=clean_col_name, field_type=iceberg_type, required=False))
         
         # Create the PyIceberg Schema
