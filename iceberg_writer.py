@@ -52,6 +52,17 @@ class IcebergWriter:
         self._cached_target_schema = None
         self._cached_column_types_dict = None
         
+    def invalidate_schema_cache(self):
+        """
+        Invalidate the schema cache.
+        
+        This method should be called when the table schema might have changed,
+        such as after a DDL operation or when switching to a different table.
+        """
+        logger.info(f"Invalidating schema cache for {self.catalog}.{self.schema}.{self.table}")
+        self._cached_target_schema = None
+        self._cached_column_types_dict = None
+        
     def write_csv_to_iceberg(
         self,
         csv_file: str,
@@ -149,7 +160,13 @@ class IcebergWriter:
             batch_data: Batch of data to write (Polars DataFrame or any compatible DataFrame with columns attribute)
             mode: Write mode (append or overwrite)
         """
-        logger.info(f"Writing batch to {self.catalog}.{self.schema}.{self.table} in {mode} mode")
+        try:
+            batch_size = len(batch_data) if hasattr(batch_data, '__len__') else 'unknown'
+            logger.info(f"Writing batch of {batch_size} rows to {self.catalog}.{self.schema}.{self.table} in {mode} mode")
+        except Exception as e:
+            # This should never happen but makes logging more robust
+            logger.warning(f"Could not determine batch size: {str(e)}")
+            logger.info(f"Writing batch to {self.catalog}.{self.schema}.{self.table} in {mode} mode")
         
         try:
             # Get column names from the dataframe
@@ -163,6 +180,10 @@ class IcebergWriter:
                 truncate_sql = f"DELETE FROM {self.catalog}.{self.schema}.{self.table}"
                 self.trino_client.execute_query(truncate_sql)
                 logger.debug(f"Truncated target table {self.table} for overwrite mode")
+                
+                # Invalidate schema cache after table truncation in case of schema changes
+                self.invalidate_schema_cache()
+                logger.debug("Schema cache invalidated after table truncation")
             
             # Get the target table schema (using cache if available)
             try:
@@ -450,13 +471,50 @@ class IcebergWriter:
                 VALUES {', '.join(values_list)}
                 """
                 
-                self.trino_client.execute_query(direct_insert_sql)
-                logger.debug(f"Inserted batch of {len(values_list)} rows with explicit casts")
+                try:
+                    # Log the query size to help diagnose potential issues with large queries
+                    query_size = len(direct_insert_sql)
+                    if query_size > 100000:
+                        logger.warning(f"Generated very large INSERT query ({query_size} bytes) - this may exceed Trino limits")
+                    elif query_size > 50000:
+                        logger.info(f"Generated large INSERT query ({query_size} bytes)")
+                    else:
+                        logger.debug(f"Generated INSERT query ({query_size} bytes)")
+                except Exception:
+                    # Ignore any errors in query size calculation
+                    pass
+                
+                try:
+                    # Execute the SQL statement
+                    self.trino_client.execute_query(direct_insert_sql)
+                    logger.debug(f"Inserted batch of {len(values_list)} rows with explicit casts")
+                except Exception as e:
+                    # Enhanced error logging for diagnosis
+                    logger.error(f"Failed to execute INSERT statement: {str(e)}")
+                    logger.error(f"Error with batch containing {len(values_list)} rows")
+                    
+                    # Check for common error patterns
+                    error_msg = str(e).lower()
+                    if "type mismatch" in error_msg:
+                        logger.error("Type mismatch detected - column types may not match target table schema")
+                    elif "duplicate column name" in error_msg:
+                        logger.error("Duplicate column name detected - check CSV header uniqueness")
+                    elif "exceeded max length" in error_msg or "max request size" in error_msg:
+                        logger.error("Query size limit exceeded - try reducing batch size further")
+                    
+                    # Re-raise the exception
+                    raise
             
             logger.info(f"Successfully wrote {len(batch_data)} rows to {self.catalog}.{self.schema}.{self.table}")
             
         except Exception as e:
             logger.error(f"Error in _write_batch_to_iceberg: {str(e)}", exc_info=True)
+            
+            # Check if this is overwrite mode, and we should invalidate the schema cache
+            if mode == 'overwrite':
+                logger.info("Invalidating schema cache due to error in overwrite mode")
+                self.invalidate_schema_cache()
+            
             raise RuntimeError(f"Failed to write batch to Iceberg: {str(e)}")
 
 def count_csv_rows(
