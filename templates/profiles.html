@@ -1,0 +1,122 @@
+{% extends 'base.html' %}
+
+{% block title %}CSV to Iceberg - Connection Profiles{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-lg-12">
+        <h2 class="mb-4">Connection Profiles</h2>
+        
+        <div class="d-flex justify-content-between mb-3">
+            <p class="text-muted">Manage your Trino and Hive connection profiles for easy access.</p>
+            <a href="{{ url_for('profile_add') }}" class="btn btn-primary"><i class="bi bi-plus-circle"></i> Add Profile</a>
+        </div>
+        
+        {% if profiles %}
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Trino Connection</th>
+                            <th>Catalog &amp; Schema</th>
+                            <th>Hive Metastore</th>
+                            <th>Description</th>
+                            <th class="text-end">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for profile in profiles %}
+                            <tr>
+                                <td>
+                                    <strong>{{ profile.name }}</strong>
+                                    {% if profile.name == last_used %}
+                                        <span class="badge bg-info ms-2">Last Used</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {{ profile.trino_host }}:{{ profile.trino_port }}
+                                    <br>
+                                    <small class="text-muted">
+                                        {% if profile.trino_user %}User: {{ profile.trino_user }}{% endif %}
+                                        {% if profile.http_scheme == 'https' %}<span class="badge bg-success">HTTPS</span>{% endif %}
+                                    </small>
+                                </td>
+                                <td>{{ profile.trino_catalog }}.{{ profile.trino_schema }}</td>
+                                <td>
+                                    {% if profile.use_hive_metastore %}
+                                        {{ profile.hive_metastore_uri }}
+                                    {% else %}
+                                        <span class="badge bg-secondary">Disabled</span>
+                                    {% endif %}
+                                </td>
+                                <td>{{ profile.description }}</td>
+                                <td class="text-end">
+                                    <div class="btn-group" role="group">
+                                        <a href="{{ url_for('profile_edit', name=profile.name) }}" class="btn btn-sm btn-outline-secondary">Edit</a>
+                                        <a href="{{ url_for('profile_use', name=profile.name) }}" class="btn btn-sm btn-outline-primary">Use</a>
+                                        <button type="button" class="btn btn-sm btn-outline-danger" 
+                                                data-bs-toggle="modal" 
+                                                data-bs-target="#deleteModal" 
+                                                data-profile-name="{{ profile.name }}">
+                                            Delete
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <div class="alert alert-info">
+                <p>No connection profiles found. Click "Add Profile" to create your first profile.</p>
+            </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div class="modal fade" id="deleteModal" tabindex="-1" aria-labelledby="deleteModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="deleteModalLabel">Confirm Delete</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                Are you sure you want to delete the profile "<span id="profileNameSpan"></span>"?
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <a href="#" id="confirmDeleteBtn" class="btn btn-danger">Delete</a>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Setup the delete modal
+    const deleteModal = document.getElementById('deleteModal');
+    if (deleteModal) {
+        deleteModal.addEventListener('show.bs.modal', function(event) {
+            // Button that triggered the modal
+            const button = event.relatedTarget;
+            
+            // Extract profile name from data-* attributes
+            const profileName = button.getAttribute('data-profile-name');
+            
+            // Update the modal content
+            const profileNameSpan = deleteModal.querySelector('#profileNameSpan');
+            const confirmDeleteBtn = deleteModal.querySelector('#confirmDeleteBtn');
+            
+            profileNameSpan.textContent = profileName;
+            confirmDeleteBtn.href = "{{ url_for('profile_delete', name='') }}" + profileName;
+        });
+    }
+});
+</script>
+{% endblock %}
+{% endblock %}
