@@ -72,7 +72,6 @@ def infer_schema_from_csv(
                 nrows=sample_size,
                 low_memory=False,      # Disable low memory warnings
                 on_bad_lines='skip',   # Skip only lines with inconsistent number of fields
-                warn_bad_lines=True,   # Warn about skipped lines
                 keep_default_na=True,  # Convert empty fields to NaN (which become NULL)
                 na_values=['', 'NULL', 'null', 'NA', 'N/A', 'na', 'n/a', 'None', 'none']  # Additional values to treat as NULL
             )
