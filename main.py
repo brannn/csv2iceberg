@@ -127,8 +127,10 @@ def convert():
     
     if request.method == 'POST':
         logger.info("POST request received in convert route")
-        logger.info(f"Form data: {request.form}")
-        logger.info(f"Files: {request.files}")
+        logger.info(f"Form data keys: {list(request.form.keys())}")
+        logger.info(f"Files keys: {list(request.files.keys())}")
+        logger.info(f"Request content type: {request.content_type}")
+        logger.info(f"Request content length: {request.content_length}")
         
         # Check if a file was uploaded
         if 'csv_file' not in request.files:
