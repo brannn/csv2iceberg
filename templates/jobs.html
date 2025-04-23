@@ -41,6 +41,13 @@
                                 </td>
                                 <td>{{ job.params.mode }}</td>
                                 <td>
+                                    {% if job.completed_at %}
+                                        {{ job.completed_at.strftime('%Y-%m-%d %H:%M:%S') }}
+                                    {% else %}
+                                        -
+                                    {% endif %}
+                                </td>
+                                <td>
                                     <a href="{{ url_for('job_status', job_id=job_id) }}" class="btn btn-sm btn-primary">Details</a>
                                 </td>
                             </tr>

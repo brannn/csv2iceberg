@@ -230,6 +230,45 @@ def diagnostics():
         logger.error(f"Error in diagnostics: {str(e)}", exc_info=True)
         return jsonify({"status": "error", "message": str(e)})
 
+@app.route('/add_test_job')
+def add_test_job():
+    """Add a test job for development purposes."""
+    job_id = "test_job_" + os.urandom(4).hex()
+    
+    # Create a mock job with completed status and timestamp
+    conversion_jobs[job_id] = {
+        'file_path': '/tmp/test.csv',
+        'filename': 'test.csv',
+        'params': {
+            'table_name': 'iceberg.test.mock_table',
+            'trino_host': 'sep.sdp-dev.pd.switchnet.nv',
+            'trino_port': '443',
+            'trino_user': 'test_user',
+            'trino_password': None,
+            'http_scheme': 'https',
+            'trino_role': 'sysadmin',
+            'trino_catalog': 'iceberg',
+            'trino_schema': 'test',
+            'hive_metastore_uri': 'localhost:9083',
+            'delimiter': ',',
+            'has_header': 'true',
+            'quote_char': '"',
+            'batch_size': '100',
+            'mode': 'append',
+            'sample_size': '1000',
+            'verbose': 'false'
+        },
+        'status': 'completed',
+        'stdout': 'Mock conversion completed successfully.',
+        'stderr': '',
+        'error': None,
+        'returncode': 0,
+        'completed_at': datetime.datetime.now()
+    }
+    
+    flash(f'Test job created with ID: {job_id}', 'success')
+    return redirect(url_for('jobs'))
+
 if __name__ == '__main__':
     # Create templates directory if it doesn't exist
     os.makedirs('templates', exist_ok=True)

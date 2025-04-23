@@ -24,10 +24,18 @@
                     {% elif job.status == 'completed' %}
                         <div class="alert alert-success">
                             <strong>Completed</strong> - Conversion completed successfully.
+                            {% if job.completed_at %}
+                                <br>
+                                <small>Completed at: {{ job.completed_at.strftime('%Y-%m-%d %H:%M:%S') }}</small>
+                            {% endif %}
                         </div>
                     {% else %}
                         <div class="alert alert-danger">
                             <strong>Failed</strong> - Conversion failed.
+                            {% if job.completed_at %}
+                                <br>
+                                <small>Failed at: {{ job.completed_at.strftime('%Y-%m-%d %H:%M:%S') }}</small>
+                            {% endif %}
                         </div>
                     {% endif %}
                 </div>
