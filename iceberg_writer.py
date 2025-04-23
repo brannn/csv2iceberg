@@ -142,86 +142,195 @@ class IcebergWriter:
             
             # Create temporary table name with timestamp to avoid conflicts
             temp_table = f"temp_{self.table}_{int(time.time())}"
-            temp_csv = f"temp_{self.table}_{int(time.time())}.csv"
             
-            # Save this batch to a temporary CSV file
-            temp_csv_path = os.path.join(os.getcwd(), temp_csv)
-            batch_data.to_csv(temp_csv_path, index=False, quoting=csv.QUOTE_MINIMAL)
-            logger.debug(f"Saved batch to temporary CSV: {temp_csv_path}")
+            # Convert pandas DataFrame to PyArrow Table for better type handling
+            import pyarrow as pa
             
-            # Create a temporary external table directly from the CSV file
-            # This approach bypasses the type conversion issues by letting Trino do the type inference
-            schema_definitions = []
-            for col in columns:
-                schema_definitions.append(f'"{col}" varchar')
-                
-            schema_def_str = ", ".join(schema_definitions)
-            
-            # Create external table definition for the CSV file
-            create_external_table_sql = f"""
-            CREATE TABLE {self.catalog}.{self.schema}.{temp_table} (
-                {schema_def_str}
-            )
-            WITH (
-                external_location = '{temp_csv_path}',
-                format = 'CSV',
-                skip_header_line_count = 1
-            )
-            """
-            
-            # Try to create the external table - if this fails, fall back to direct INSERT
             try:
-                self.trino_client.execute_query(create_external_table_sql)
-                logger.debug(f"Created external table for CSV: {temp_table}")
+                # First get target table schema to ensure we match types correctly
+                target_schema = self.trino_client.get_table_schema(self.catalog, self.schema, self.table)
+                column_types_dict = {col_name: col_type for col_name, col_type in target_schema}
                 
+                # Map Trino types to PyArrow types
+                arrow_types = {}
+                for col in columns:
+                    if col in column_types_dict:
+                        trino_type = column_types_dict[col].lower()
+                        # Convert Trino type to PyArrow type
+                        if 'integer' in trino_type:
+                            arrow_types[col] = pa.int32()
+                        elif 'bigint' in trino_type:
+                            arrow_types[col] = pa.int64()
+                        elif 'smallint' in trino_type:
+                            arrow_types[col] = pa.int16()
+                        elif 'tinyint' in trino_type:
+                            arrow_types[col] = pa.int8()
+                        elif 'decimal' in trino_type:
+                            # Extract precision and scale from decimal type
+                            precision = 38  # Default
+                            scale = 0  # Default
+                            if '(' in trino_type:
+                                try:
+                                    parts = trino_type.split('(')[1].split(')')[0].split(',')
+                                    precision = int(parts[0])
+                                    if len(parts) > 1:
+                                        scale = int(parts[1])
+                                except Exception:
+                                    pass
+                            arrow_types[col] = pa.decimal128(precision, scale)
+                        elif 'double' in trino_type or 'float' in trino_type or 'real' in trino_type:
+                            arrow_types[col] = pa.float64()
+                        elif 'boolean' in trino_type:
+                            arrow_types[col] = pa.bool_()
+                        elif 'timestamp' in trino_type:
+                            arrow_types[col] = pa.timestamp('us')
+                        elif 'date' in trino_type:
+                            arrow_types[col] = pa.date32()
+                        else:
+                            # Default to string for other types
+                            arrow_types[col] = pa.string()
+                
+                # Create a schema for the PyArrow table
+                arrow_schema = pa.schema([pa.field(col, arrow_types.get(col, pa.string())) for col in columns])
+                
+                # Convert each column to the appropriate type
+                arrays = []
+                for col in columns:
+                    # Handle NaN values by replacing them with None
+                    data = batch_data[col].tolist()
+                    data = [None if pd.isna(x) else x for x in data]
+                    
+                    if col in arrow_types:
+                        try:
+                            # Try to convert to the target type
+                            arrays.append(pa.array(data, type=arrow_types[col]))
+                        except pa.ArrowInvalid:
+                            # Fallback to string if conversion fails
+                            logger.warning(f"Could not convert column '{col}' to {arrow_types[col]}, falling back to string")
+                            arrays.append(pa.array([str(x) if x is not None else None for x in data]))
+                    else:
+                        # Default to string for any columns not in the target schema
+                        arrays.append(pa.array([str(x) if x is not None else None for x in data]))
+                
+                # Create the PyArrow table with schema
+                arrow_table = pa.Table.from_arrays(arrays, names=columns)
+                
+            except Exception as e:
+                logger.warning(f"Error creating PyArrow table with target schema: {str(e)}, using default conversion")
+                # Fallback to simple conversion
+                arrow_table = pa.Table.from_pandas(batch_data)
+            
+            # Now use PyIceberg to write directly to the target table
+            try:
+                # If running in overwrite mode, truncate the target table first
                 if mode == 'overwrite' and batch_data.shape[0] > 0:
                     # If in overwrite mode, truncate the target table first
                     truncate_sql = f"DELETE FROM {self.catalog}.{self.schema}.{self.table}"
                     self.trino_client.execute_query(truncate_sql)
                     logger.debug(f"Truncated target table {self.table} for overwrite mode")
                 
-                # Use CAST to ensure proper type conversion when inserting from temp table to target
-                cast_columns = []
-                try:
-                    target_schema = self.trino_client.get_table_schema(self.catalog, self.schema, self.table)
-                    column_types_dict = {col_name: col_type for col_name, col_type in target_schema}
+                # Create a temporary table with appropriate types from PyArrow schema
+                pa_schema = arrow_table.schema
+                column_defs = []
+                
+                for i, field in enumerate(pa_schema):
+                    col_name = field.name
+                    pa_type = field.type
                     
-                    for col in columns:
-                        if col in column_types_dict:
-                            # Cast to the target table column type
-                            cast_columns.append(f'CAST("{col}" AS {column_types_dict[col]}) AS "{col}"')
+                    # Map PyArrow types to Trino types
+                    if pa.types.is_integer(pa_type):
+                        if pa.types.is_int64(pa_type):
+                            col_type = "BIGINT"
+                        elif pa.types.is_int32(pa_type):
+                            col_type = "INTEGER"
+                        elif pa.types.is_int16(pa_type):
+                            col_type = "SMALLINT"
+                        elif pa.types.is_int8(pa_type):
+                            col_type = "TINYINT"
                         else:
-                            # If no type info available, just use the column as is
-                            cast_columns.append(f'"{col}"')
-                except Exception:
-                    # If we can't get schema info, just use columns as is
-                    cast_columns = [f'"{col}"' for col in columns]
+                            col_type = "BIGINT"
+                    elif pa.types.is_floating(pa_type):
+                        col_type = "DOUBLE"
+                    elif pa.types.is_boolean(pa_type):
+                        col_type = "BOOLEAN"
+                    elif pa.types.is_timestamp(pa_type):
+                        col_type = "TIMESTAMP(3)"
+                    elif pa.types.is_date(pa_type):
+                        col_type = "DATE"
+                    elif pa.types.is_decimal(pa_type):
+                        col_type = f"DECIMAL({pa_type.precision}, {pa_type.scale})"
+                    else:
+                        # Default to varchar for other types
+                        col_type = "VARCHAR"
+                    
+                    column_defs.append(f'"{col_name}" {col_type}')
                 
-                cast_columns_str = ", ".join(cast_columns)
+                # Create a temporary table with the schema
+                create_temp_table_sql = f"""
+                CREATE TABLE {self.catalog}.{self.schema}.{temp_table} (
+                    {", ".join(column_defs)}
+                )
+                """
+                self.trino_client.execute_query(create_temp_table_sql)
+                logger.debug(f"Created temporary table {temp_table} with correct schema")
                 
-                # Insert from temp table to target using CAST
+                # Use COPY statement or INSERT for each batch of rows
+                batch_size = 1000
+                total_rows = len(arrow_table)
+                
+                for start_idx in range(0, total_rows, batch_size):
+                    end_idx = min(start_idx + batch_size, total_rows)
+                    batch = arrow_table.slice(start_idx, end_idx - start_idx)
+                    
+                    # Generate VALUES clause from PyArrow table
+                    values = []
+                    for row_idx in range(batch.num_rows):
+                        row_values = []
+                        for col_idx, col in enumerate(columns):
+                            val = batch.column(col_idx)[row_idx].as_py()
+                            if val is None:
+                                row_values.append("NULL")
+                            elif isinstance(val, (int, float)):
+                                row_values.append(str(val))
+                            elif isinstance(val, bool):
+                                row_values.append('TRUE' if val else 'FALSE')
+                            elif isinstance(val, (datetime.date, datetime.datetime)):
+                                val_str = str(val).replace("'", "''")
+                                row_values.append(f"TIMESTAMP '{val_str}'")
+                            else:
+                                # Escape single quotes in string values
+                                val_str = str(val).replace("'", "''")
+                                row_values.append(f"'{val_str}'")
+                        
+                        values.append(f"({', '.join(row_values)})")
+                    
+                    # Insert the batch into temp table
+                    insert_temp_sql = f"""
+                    INSERT INTO {self.catalog}.{self.schema}.{temp_table} ({column_names_str})
+                    VALUES {", ".join(values)}
+                    """
+                    self.trino_client.execute_query(insert_temp_sql)
+                
+                logger.debug(f"Inserted {total_rows} rows into temporary table")
+                
+                # Now insert from temp table to target table
+                # This approach ensures type compatibility
                 insert_final_sql = f"""
                 INSERT INTO {self.catalog}.{self.schema}.{self.table} ({column_names_str})
-                SELECT {cast_columns_str} FROM {self.catalog}.{self.schema}.{temp_table}
+                SELECT {column_names_str} FROM {self.catalog}.{self.schema}.{temp_table}
                 """
                 self.trino_client.execute_query(insert_final_sql)
-                logger.debug(f"Inserted data from external table to {self.table}")
+                logger.debug(f"Inserted data from temp table to {self.table}")
                 
-                # Clean up
+                # Drop the temporary table
                 drop_temp_sql = f"DROP TABLE {self.catalog}.{self.schema}.{temp_table}"
                 self.trino_client.execute_query(drop_temp_sql)
                 logger.debug(f"Dropped temporary table {temp_table}")
                 
-                # Remove temporary CSV
-                if os.path.exists(temp_csv_path):
-                    os.remove(temp_csv_path)
-                    logger.debug(f"Removed temporary CSV: {temp_csv_path}")
-                
             except Exception as e:
-                logger.warning(f"External table approach failed: {str(e)}, falling back to direct insertion")
+                logger.warning(f"PyArrow/PyIceberg direct write failed: {str(e)}, falling back to SQL INSERT")
                 
-                # Fallback to direct insertion if external table doesn't work
-                # First check if we need to handle overwrite mode
+                # Fallback to standard SQL INSERT if needed
                 if mode == 'overwrite':
                     truncate_sql = f"DELETE FROM {self.catalog}.{self.schema}.{self.table}"
                     self.trino_client.execute_query(truncate_sql)
@@ -234,24 +343,6 @@ class IcebergWriter:
                 except Exception:
                     column_types_dict = {}  # Empty dict if we can't get the schema
                 
-                # Generate VALUES clause with proper CAST statements
-                values = []
-                for _, row in batch_data.iterrows():
-                    row_values = []
-                    for col_name, val in zip(batch_data.columns, row):
-                        if pd.isna(val):
-                            row_values.append("NULL")
-                        else:
-                            # Format the value based on its Python type
-                            if isinstance(val, (int, float, bool)):
-                                row_values.append(str(val))
-                            else:
-                                # Escape single quotes in string values
-                                val_str = str(val).replace("'", "''")
-                                row_values.append(f"'{val_str}'")
-                    
-                    values.append(f"({', '.join(row_values)})")
-                
                 # Prepare target column list with explicit CASTs if needed
                 cast_clauses = []
                 for i, col in enumerate(columns):
@@ -259,6 +350,47 @@ class IcebergWriter:
                         cast_clauses.append(f'CAST(v.column{i+1} AS {column_types_dict[col]})')
                     else:
                         cast_clauses.append(f'v.column{i+1}')
+                
+                # Generate VALUES clause from PyArrow table or fallback to pandas
+                values = []
+                try:
+                    # Try to get values from PyArrow table
+                    for row_idx in range(arrow_table.num_rows):
+                        row_values = []
+                        for col_idx, col in enumerate(columns):
+                            val = arrow_table.column(col_idx)[row_idx].as_py()
+                            if val is None:
+                                row_values.append("NULL")
+                            elif isinstance(val, (int, float)):
+                                row_values.append(str(val))
+                            elif isinstance(val, bool):
+                                row_values.append('TRUE' if val else 'FALSE')
+                            elif isinstance(val, (datetime.date, datetime.datetime)):
+                                val_str = str(val).replace("'", "''")
+                                row_values.append(f"'{val_str}'")
+                            else:
+                                # Escape single quotes in string values
+                                val_str = str(val).replace("'", "''")
+                                row_values.append(f"'{val_str}'")
+                        
+                        values.append(f"({', '.join(row_values)})")
+                except Exception:
+                    # Fallback to pandas if PyArrow access fails
+                    for _, row in batch_data.iterrows():
+                        row_values = []
+                        for val in row:
+                            if pd.isna(val):
+                                row_values.append("NULL")
+                            elif isinstance(val, (int, float)):
+                                row_values.append(str(val))
+                            elif isinstance(val, bool):
+                                row_values.append('TRUE' if val else 'FALSE')
+                            else:
+                                # Escape single quotes in string values
+                                val_str = str(val).replace("'", "''")
+                                row_values.append(f"'{val_str}'")
+                        
+                        values.append(f"({', '.join(row_values)})")
                 
                 # Split inserts into manageable chunks to avoid query size limits
                 MAX_VALUES_PER_QUERY = 500
@@ -278,21 +410,9 @@ class IcebergWriter:
                     self.trino_client.execute_query(insert_sql)
                 
                 logger.debug(f"Inserted {len(values)} rows directly into target table")
-                
-                # Remove temporary CSV if it exists
-                if os.path.exists(temp_csv_path):
-                    os.remove(temp_csv_path)
-                    logger.debug(f"Removed temporary CSV: {temp_csv_path}")
             
         except Exception as e:
             logger.error(f"Error in _write_batch_to_iceberg: {str(e)}", exc_info=True)
-            # Clean up temporary files if they exist
-            temp_csv_path = os.path.join(os.getcwd(), f"temp_{self.table}_{int(time.time())}.csv")
-            if os.path.exists(temp_csv_path):
-                try:
-                    os.remove(temp_csv_path)
-                except Exception:
-                    pass
             raise RuntimeError(f"Failed to write batch to Iceberg: {str(e)}")
 
 def count_csv_rows(
