@@ -1,6 +1,6 @@
 import os
 import logging
-from flask import Flask, render_template, request, redirect, url_for, flash, session
+from flask import Flask, render_template, request, redirect, url_for, flash, session, jsonify
 import tempfile
 import subprocess
 import threading
@@ -239,6 +239,76 @@ def job_status(job_id):
 def jobs():
     """List all conversion jobs."""
     return render_template('jobs.html', jobs=conversion_jobs)
+
+@app.route('/save_profile', methods=['POST'])
+def save_profile():
+    """Save current form settings as a profile."""
+    profile_name = request.form.get('profile_name')
+    
+    if not profile_name:
+        return jsonify({'success': False, 'error': 'Profile name is required'})
+    
+    # Check if profile already exists
+    if config_manager.profile_exists(profile_name):
+        return jsonify({'success': False, 'error': f'Profile "{profile_name}" already exists. Please choose a different name.'})
+    
+    # Prepare connection settings
+    connection = {
+        'trino_host': request.form.get('trino_host'),
+        'trino_port': int(request.form.get('trino_port')) if request.form.get('trino_port') and request.form.get('trino_port').isdigit() else 8080,
+        'trino_user': request.form.get('trino_user'),
+        'trino_catalog': request.form.get('trino_catalog'),
+        'trino_schema': request.form.get('trino_schema'),
+        'hive_metastore_uri': request.form.get('hive_metastore_uri')
+    }
+    
+    # Include password only if provided (don't store empty string)
+    if request.form.get('trino_password'):
+        connection['trino_password'] = request.form.get('trino_password')
+    
+    # Prepare default settings
+    defaults = {
+        'delimiter': request.form.get('delimiter', ','),
+        'quote_char': request.form.get('quote_char', '"'),
+        'has_header': request.form.get('has_header') == 'true',
+        'mode': request.form.get('mode', 'append'),
+        'verbose': request.form.get('verbose') == 'true'
+    }
+    
+    # Handle numeric values
+    batch_size = request.form.get('batch_size')
+    if batch_size and batch_size.isdigit():
+        defaults['batch_size'] = int(batch_size)
+        
+    sample_size = request.form.get('sample_size')
+    if sample_size and sample_size.isdigit():
+        defaults['sample_size'] = int(sample_size)
+    
+    # Prepare partitioning settings
+    has_partitioning = request.form.get('has_partitioning') == 'true'
+    partition_specs = request.form.getlist('partition_specs')
+    
+    partitioning = {
+        'enabled': has_partitioning and len(partition_specs) > 0,
+        'specs': partition_specs if partition_specs else []
+    }
+    
+    # Create profile settings
+    profile_settings = {
+        'connection': connection,
+        'defaults': defaults,
+        'partitioning': partitioning
+    }
+    
+    # Save profile
+    try:
+        config_manager.create_profile(profile_name, profile_settings)
+        config_manager.save()
+        logger.info(f"Profile {profile_name} created successfully")
+        return jsonify({'success': True})
+    except Exception as e:
+        logger.error(f"Error creating profile: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)})
 
 if __name__ == '__main__':
     # Create templates directory if it doesn't exist

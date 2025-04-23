@@ -168,6 +168,83 @@
         });
     });
     
+    // Handle saving profiles
+    document.addEventListener('DOMContentLoaded', function() {
+        const saveBtn = document.getElementById('save-profile-btn');
+        if (saveBtn) {
+            saveBtn.addEventListener('click', function() {
+                const profileName = document.getElementById('profile-name').value.trim();
+                if (!profileName) {
+                    alert('Please enter a profile name');
+                    return;
+                }
+                
+                // Collect all form values
+                const formData = new FormData(document.querySelector('form'));
+                
+                // Add profile name
+                formData.append('profile_name', profileName);
+                
+                // Process partition specs and add them
+                const partitionSpecs = [];
+                document.querySelectorAll('.partition-spec').forEach(function(spec) {
+                    const column = spec.querySelector('input[name="partition_column"]').value.trim();
+                    if (column) {
+                        const transform = spec.querySelector('select[name="partition_transform"]').value;
+                        const param = spec.querySelector('input[name="partition_param"]').value;
+                        
+                        let partitionSpec;
+                        if (transform) {
+                            if ((transform === 'bucket' || transform === 'truncate') && param) {
+                                partitionSpec = `${transform}(${column}, ${param})`;
+                            } else {
+                                partitionSpec = `${transform}(${column})`;
+                            }
+                        } else {
+                            partitionSpec = column;
+                        }
+                        
+                        partitionSpecs.push(partitionSpec);
+                    }
+                });
+                
+                // Add partition specs
+                if (partitionSpecs.length > 0) {
+                    formData.append('has_partitioning', 'true');
+                    partitionSpecs.forEach(spec => {
+                        formData.append('partition_specs', spec);
+                    });
+                }
+                
+                // Send request to save profile
+                fetch('/save_profile', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        // Close modal
+                        const modal = bootstrap.Modal.getInstance(document.getElementById('saveProfileModal'));
+                        modal.hide();
+                        
+                        // Show success message
+                        alert('Profile saved successfully');
+                        
+                        // Refresh page to show the new profile in the dropdown
+                        window.location.reload();
+                    } else {
+                        alert('Error: ' + data.error);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('An error occurred while saving the profile');
+                });
+            });
+        }
+    });
+    
     // Process partition specs before form submission
     document.addEventListener('DOMContentLoaded', function() {
         const form = document.querySelector('form');
@@ -409,7 +486,36 @@
                         <label class="form-check-label" for="verbose">Verbose Logging</label>
                     </div>
                     
-                    <button type="submit" class="btn btn-primary">Convert</button>
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-primary">Convert</button>
+                        <button type="button" class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#saveProfileModal">
+                            Save as Profile
+                        </button>
+                    </div>
+                    
+                    <!-- Save Profile Modal -->
+                    <div class="modal fade" id="saveProfileModal" tabindex="-1" aria-labelledby="saveProfileModalLabel" aria-hidden="true">
+                        <div class="modal-dialog">
+                            <div class="modal-content">
+                                <div class="modal-header">
+                                    <h5 class="modal-title" id="saveProfileModalLabel">Save Configuration Profile</h5>
+                                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                                </div>
+                                <div class="modal-body">
+                                    <p>Save current settings as a reusable profile. This will capture all connection parameters and configuration options.</p>
+                                    <div class="mb-3">
+                                        <label for="profile-name" class="form-label">Profile Name</label>
+                                        <input type="text" class="form-control" id="profile-name" required>
+                                        <div class="form-text">Choose a descriptive name for this configuration.</div>
+                                    </div>
+                                </div>
+                                <div class="modal-footer">
+                                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                    <button type="button" class="btn btn-primary" id="save-profile-btn">Save Profile</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </form>
             </div>
         </div>
