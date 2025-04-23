@@ -219,7 +219,8 @@ class TrinoClient:
             # Convert PyIceberg schema to Trino DDL
             columns_ddl = []
             for field in iceberg_schema.fields:
-                column_name = field.name
+                # Properly quote column names to handle special characters and spaces
+                column_name = f'"{field.name}"'
                 column_type = iceberg_type_to_trino_type(field.field_type)
                 columns_ddl.append(f"{column_name} {column_type}")
             
@@ -311,7 +312,7 @@ class TrinoClient:
             existing_schema = self.get_table_schema(catalog, schema, table)
             
             # Create a map of column name to type for the existing schema
-            existing_columns = {col_name: col_type for col_name, col_type in existing_schema}
+            existing_columns = {col_name.strip('"'): col_type for col_name, col_type in existing_schema}
             
             # Check that all inferred columns exist in the table
             for field in iceberg_schema.fields:
@@ -345,8 +346,8 @@ def iceberg_type_to_trino_type(iceberg_type: Any) -> str:
     Returns:
         Trino SQL type string
     """
-    # Import schema types directly from schema_inferrer
-    from schema_inferrer import (
+    # Import PyIceberg types directly
+    from pyiceberg.types import (
         BooleanType, IntegerType, LongType, FloatType, DoubleType, 
         DateType, TimestampType, StringType, DecimalType, StructType
     )
@@ -365,6 +366,7 @@ def iceberg_type_to_trino_type(iceberg_type: Any) -> str:
     elif isinstance(iceberg_type, DateType):
         return 'DATE'
     elif isinstance(iceberg_type, TimestampType):
+        # In Trino, we need to specify the type properly as 'TIMESTAMP' rather than 'TIMESTAMP WITH TIME ZONE'
         return 'TIMESTAMP'
     elif isinstance(iceberg_type, StringType):
         return 'VARCHAR'
