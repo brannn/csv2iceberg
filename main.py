@@ -917,6 +917,34 @@ def add_running_test_job():
     flash(f'Running test job created with ID: {job_id}', 'success')
     return redirect(url_for('test_progress', job_id=job_id))
 
+@app.route('/demo/schema_preview')
+def demo_schema_preview():
+    """Demo endpoint for schema preview feature."""
+    # Set up a session with sample data for the schema preview
+    sample_csv_path = '/tmp/csv_test/sample_data.csv'
+    if not os.path.exists(sample_csv_path):
+        flash('Sample data file not found. Please run the setup script first.', 'error')
+        return redirect(url_for('convert'))
+    
+    # Extract CSV parameters
+    csv_params = {
+        'delimiter': ',',
+        'has_header': True,
+        'quote_char': '"',
+        'sample_size': 1000
+    }
+    
+    # Store in session for the schema preview page
+    session['schema_preview'] = {
+        'file_path': sample_csv_path,
+        'filename': 'sample_data.csv',
+        'csv_params': csv_params,
+        'timestamp': datetime.datetime.now().isoformat()
+    }
+    
+    # Redirect to schema preview
+    return redirect(url_for('schema_preview'))
+
 if __name__ == '__main__':
     # Create templates directory if it doesn't exist
     os.makedirs('templates', exist_ok=True)
