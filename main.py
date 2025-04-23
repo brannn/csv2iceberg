@@ -1,6 +1,7 @@
 import os
 import logging
 import datetime
+import time
 from flask import Flask, render_template, request, redirect, url_for, flash, session, jsonify
 import tempfile
 import subprocess
@@ -263,6 +264,17 @@ def job_status(job_id):
                           now=now,
                           format_duration=format_duration)
 
+@app.route('/test/progress/<job_id>')
+def test_progress(job_id):
+    """Test page for monitoring job progress."""
+    if job_id not in conversion_jobs:
+        flash('Job not found', 'error')
+        return redirect(url_for('index'))
+    
+    return render_template('test_progress.html',
+                          job=conversion_jobs[job_id],
+                          job_id=job_id)
+
 @app.route('/jobs')
 def jobs():
     """List all conversion jobs."""
@@ -397,24 +409,35 @@ def add_running_test_job():
     # Start a thread to simulate progress updates
     def simulate_progress():
         try:
+            # Log initial state
+            logger.info(f"Starting progress simulation for job {job_id}")
+            logger.info(f"Initial job state: {conversion_jobs[job_id]}")
+            
+            # Update progress with delays to simulate processing
             for progress in range(0, 101, 5):
+                # Update the progress in the job dictionary
                 conversion_jobs[job_id]['progress'] = progress
-                logger.debug(f"Updated progress for job {job_id} to {progress}%")
-                time.sleep(1)  # Update every second
-                
+                # Log progress update (use info level for better visibility)
+                logger.info(f"Updated progress for job {job_id} to {progress}%")
+                # Sleep for a bit to simulate processing time
+                time.sleep(1)
+            
             # Mark as completed when done
             conversion_jobs[job_id]['status'] = 'completed'
             conversion_jobs[job_id]['completed_at'] = datetime.datetime.now()
-            logger.debug(f"Marked job {job_id} as completed")
+            conversion_jobs[job_id]['progress'] = 100
+            logger.info(f"Completed job {job_id}, final state: {conversion_jobs[job_id]}")
+            
         except Exception as e:
-            logger.error(f"Error in progress simulation: {str(e)}")
+            logger.error(f"Error in progress simulation: {str(e)}", exc_info=True)
     
     # Start the simulation thread
-    import time
-    threading.Thread(target=simulate_progress, daemon=True).start()
+    thread = threading.Thread(target=simulate_progress, daemon=True)
+    thread.start()
+    logger.info(f"Started progress simulation thread for job {job_id}")
     
     flash(f'Running test job created with ID: {job_id}', 'success')
-    return redirect(url_for('job_status', job_id=job_id))
+    return redirect(url_for('test_progress', job_id=job_id))
 
 if __name__ == '__main__':
     # Create templates directory if it doesn't exist

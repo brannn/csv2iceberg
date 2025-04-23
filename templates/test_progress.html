@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Progress</title>
+    <link href="https://cdn.replit.com/agent/bootstrap-agent-dark-theme.min.css" rel="stylesheet">
+    <style>
+        body {
+            padding: 20px;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Progress Test</h1>
+        <p>Job ID: {{ job_id }}</p>
+        <p>Status: <span id="status-text">{{ job.status }}</span></p>
+        <p>Current Progress: <span id="progress-percent">{{ job.progress|default(0) }}%</span></p>
+        
+        <div class="progress mb-3">
+            <div id="progress-bar" class="progress-bar progress-bar-striped progress-bar-animated bg-success" 
+                 role="progressbar" 
+                 aria-valuenow="{{ job.progress|default(0) }}" 
+                 aria-valuemin="0" 
+                 aria-valuemax="100" 
+                 style="width: {{ job.progress|default(0) }}%">
+            </div>
+        </div>
+        
+        <div class="mt-3">
+            <a href="/" class="btn btn-secondary">Home</a>
+            <a href="/jobs" class="btn btn-primary">All Jobs</a>
+            <a href="{{ url_for('job_status', job_id=job_id) }}" class="btn btn-info">View Full Details</a>
+            <button id="refresh-btn" class="btn btn-warning">Refresh</button>
+        </div>
+        
+        <div class="card mt-3">
+            <div class="card-header">Debug Information</div>
+            <div class="card-body">
+                <pre id="debug-output" class="bg-dark text-light p-3 rounded">Waiting for progress updates...</pre>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // Debug logging
+        function log(message) {
+            const debugOutput = document.getElementById('debug-output');
+            const timestamp = new Date().toISOString();
+            debugOutput.textContent += `\n[${timestamp}] ${message}`;
+            console.log(message);
+            // Auto-scroll to bottom
+            debugOutput.scrollTop = debugOutput.scrollHeight;
+        }
+        
+        // Update progress bar and text
+        function updateProgress() {
+            log('Polling for progress updates...');
+            
+            fetch('/job/{{ job_id }}/progress')
+                .then(response => {
+                    log(`Response status: ${response.status}`);
+                    return response.json();
+                })
+                .then(data => {
+                    log(`Progress data: ${JSON.stringify(data)}`);
+                    
+                    // Update progress bar and text
+                    const progressBar = document.getElementById('progress-bar');
+                    const progressPercent = document.getElementById('progress-percent');
+                    const statusText = document.getElementById('status-text');
+                    
+                    // Update values
+                    const progress = Math.min(100, Math.max(0, data.progress || 0));
+                    log(`Setting progress to: ${progress}%`);
+                    
+                    progressBar.style.width = progress + '%';
+                    progressBar.setAttribute('aria-valuenow', progress);
+                    progressPercent.textContent = progress + '%';
+                    statusText.textContent = data.status;
+                    
+                    // If job is still running, poll again after 1 second
+                    if (data.status === 'running') {
+                        log('Job still running, will poll again in 1 second');
+                        setTimeout(updateProgress, 1000);
+                    } else {
+                        log(`Job finished with status: ${data.status}`);
+                    }
+                })
+                .catch(error => {
+                    log(`Error fetching progress: ${error}`);
+                    // Try again after 3 seconds
+                    setTimeout(updateProgress, 3000);
+                });
+        }
+        
+        // Start progress updates when page loads
+        document.addEventListener('DOMContentLoaded', function() {
+            log('Page loaded, starting progress updates');
+            updateProgress();
+            
+            // Add refresh button handler
+            document.getElementById('refresh-btn').addEventListener('click', function() {
+                log('Manual refresh requested');
+                updateProgress();
+            });
+        });
+    </script>
+</body>
+</html>
