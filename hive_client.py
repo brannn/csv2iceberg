@@ -7,17 +7,11 @@ from typing import Dict, List, Any, Optional, Tuple
 from datetime import datetime
 
 # Import Hive Metastore client dependencies
-try:
-    import thrift
-    from thrift.transport import TSocket, TTransport
-    from thrift.protocol import TBinaryProtocol
-    from hive_metastore import ThriftHiveMetastore
-    from hive_metastore.ttypes import Database, Table, StorageDescriptor, FieldSchema, SerDeInfo
-    HAVE_HIVE_THRIFT = True
-except ImportError:
-    # If Hive Metastore Thrift client is not available, log a warning
-    logging.warning("Hive Metastore Thrift client not available, some functionality may be limited")
-    HAVE_HIVE_THRIFT = False
+import thrift
+from thrift.transport import TSocket, TTransport
+from thrift.protocol import TBinaryProtocol
+from hive_metastore import ThriftHiveMetastore
+from hive_metastore.ttypes import Database, Table, StorageDescriptor, FieldSchema, SerDeInfo
 
 logger = logging.getLogger(__name__)
 
@@ -48,11 +42,7 @@ class HiveMetastoreClient:
     
     def _create_client(self):
         """Create a connection to Hive metastore"""
-        try:
-            if not HAVE_HIVE_THRIFT:
-                logger.warning("Hive Metastore Thrift client not available, using mock implementation")
-                return None
-                
+        try:                
             logger.info(f"Connecting to Hive metastore at {self.host}:{self.port}")
             
             # Test if the host/port is available
@@ -62,8 +52,9 @@ class HiveMetastoreClient:
             sock.close()
             
             if result != 0:
-                logger.warning(f"Hive metastore at {self.host}:{self.port} is not available, using mock implementation")
-                return None
+                error_msg = f"Hive metastore at {self.host}:{self.port} is not available"
+                logger.error(error_msg)
+                raise ConnectionError(error_msg)
             
             # Create the Thrift client
             socket = TSocket.TSocket(self.host, self.port)
@@ -76,8 +67,7 @@ class HiveMetastoreClient:
             
         except Exception as e:
             logger.error(f"Failed to connect to Hive metastore: {str(e)}", exc_info=True)
-            logger.warning("Using mock implementation for Hive metastore")
-            return None
+            raise ConnectionError(f"Failed to connect to Hive metastore: {str(e)}")
     
     def database_exists(self, db_name: str) -> bool:
         """
@@ -93,16 +83,16 @@ class HiveMetastoreClient:
             logger.info(f"Checking if database exists: {db_name}")
             
             if self.client is None:
-                # Mock implementation
-                logger.info(f"Using mock implementation for database_exists({db_name})")
-                return False
+                error_msg = "No active Hive metastore connection"
+                logger.error(error_msg)
+                raise ConnectionError(error_msg)
                 
             databases = self.client.get_all_databases()
             return db_name in databases
             
         except Exception as e:
-            logger.warning(f"Error checking if database exists: {str(e)}")
-            return False
+            logger.error(f"Error checking if database exists: {str(e)}")
+            raise RuntimeError(f"Failed to check if database exists: {str(e)}")
     
     def create_database(self, db_name: str, description: str = "") -> None:
         """
