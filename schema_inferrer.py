@@ -11,77 +11,23 @@ import numpy as np
 from typing import Dict, List, Any, Optional, Tuple
 
 # Import PyIceberg Schema and type classes
-try:
-    from pyiceberg.schema import Schema
-    from pyiceberg.types import (
-        BooleanType,
-        IntegerType,
-        LongType,
-        FloatType,
-        DoubleType,
-        DateType,
-        TimestampType,
-        StringType,
-        DecimalType,
-        StructType,
-        NestedField
-    )
-    
-    # Create Field alias for backward compatibility
-    Field = NestedField
-    
-except ImportError:
-    # If PyIceberg is not available, use fallback definitions for testing/compatibility
-    logging.warning("PyIceberg not available, using fallback type definitions")
-    
-    class Schema:
-        def __init__(self, *fields):
-            self.fields = fields
-            
-    class Field:
-        """Field class for compatibility"""
-        def __init__(self, field_id, name, field_type, doc=""):
-            self.field_id = field_id
-            self.name = name
-            self.field_type = field_type
-            self.doc = doc
-    
-    # Alias for PyIceberg compatibility
-    NestedField = Field
-            
-    # Basic type classes
-    class BooleanType:
-        pass
+from pyiceberg.schema import Schema
+from pyiceberg.types import (
+    BooleanType,
+    IntegerType,
+    LongType,
+    FloatType,
+    DoubleType,
+    DateType,
+    TimestampType,
+    StringType,
+    DecimalType,
+    StructType,
+    NestedField
+)
 
-    class IntegerType:
-        pass
-
-    class LongType:
-        pass
-
-    class FloatType:
-        pass
-
-    class DoubleType:
-        pass
-
-    class DateType:
-        pass
-
-    class TimestampType:
-        pass
-
-    class StringType:
-        pass
-
-    class DecimalType:
-        def __init__(self, precision=38, scale=18):
-            self.precision = precision
-            self.scale = scale
-
-    class StructType:
-        def __init__(self, *fields):
-            self.fields = fields
+# Create Field alias for backward compatibility
+Field = NestedField
 
 logger = logging.getLogger(__name__)
 
