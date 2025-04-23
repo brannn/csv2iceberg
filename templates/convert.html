@@ -69,7 +69,7 @@
                     
                     <div class="mb-3">
                         <label for="trino_port" class="form-label">Trino Port</label>
-                        <input type="number" class="form-control" id="trino_port" name="trino_port" value="8080" required>
+                        <input type="number" class="form-control" id="trino_port" name="trino_port" value="443" required>
                     </div>
                     
                     <div class="mb-3">
@@ -86,8 +86,8 @@
                     <div class="mb-3">
                         <label for="http_scheme" class="form-label">HTTP Scheme</label>
                         <select class="form-select" id="http_scheme" name="http_scheme">
-                            <option value="http" selected>HTTP</option>
-                            <option value="https">HTTPS (Required for authentication)</option>
+                            <option value="http">HTTP</option>
+                            <option value="https" selected>HTTPS (Required for authentication)</option>
                         </select>
                         <div class="form-text">Use HTTPS if Trino authentication is enabled</div>
                     </div>
