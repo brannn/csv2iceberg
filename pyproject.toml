@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Add your description here"
 requires-python = ">=3.11"
 dependencies = [
+    "urllib3==1.26.6",
     "click>=8.1.8",
     "email-validator>=2.2.0",
     "flask>=3.1.0",
