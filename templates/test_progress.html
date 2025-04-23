@@ -140,23 +140,50 @@
                     log(`Error fetching progress: ${error}`);
                     
                     // Check if this might be a 404 from a job that has already been removed
-                    if (error.message && error.message.includes('404')) {
+                    if (error.toString().includes('404') || (error.message && error.message.includes('404'))) {
                         // Job may have been deleted or expired, show a friendly message
                         const container = document.querySelector('.container');
-                        const errorAlert = document.createElement('div');
-                        errorAlert.className = 'alert alert-warning mt-3';
-                        errorAlert.id = 'error-message'; // Add an ID to avoid duplicates
-                        errorAlert.innerHTML = '<strong>Note:</strong> Unable to fetch job status - the job may have completed or expired. Check the Jobs list for the final status.';
                         
-                        // Only add if we haven't already added this message
+                        // Check if we already showed an error message
                         if (!document.getElementById('error-message')) {
-                            container.insertBefore(errorAlert, document.querySelector('.card'));
+                            const errorAlert = document.createElement('div');
+                            errorAlert.className = 'alert alert-success mt-3';
+                            errorAlert.id = 'error-message'; // Add an ID to avoid duplicates
+                            errorAlert.innerHTML = '<strong>Job Completed!</strong> The job has completed and been archived. View the <a href="/jobs">Jobs list</a> for final details.';
+                            
+                            // Remove any existing alert before adding this one
+                            const existingAlert = document.querySelector('.alert');
+                            if (existingAlert) {
+                                existingAlert.remove();
+                            }
+                            
+                            // Insert message at the top of container
+                            container.insertBefore(errorAlert, container.firstChild);
+                            
+                            // Update progress bar to show completion
+                            const progressBar = document.getElementById('progress-bar');
+                            const progressPercent = document.getElementById('progress-percent');
+                            const progressPhase = document.getElementById('progress-phase');
+                            
+                            if (progressBar && progressPercent) {
+                                // Force to 100% complete when job disappears
+                                progressBar.style.width = '100%';
+                                progressBar.setAttribute('aria-valuenow', 100);
+                                progressBar.classList.remove('bg-info');
+                                progressBar.classList.add('bg-success');
+                                progressPercent.textContent = '100%';
+                                
+                                if (progressPhase) {
+                                    progressPhase.textContent = 'Complete!';
+                                }
+                            }
                         }
                         
-                        // Try again after 5 seconds (longer timeout for missing jobs)
-                        setTimeout(updateProgress, 5000);
+                        // Stop polling
+                        log('Job not found (likely completed), stopping automatic updates');
                     } else {
                         // For other errors, try again sooner
+                        log('Other error occurred, trying again in 3 seconds');
                         setTimeout(updateProgress, 3000);
                     }
                 });

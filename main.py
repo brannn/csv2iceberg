@@ -7,6 +7,7 @@ import tempfile
 import subprocess
 import threading
 from werkzeug.utils import secure_filename
+from collections import OrderedDict
 
 # Import helper modules
 from utils import setup_logging
@@ -25,6 +26,10 @@ UPLOAD_FOLDER = tempfile.mkdtemp()
 ALLOWED_EXTENSIONS = {'csv', 'txt'}
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB limit
+
+# Constants for job management
+MAX_JOBS_TO_KEEP = 50  # Maximum number of jobs to keep in memory
+COMPLETED_JOB_TTL = 120  # Seconds to keep completed jobs in memory (2 minutes)
 
 # Utility function for job duration
 def format_duration(start_time, end_time):
@@ -58,8 +63,9 @@ def format_duration(start_time, end_time):
         seconds = int(remaining % 60)
         return f"{hours} hour{'s' if hours != 1 else ''} {minutes} minute{'s' if minutes != 1 else ''} {seconds} second{'s' if seconds != 1 else ''}"
 
-# Store conversion jobs
-conversion_jobs = {}
+# Store conversion jobs using OrderedDict to maintain insertion order
+# This helps manage job retention policies by time
+conversion_jobs = OrderedDict()
 
 def allowed_file(filename):
     """Check if the uploaded file has an allowed extension."""
@@ -253,9 +259,12 @@ def convert():
 @app.route('/job/<job_id>')
 def job_status(job_id):
     """Show the status of a conversion job."""
+    # Clean up old jobs first
+    cleanup_old_jobs()
+    
     if job_id not in conversion_jobs:
-        flash('Job not found', 'error')
-        return redirect(url_for('index'))
+        flash('Job not found or has been archived', 'info')
+        return redirect(url_for('jobs'))
     
     now = datetime.datetime.now()
     return render_template('job_status.html', 
@@ -267,13 +276,17 @@ def job_status(job_id):
 @app.route('/test/progress/<job_id>')
 def test_progress(job_id):
     """Test page for monitoring job progress."""
+    # Clean up old jobs first
+    cleanup_old_jobs()
+    
     if job_id not in conversion_jobs:
-        flash('Job not found', 'error')
-        return redirect(url_for('index'))
+        flash('Job not found or has been archived', 'info')
+        return redirect(url_for('jobs'))
     
     return render_template('test_progress.html',
                           job=conversion_jobs[job_id],
-                          job_id=job_id)
+                          job_id=job_id,
+                          job_ttl=COMPLETED_JOB_TTL)
 
 @app.route('/jobs')
 def jobs():
@@ -294,9 +307,71 @@ def update_job_progress(job_id, percent):
     else:
         return jsonify({"status": "error", "message": "Job not found"}), 404
 
+# Function to clean up old jobs (both completed/failed and to prevent memory leaks)
+def cleanup_old_jobs():
+    """
+    Remove old completed jobs from memory to prevent memory leaks.
+    
+    This function:
+    1. Keeps a maximum number of jobs in memory
+    2. Removes completed/failed jobs after their TTL expires
+    """
+    try:
+        current_time = datetime.datetime.now()
+        jobs_to_remove = []
+        
+        # First, mark jobs that have been completed and exceeded their TTL
+        for job_id, job in conversion_jobs.items():
+            if job['status'] in ['completed', 'failed']:
+                if 'completed_at' in job and job['completed_at']:
+                    time_since_completion = (current_time - job['completed_at']).total_seconds()
+                    if time_since_completion > COMPLETED_JOB_TTL:
+                        jobs_to_remove.append(job_id)
+        
+        # Remove marked jobs
+        for job_id in jobs_to_remove:
+            logger.debug(f"Removing completed job {job_id} (TTL expired)")
+            if job_id in conversion_jobs:
+                del conversion_jobs[job_id]
+        
+        # If still too many jobs, remove oldest completed ones first, then oldest of any type
+        if len(conversion_jobs) > MAX_JOBS_TO_KEEP:
+            # Sort completed jobs by completion time
+            completed_jobs = [(job_id, job) for job_id, job in conversion_jobs.items() 
+                             if job['status'] in ['completed', 'failed'] and 'completed_at' in job]
+            completed_jobs.sort(key=lambda x: x[1]['completed_at'])
+            
+            # Remove oldest completed jobs first
+            for job_id, _ in completed_jobs:
+                if len(conversion_jobs) <= MAX_JOBS_TO_KEEP:
+                    break
+                logger.debug(f"Removing oldest completed job {job_id} (max jobs limit)")
+                if job_id in conversion_jobs:
+                    del conversion_jobs[job_id]
+            
+            # If still too many, remove oldest by start time
+            if len(conversion_jobs) > MAX_JOBS_TO_KEEP:
+                # Get oldest jobs by start time
+                all_jobs = [(job_id, job) for job_id, job in conversion_jobs.items()]
+                all_jobs.sort(key=lambda x: x[1]['started_at'])
+                
+                # Remove oldest jobs
+                for job_id, _ in all_jobs:
+                    if len(conversion_jobs) <= MAX_JOBS_TO_KEEP:
+                        break
+                    logger.debug(f"Removing oldest job {job_id} (max jobs limit)")
+                    if job_id in conversion_jobs:
+                        del conversion_jobs[job_id]
+    
+    except Exception as e:
+        logger.error(f"Error during job cleanup: {str(e)}", exc_info=True)
+
 @app.route('/job/<job_id>/progress', methods=['GET'])
 def get_job_progress(job_id):
     """Get the current progress of a conversion job."""
+    # Clean up old jobs first
+    cleanup_old_jobs()
+    
     if job_id in conversion_jobs:
         return jsonify({
             "job_id": job_id, 
@@ -304,7 +379,13 @@ def get_job_progress(job_id):
             "status": conversion_jobs[job_id]['status']
         })
     else:
-        return jsonify({"status": "error", "message": "Job not found"}), 404
+        # Include an archive flag to help frontend understand why the job is missing
+        was_archived = any(job_id.startswith(job_id[:10]) for job_id in conversion_jobs.keys())
+        return jsonify({
+            "status": "error", 
+            "message": "Job not found",
+            "possible_reason": "The job was completed and archived" if was_archived else "Unknown job ID"
+        }), 404
 
 @app.route('/diagnostics')
 def diagnostics():
