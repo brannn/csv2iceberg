@@ -62,13 +62,16 @@ def infer_schema_from_csv(
         header = 0 if has_header else None
         try:
             # Try to read with pandas to get column names and infer types
+            # Use error_bad_lines=False to skip rows with inconsistent field counts
             df = pd.read_csv(
                 csv_file, 
                 delimiter=delimiter,
                 quotechar=quote_char,
                 header=header,
                 nrows=sample_size,
-                low_memory=False  # Disable low memory warnings
+                low_memory=False,  # Disable low memory warnings
+                on_bad_lines='skip',  # Skip lines with inconsistent number of fields
+                warn_bad_lines=True   # Warn about skipped lines
             )
         except Exception as e:
             logger.warning(f"Error reading CSV with pandas: {str(e)}")

@@ -207,7 +207,8 @@ class TrinoClient:
         iceberg_schema: Schema
     ) -> None:
         """
-        Create an Iceberg table using the provided schema.
+        Create a table using the provided schema. Originally designed for Iceberg tables,
+        but may create tables with other formats (like Parquet) based on Trino server support.
         
         Args:
             catalog: Catalog name
@@ -227,16 +228,17 @@ class TrinoClient:
             columns_clause = ", ".join(columns_ddl)
             
             # Create table DDL
+            # Use PARQUET format since 'ICEBERG' format is not supported in this Trino instance
             create_table_sql = f"""
             CREATE TABLE {catalog}.{schema}.{table} (
                 {columns_clause}
             )
             WITH (
-                format = 'ICEBERG'
+                format = 'PARQUET'
             )
             """
             
-            logger.info(f"Creating Iceberg table: {catalog}.{schema}.{table}")
+            logger.info(f"Creating table {catalog}.{schema}.{table} with PARQUET format")
             logger.debug(f"Create table SQL: {create_table_sql}")
             
             self.execute_query(create_table_sql)

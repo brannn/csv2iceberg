@@ -75,13 +75,15 @@ class IcebergWriter:
             logger.info(f"Processing CSV file in batch mode (batch size: {batch_size})")
             logger.info(f"Write mode: {mode}")
             
-            # Read the CSV in batches
+            # Read the CSV in batches with error handling for inconsistent field counts
             chunk_iter = pd.read_csv(
                 csv_file, 
                 delimiter=delimiter, 
                 quotechar=quote_char,
                 header=0 if has_header else None,
-                chunksize=batch_size
+                chunksize=batch_size,
+                on_bad_lines='skip',  # Skip lines with inconsistent number of fields
+                warn_bad_lines=True   # Warn about skipped lines
             )
             
             # Track progress
@@ -220,10 +222,30 @@ def count_csv_rows(
         Number of rows in the CSV file
     """
     try:
-        # Count lines in the file
-        with open(csv_file, 'r') as f:
-            line_count = sum(1 for _ in f)
-            return line_count - 1 if has_header else line_count
+        # For CSV files with inconsistent field counts, we need a more robust approach
+        # Rather than counting raw lines, we'll use pandas to determine valid rows
+        df_chunks = pd.read_csv(
+            csv_file,
+            delimiter=delimiter,
+            quotechar=quote_char,
+            header=0 if has_header else None,
+            chunksize=10000,  # Use a reasonable chunk size
+            on_bad_lines='skip'  # Skip problematic lines
+        )
+        
+        # Count rows across all chunks
+        total_rows = sum(len(chunk) for chunk in df_chunks)
+        
+        # If there are rows and we're not counting the header, return as is
+        # If counting with header, we already skipped it by using header=0
+        return total_rows
     except Exception as e:
-        logger.error(f"Error counting CSV rows: {str(e)}", exc_info=True)
-        raise RuntimeError(f"Failed to count CSV rows: {str(e)}")
+        # Fallback to simple line counting if pandas approach fails
+        logger.warning(f"Error using pandas to count CSV rows: {str(e)}")
+        try:
+            with open(csv_file, 'r') as f:
+                line_count = sum(1 for _ in f)
+                return line_count - 1 if has_header else line_count
+        except Exception as e2:
+            logger.error(f"Error counting CSV rows: {str(e2)}", exc_info=True)
+            raise RuntimeError(f"Failed to count CSV rows: {str(e2)}")
