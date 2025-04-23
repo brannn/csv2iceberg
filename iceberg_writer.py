@@ -4,6 +4,7 @@ Iceberg writer module for CSV to Iceberg conversion
 import os
 import logging
 import time
+import csv
 from typing import Dict, List, Any, Optional, Callable, Tuple
 import tempfile
 from datetime import datetime
@@ -141,127 +142,157 @@ class IcebergWriter:
             
             # Create temporary table name with timestamp to avoid conflicts
             temp_table = f"temp_{self.table}_{int(time.time())}"
+            temp_csv = f"temp_{self.table}_{int(time.time())}.csv"
             
-            # Get the schema of the target table to ensure type compatibility
+            # Save this batch to a temporary CSV file
+            temp_csv_path = os.path.join(os.getcwd(), temp_csv)
+            batch_data.to_csv(temp_csv_path, index=False, quoting=csv.QUOTE_MINIMAL)
+            logger.debug(f"Saved batch to temporary CSV: {temp_csv_path}")
+            
+            # Create a temporary external table directly from the CSV file
+            # This approach bypasses the type conversion issues by letting Trino do the type inference
+            schema_definitions = []
+            for col in columns:
+                schema_definitions.append(f'"{col}" varchar')
+                
+            schema_def_str = ", ".join(schema_definitions)
+            
+            # Create external table definition for the CSV file
+            create_external_table_sql = f"""
+            CREATE TABLE {self.catalog}.{self.schema}.{temp_table} (
+                {schema_def_str}
+            )
+            WITH (
+                external_location = '{temp_csv_path}',
+                format = 'CSV',
+                skip_header_line_count = 1
+            )
+            """
+            
+            # Try to create the external table - if this fails, fall back to direct INSERT
             try:
-                target_schema = self.trino_client.get_table_schema(self.catalog, self.schema, self.table)
-                column_types = {col_name: col_type for col_name, col_type in target_schema}
+                self.trino_client.execute_query(create_external_table_sql)
+                logger.debug(f"Created external table for CSV: {temp_table}")
                 
-                # Create column definitions with proper types
-                column_defs = []
-                for col in columns:
-                    # If column exists in target schema, use the same type, otherwise default to VARCHAR
-                    if col in column_types:
-                        column_defs.append(f'"{col}" {column_types[col]}')
-                    else:
-                        column_defs.append(f'"{col}" VARCHAR')
+                if mode == 'overwrite' and batch_data.shape[0] > 0:
+                    # If in overwrite mode, truncate the target table first
+                    truncate_sql = f"DELETE FROM {self.catalog}.{self.schema}.{self.table}"
+                    self.trino_client.execute_query(truncate_sql)
+                    logger.debug(f"Truncated target table {self.table} for overwrite mode")
                 
-                # Create a temporary table to hold the batch data with appropriate data types
-                create_temp_table_sql = f"""
-                CREATE TABLE {self.catalog}.{self.schema}.{temp_table} (
-                    {", ".join(column_defs)}
-                )
+                # Use CAST to ensure proper type conversion when inserting from temp table to target
+                cast_columns = []
+                try:
+                    target_schema = self.trino_client.get_table_schema(self.catalog, self.schema, self.table)
+                    column_types_dict = {col_name: col_type for col_name, col_type in target_schema}
+                    
+                    for col in columns:
+                        if col in column_types_dict:
+                            # Cast to the target table column type
+                            cast_columns.append(f'CAST("{col}" AS {column_types_dict[col]}) AS "{col}"')
+                        else:
+                            # If no type info available, just use the column as is
+                            cast_columns.append(f'"{col}"')
+                except Exception:
+                    # If we can't get schema info, just use columns as is
+                    cast_columns = [f'"{col}"' for col in columns]
+                
+                cast_columns_str = ", ".join(cast_columns)
+                
+                # Insert from temp table to target using CAST
+                insert_final_sql = f"""
+                INSERT INTO {self.catalog}.{self.schema}.{self.table} ({column_names_str})
+                SELECT {cast_columns_str} FROM {self.catalog}.{self.schema}.{temp_table}
                 """
+                self.trino_client.execute_query(insert_final_sql)
+                logger.debug(f"Inserted data from external table to {self.table}")
+                
+                # Clean up
+                drop_temp_sql = f"DROP TABLE {self.catalog}.{self.schema}.{temp_table}"
+                self.trino_client.execute_query(drop_temp_sql)
+                logger.debug(f"Dropped temporary table {temp_table}")
+                
+                # Remove temporary CSV
+                if os.path.exists(temp_csv_path):
+                    os.remove(temp_csv_path)
+                    logger.debug(f"Removed temporary CSV: {temp_csv_path}")
+                
             except Exception as e:
-                # Fallback to creating all columns as VARCHAR if we can't get the target schema
-                logger.warning(f"Could not get target table schema: {str(e)}. Creating temp table with all VARCHAR columns.")
-                create_temp_table_sql = f"""
-                CREATE TABLE {self.catalog}.{self.schema}.{temp_table} (
-                    {", ".join([f'"{col}" VARCHAR' for col in columns])}
-                )
-                """
-            self.trino_client.execute_query(create_temp_table_sql)
-            logger.debug(f"Created temporary table {temp_table}")
-            
-            # Get column types from target schema if available
-            try:
-                target_schema = self.trino_client.get_table_schema(self.catalog, self.schema, self.table)
-                column_types_dict = {col_name: col_type for col_name, col_type in target_schema}
-            except Exception:
-                column_types_dict = {}  # Empty dict if we can't get the schema
+                logger.warning(f"External table approach failed: {str(e)}, falling back to direct insertion")
                 
-            # Insert data into the temporary table
-            # Convert dataframe to list of tuples for insertion
-            values = []
-            for _, row in batch_data.iterrows():
-                # Properly escape and quote string values based on data types
-                row_values = []
-                for i, (col_name, val) in enumerate(zip(batch_data.columns, row)):
-                    if pd.isna(val):
-                        row_values.append("NULL")
-                    elif col_name in column_types_dict:
-                        # Format based on target column type
-                        col_type = column_types_dict[col_name].lower()
-                        
-                        if 'int' in col_type or 'long' in col_type or 'decimal' in col_type or 'double' in col_type or 'float' in col_type:
-                            # Numeric types don't need quotes
-                            row_values.append(str(val))
-                        elif 'bool' in col_type:
-                            # Boolean values are TRUE or FALSE without quotes
-                            bool_val = str(val).lower()
-                            if bool_val in ('true', 't', 'yes', 'y', '1'):
-                                row_values.append('TRUE')
-                            elif bool_val in ('false', 'f', 'no', 'n', '0'):
-                                row_values.append('FALSE')
+                # Fallback to direct insertion if external table doesn't work
+                # First check if we need to handle overwrite mode
+                if mode == 'overwrite':
+                    truncate_sql = f"DELETE FROM {self.catalog}.{self.schema}.{self.table}"
+                    self.trino_client.execute_query(truncate_sql)
+                    logger.debug(f"Truncated target table {self.table} for overwrite mode")
+                
+                # Get target table schema
+                try:
+                    target_schema = self.trino_client.get_table_schema(self.catalog, self.schema, self.table)
+                    column_types_dict = {col_name: col_type for col_name, col_type in target_schema}
+                except Exception:
+                    column_types_dict = {}  # Empty dict if we can't get the schema
+                
+                # Generate VALUES clause with proper CAST statements
+                values = []
+                for _, row in batch_data.iterrows():
+                    row_values = []
+                    for col_name, val in zip(batch_data.columns, row):
+                        if pd.isna(val):
+                            row_values.append("NULL")
+                        else:
+                            # Format the value based on its Python type
+                            if isinstance(val, (int, float, bool)):
+                                row_values.append(str(val))
                             else:
-                                # Handle unexpected values as strings
+                                # Escape single quotes in string values
                                 val_str = str(val).replace("'", "''")
                                 row_values.append(f"'{val_str}'")
-                        elif 'date' in col_type or 'time' in col_type:
-                            # Date/time types need quotes
-                            val_str = str(val).replace("'", "''")
-                            row_values.append(f"'{val_str}'")
-                        else:
-                            # Default to string format for other types
-                            val_str = str(val).replace("'", "''")
-                            row_values.append(f"'{val_str}'")
-                    else:
-                        # If no type info, format based on Python type
-                        if isinstance(val, (int, float)):
-                            row_values.append(str(val))
-                        elif isinstance(val, bool):
-                            row_values.append('TRUE' if val else 'FALSE')
-                        else:
-                            # Escape single quotes in string values
-                            val_str = str(val).replace("'", "''")
-                            row_values.append(f"'{val_str}'")
+                    
+                    values.append(f"({', '.join(row_values)})")
                 
-                values.append(f"({', '.join(row_values)})")
-            
-            # Split inserts into smaller batches if needed to avoid query size limits
-            MAX_VALUES_PER_QUERY = 1000
-            for i in range(0, len(values), MAX_VALUES_PER_QUERY):
-                batch_values = values[i:i + MAX_VALUES_PER_QUERY]
-                insert_temp_sql = f"""
-                INSERT INTO {self.catalog}.{self.schema}.{temp_table} ({column_names_str})
-                VALUES {", ".join(batch_values)}
-                """
-                self.trino_client.execute_query(insert_temp_sql)
-            
-            logger.debug(f"Inserted {len(values)} rows into temporary table")
-            
-            # Now, insert from temporary table to the Iceberg table
-            if mode == 'overwrite' and batch_data.shape[0] > 0:
-                # If in overwrite mode, truncate the target table first
-                truncate_sql = f"DELETE FROM {self.catalog}.{self.schema}.{self.table}"
-                self.trino_client.execute_query(truncate_sql)
-                logger.debug(f"Truncated target table {self.table} for overwrite mode")
-            
-            # Insert from temp table to the Iceberg table
-            insert_final_sql = f"""
-            INSERT INTO {self.catalog}.{self.schema}.{self.table} ({column_names_str})
-            SELECT {column_names_str} FROM {self.catalog}.{self.schema}.{temp_table}
-            """
-            self.trino_client.execute_query(insert_final_sql)
-            logger.debug(f"Inserted data from temporary table to {self.table}")
-            
-            # Drop the temporary table
-            drop_temp_sql = f"DROP TABLE {self.catalog}.{self.schema}.{temp_table}"
-            self.trino_client.execute_query(drop_temp_sql)
-            logger.debug(f"Dropped temporary table {temp_table}")
+                # Prepare target column list with explicit CASTs if needed
+                cast_clauses = []
+                for i, col in enumerate(columns):
+                    if col in column_types_dict:
+                        cast_clauses.append(f'CAST(v.column{i+1} AS {column_types_dict[col]})')
+                    else:
+                        cast_clauses.append(f'v.column{i+1}')
+                
+                # Split inserts into manageable chunks to avoid query size limits
+                MAX_VALUES_PER_QUERY = 500
+                for i in range(0, len(values), MAX_VALUES_PER_QUERY):
+                    chunk_values = values[i:i + MAX_VALUES_PER_QUERY]
+                    
+                    # Create a query that uses VALUES clause with explicit column references
+                    insert_sql = f"""
+                    INSERT INTO {self.catalog}.{self.schema}.{self.table} ({column_names_str})
+                    WITH value_table(column1{', column2' * (len(columns)-1)}) AS (
+                      VALUES {', '.join(chunk_values)}
+                    )
+                    SELECT {', '.join(cast_clauses)}
+                    FROM value_table v
+                    """
+                    
+                    self.trino_client.execute_query(insert_sql)
+                
+                logger.debug(f"Inserted {len(values)} rows directly into target table")
+                
+                # Remove temporary CSV if it exists
+                if os.path.exists(temp_csv_path):
+                    os.remove(temp_csv_path)
+                    logger.debug(f"Removed temporary CSV: {temp_csv_path}")
             
         except Exception as e:
             logger.error(f"Error in _write_batch_to_iceberg: {str(e)}", exc_info=True)
+            # Clean up temporary files if they exist
+            temp_csv_path = os.path.join(os.getcwd(), f"temp_{self.table}_{int(time.time())}.csv")
+            if os.path.exists(temp_csv_path):
+                try:
+                    os.remove(temp_csv_path)
+                except Exception:
+                    pass
             raise RuntimeError(f"Failed to write batch to Iceberg: {str(e)}")
 
 def count_csv_rows(
