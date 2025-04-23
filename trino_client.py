@@ -36,12 +36,12 @@ class TrinoClient:
     def __init__(
         self,
         host: str,
-        port: int = 8080,
+        port: int = 443,
         user: str = 'admin',
         password: Optional[str] = None,
         catalog: str = 'hive',
         schema: str = 'default',
-        http_scheme: str = 'http',
+        http_scheme: str = 'https',
         role: str = 'sysadmin'
     ):
         """
