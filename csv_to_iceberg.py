@@ -41,11 +41,11 @@ def cli():
 @click.option('--batch-size', '-b', default=10000, type=int, help='Batch size for processing (default: 10000)')
 @click.option('--table-name', '-t', required=True, help='Target Iceberg table name (format: catalog.schema.table)')
 @click.option('--trino-host', required=True, help='Trino host')
-@click.option('--trino-port', default=8080, help='Trino port (default: 8080)')
+@click.option('--trino-port', default=443, help='Trino port (default: 443)')
 @click.option('--trino-user', default=os.getenv('USER', 'admin'), help='Trino user')
 @click.option('--trino-password', help='Trino password (if authentication is enabled)')
-@click.option('--http-scheme', type=click.Choice(['http', 'https']), default='http', 
-              help='HTTP scheme for Trino connection (http or https, default: http)')
+@click.option('--http-scheme', type=click.Choice(['http', 'https']), default='https', 
+              help='HTTP scheme for Trino connection (http or https, default: https)')
 @click.option('--trino-role', default='sysadmin', help='Trino role for authorization (default: sysadmin)')
 @click.option('--trino-catalog', required=True, help='Trino catalog')
 @click.option('--trino-schema', required=True, help='Trino schema')
