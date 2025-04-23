@@ -8,6 +8,7 @@ from werkzeug.utils import secure_filename
 
 # Import helper modules
 from utils import setup_logging
+from config_manager import ConfigManager
 
 # Set up logging
 logger = setup_logging()
@@ -15,6 +16,9 @@ logger = setup_logging()
 # Initialize Flask app
 app = Flask(__name__)
 app.secret_key = os.environ.get("SESSION_SECRET", "development-secret-key")
+
+# Initialize config manager
+config_manager = ConfigManager()
 
 # Configure upload folder
 UPLOAD_FOLDER = tempfile.mkdtemp()
@@ -119,25 +123,57 @@ def convert():
             # Create job ID
             job_id = os.urandom(8).hex()
             
-            # Collect parameters
+            # Check if using a profile
+            profile_name = request.form.get('profile')
+            profile_data = {}
+            
+            if profile_name:
+                if config_manager.profile_exists(profile_name):
+                    profile_data = config_manager.get_profile(profile_name)
+                    logger.info(f"Using configuration profile: {profile_name}")
+                else:
+                    flash(f'Profile "{profile_name}" not found', 'error')
+                    return redirect(request.url)
+            
+            # Get form parameters, falling back to profile settings where needed
+            conn_settings = profile_data.get('connection', {}) if profile_data else {}
+            default_settings = profile_data.get('defaults', {}) if profile_data else {}
+            
+            # Collect parameters from form or fall back to profile settings
             params = {
+                # Table name always comes from the form
                 'table_name': request.form.get('table_name'),
-                'trino_host': request.form.get('trino_host'),
-                'trino_port': request.form.get('trino_port'),
-                'trino_user': request.form.get('trino_user'),
-                'trino_password': request.form.get('trino_password'),
-                'trino_catalog': request.form.get('trino_catalog'),
-                'trino_schema': request.form.get('trino_schema'),
-                'hive_metastore_uri': request.form.get('hive_metastore_uri'),
-                'delimiter': request.form.get('delimiter'),
-                'has_header': request.form.get('has_header', 'true'),
-                'quote_char': request.form.get('quote_char'),
-                'batch_size': request.form.get('batch_size'),
-                'mode': request.form.get('mode', 'append'),
-                'sample_size': request.form.get('sample_size'),
-                'verbose': request.form.get('verbose', 'false'),
-                'partition_spec': request.form.getlist('partition_spec')  # Get all partition specs as a list
+                
+                # Connection parameters - fall back to profile settings
+                'trino_host': request.form.get('trino_host') or conn_settings.get('trino_host'),
+                'trino_port': request.form.get('trino_port') or str(conn_settings.get('trino_port', '')),
+                'trino_user': request.form.get('trino_user') or conn_settings.get('trino_user'),
+                'trino_password': request.form.get('trino_password') or conn_settings.get('trino_password'),
+                'trino_catalog': request.form.get('trino_catalog') or conn_settings.get('trino_catalog'),
+                'trino_schema': request.form.get('trino_schema') or conn_settings.get('trino_schema'),
+                'hive_metastore_uri': request.form.get('hive_metastore_uri') or conn_settings.get('hive_metastore_uri'),
+                
+                # CSV settings - fall back to profile settings
+                'delimiter': request.form.get('delimiter') or default_settings.get('delimiter', ','),
+                'has_header': request.form.get('has_header') or str(default_settings.get('has_header', True)).lower(),
+                'quote_char': request.form.get('quote_char') or default_settings.get('quote_char', '"'),
+                'batch_size': request.form.get('batch_size') or str(default_settings.get('batch_size', '')),
+                'mode': request.form.get('mode') or default_settings.get('mode', 'append'),
+                'sample_size': request.form.get('sample_size') or str(default_settings.get('sample_size', '')),
+                'verbose': request.form.get('verbose') or str(default_settings.get('verbose', False)).lower(),
             }
+            
+            # Handle partitioning
+            partition_spec = request.form.getlist('partition_spec')
+            
+            # If no partitioning specified in form but profile has partitioning enabled,
+            # use profile partition specs
+            if (not partition_spec or len(partition_spec) == 0) and profile_data:
+                if profile_data.get('partitioning', {}).get('enabled', False):
+                    partition_spec = profile_data.get('partitioning', {}).get('specs', [])
+                    logger.info(f"Using partition specs from profile: {partition_spec}")
+            
+            params['partition_spec'] = partition_spec
             
             # Create job
             conversion_jobs[job_id] = {

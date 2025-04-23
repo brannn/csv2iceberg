@@ -38,23 +38,42 @@ def cli():
     pass
 
 @cli.command()
+@click.option('--config-file', '-c', help='Path to configuration file')
+def config(config_file):
+    """
+    Manage configuration profiles.
+    
+    This command launches the configuration management utility.
+    """
+    # Import here to avoid circular imports
+    import config_cli
+    import sys
+    
+    # Prepare arguments
+    args = ['--config-file', config_file] if config_file else []
+    
+    # Launch config CLI with the arguments
+    sys.argv = [sys.argv[0]] + args
+    config_cli.cli()
+
+@cli.command()
 @click.option('--csv-file', '-f', required=True, help='Path to the CSV file')
-@click.option('--delimiter', '-d', default=',', help='CSV delimiter (default: comma)')
-@click.option('--has-header', '-h', is_flag=True, default=True, help='CSV has header row (default: True)')
-@click.option('--quote-char', '-q', default='"', help='CSV quote character (default: double quote)')
-@click.option('--batch-size', '-b', default=10000, type=int, help='Batch size for processing (default: 10000)')
+@click.option('--delimiter', '-d', default=None, help='CSV delimiter (default: comma)')
+@click.option('--has-header', '-h', is_flag=True, default=None, help='CSV has header row (default: True)')
+@click.option('--quote-char', '-q', default=None, help='CSV quote character (default: double quote)')
+@click.option('--batch-size', '-b', default=None, type=int, help='Batch size for processing (default: 10000)')
 @click.option('--table-name', '-t', required=True, help='Target Iceberg table name (format: catalog.schema.table)')
-@click.option('--trino-host', required=True, help='Trino host')
-@click.option('--trino-port', default=8080, help='Trino port (default: 8080)')
-@click.option('--trino-user', default=os.getenv('USER', 'admin'), help='Trino user')
+@click.option('--trino-host', help='Trino host')
+@click.option('--trino-port', default=None, type=int, help='Trino port (default: 8080)')
+@click.option('--trino-user', default=None, help='Trino user')
 @click.option('--trino-password', help='Trino password (if authentication is enabled)')
-@click.option('--trino-catalog', required=True, help='Trino catalog')
-@click.option('--trino-schema', required=True, help='Trino schema')
-@click.option('--hive-metastore-uri', required=True, help='Hive metastore Thrift URI')
-@click.option('--mode', '-m', type=click.Choice(['append', 'overwrite']), default='append', 
+@click.option('--trino-catalog', help='Trino catalog')
+@click.option('--trino-schema', help='Trino schema')
+@click.option('--hive-metastore-uri', help='Hive metastore Thrift URI')
+@click.option('--mode', '-m', type=click.Choice(['append', 'overwrite']), default=None, 
               help='Write mode (append or overwrite, default: append)')
-@click.option('--sample-size', default=1000, help='Number of rows to sample for schema inference (default: 1000)')
-@click.option('--verbose', '-v', is_flag=True, help='Enable verbose logging')
+@click.option('--sample-size', default=None, type=int, help='Number of rows to sample for schema inference (default: 1000)')
+@click.option('--verbose', '-v', is_flag=True, default=None, help='Enable verbose logging')
 @click.option(
     '--partition-by', 
     multiple=True, 
@@ -73,17 +92,96 @@ def cli():
     is_flag=True, 
     help='Analyze CSV data and suggest appropriate partition strategies.'
 )
+@click.option(
+    '--config-file', '-c',
+    help='Path to configuration file'
+)
+@click.option(
+    '--profile', '-p',
+    help='Use a specific configuration profile'
+)
 def convert(csv_file: str, delimiter: str, has_header: bool, quote_char: str, batch_size: int,
             table_name: str, trino_host: str, trino_port: int, trino_user: str, trino_password: Optional[str],
             trino_catalog: str, trino_schema: str, hive_metastore_uri: str,
             mode: str, sample_size: int, verbose: bool, partition_by: Tuple[str], 
-            list_partition_transforms: bool, suggest_partitioning: bool):
+            list_partition_transforms: bool, suggest_partitioning: bool,
+            config_file: Optional[str] = None, profile: Optional[str] = None):
     """
     Convert a CSV file to an Iceberg table.
     
     This command reads a CSV file, infers its schema, creates an Iceberg table,
     and loads the data into the table using Trino and Hive metastore.
     """
+    # Import config manager only when needed to avoid circular imports
+    from config_manager import ConfigManager
+    
+    # Load configuration if a profile is specified
+    config_values = {}
+    if profile:
+        config_manager = ConfigManager(config_file)
+        
+        if not config_manager.profile_exists(profile):
+            console.print(f"[bold red]Error:[/bold red] Profile '{profile}' not found.")
+            sys.exit(1)
+            
+        profile_data = config_manager.get_profile(profile)
+        logger.info(f"Loaded configuration from profile: {profile}")
+        
+        # Extract connection settings
+        if 'connection' in profile_data:
+            conn = profile_data['connection']
+            config_values.update({
+                'trino_host': conn.get('trino_host'),
+                'trino_port': conn.get('trino_port'),
+                'trino_user': conn.get('trino_user'),
+                'trino_password': conn.get('trino_password'),
+                'trino_catalog': conn.get('trino_catalog'),
+                'trino_schema': conn.get('trino_schema'),
+                'hive_metastore_uri': conn.get('hive_metastore_uri')
+            })
+        
+        # Extract default settings
+        if 'defaults' in profile_data:
+            defaults = profile_data['defaults']
+            config_values.update({
+                'delimiter': defaults.get('delimiter'),
+                'has_header': defaults.get('has_header'),
+                'quote_char': defaults.get('quote_char'),
+                'batch_size': defaults.get('batch_size'),
+                'mode': defaults.get('mode'),
+                'sample_size': defaults.get('sample_size'),
+                'verbose': defaults.get('verbose')
+            })
+        
+        # Extract partitioning settings
+        if 'partitioning' in profile_data and profile_data['partitioning'].get('enabled', False):
+            # Only use profile partitioning if no command line partitions are specified
+            if not partition_by:
+                partition_by = tuple(profile_data['partitioning'].get('specs', []))
+                logger.info(f"Using partitioning from profile: {partition_by}")
+    
+    # Command line arguments take precedence over profile settings
+    # Apply configuration values where CLI arguments are None
+    trino_host = trino_host or config_values.get('trino_host', 'localhost')
+    trino_port = trino_port or config_values.get('trino_port', 8080)
+    trino_user = trino_user or config_values.get('trino_user', os.getenv('USER', 'admin'))
+    # Only use config password if no password was provided on command line
+    if trino_password is None and 'trino_password' in config_values:
+        trino_password = config_values['trino_password']
+    trino_catalog = trino_catalog or config_values.get('trino_catalog')
+    trino_schema = trino_schema or config_values.get('trino_schema')
+    hive_metastore_uri = hive_metastore_uri or config_values.get('hive_metastore_uri')
+    delimiter = delimiter or config_values.get('delimiter', ',')
+    has_header = has_header if has_header is not None else config_values.get('has_header', True)
+    quote_char = quote_char or config_values.get('quote_char', '"')
+    batch_size = batch_size or config_values.get('batch_size', 10000)
+    mode = mode or config_values.get('mode', 'append')
+    sample_size = sample_size or config_values.get('sample_size', 1000)
+    # Verbose flag should be True if either CLI flag or config is True
+    if verbose is None:
+        verbose = config_values.get('verbose', False)
+    
+    # Configure logging based on verbose setting
     if verbose:
         logging.getLogger().setLevel(logging.DEBUG)
     

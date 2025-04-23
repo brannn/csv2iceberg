@@ -106,6 +106,23 @@
             <div class="card-body">
                 <form action="{{ url_for('convert') }}" method="post" enctype="multipart/form-data">
                     <div class="mb-3">
+                        <h5>Configuration Profile (Optional)</h5>
+                        <div class="alert alert-info">
+                            Using a profile can pre-fill connection details and default settings. You can still override individual settings as needed.
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="profile" class="form-label">Select Configuration Profile</label>
+                        <select class="form-select" id="profile" name="profile">
+                            <option value="">None (use form values)</option>
+                            {% for profile_name in config_manager.get_profiles() %}
+                                <option value="{{ profile_name }}">{{ profile_name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    
+                    <div class="mb-3">
                         <h5>CSV File</h5>
                         <div class="alert alert-info">
                             <strong>Note:</strong> Maximum file size is 50MB. For larger files, use the command-line interface.
