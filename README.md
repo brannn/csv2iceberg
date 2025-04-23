@@ -129,6 +129,8 @@ python csv_to_iceberg.py convert \
   --table-name hive.default.large_table \
   --trino-host localhost \
   --trino-port 8080 \
+  --trino-user admin \
+  --trino-password your_password \
   --trino-catalog hive \
   --trino-schema default \
   --hive-metastore-uri localhost:9083
@@ -142,3 +144,4 @@ If you encounter issues:
 2. Ensure Trino server and Hive metastore are running
 3. Verify connection parameters (host, port, URI)
 4. Check CSV file format and encoding
+5. For authentication errors, verify Trino username and password are correct
