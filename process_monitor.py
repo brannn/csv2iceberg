@@ -19,11 +19,24 @@ logger = logging.getLogger('process_monitor')
 
 def extract_progress(line):
     """Extract progress percentage from a log line."""
-    # Pattern to match progress lines like: "Progress: 45%" or "[bold blue]Writing data: 45% complete[/bold blue]"
-    pattern = r'(?:Progress:|Writing data:)\s*(\d+)%'
-    match = re.search(pattern, line)
+    # First pattern: Look for standard Progress: lines from logger
+    pattern1 = r'Progress:\s*(\d+)%'
+    match = re.search(pattern1, line)
     if match:
         return int(match.group(1))
+    
+    # Second pattern: Look for Rich console fancy formatted lines
+    pattern2 = r'Writing data:\s*(\d+)%\s*complete'
+    match = re.search(pattern2, line)
+    if match:
+        return int(match.group(1))
+    
+    # Third pattern: Look for any numbers followed by % (more liberal matching)
+    pattern3 = r'(\d+)%'
+    match = re.search(pattern3, line)
+    if match:
+        return int(match.group(1))
+    
     return None
 
 def report_progress(job_id, percent, api_url):
@@ -61,6 +74,11 @@ def monitor_process(job_id, cmd, api_url="http://localhost:5000"):
         
         # Track progress
         last_progress = 0
+        last_report_time = time.time()
+        progress_reported = False
+        
+        # Report initial progress (0%)
+        report_progress(job_id, 0, api_url)
         
         # Process each line of output
         for line in iter(process.stdout.readline, ''):
@@ -69,18 +87,37 @@ def monitor_process(job_id, cmd, api_url="http://localhost:5000"):
             
             # Check for progress information
             progress = extract_progress(line)
-            if progress is not None and progress > last_progress:
-                last_progress = progress
-                report_progress(job_id, progress, api_url)
+            if progress is not None:
+                # Only report if progress has increased or if it's been more than 5 seconds since last report
+                current_time = time.time()
+                time_since_last_report = current_time - last_report_time
+                
+                if progress > last_progress or time_since_last_report > 5:
+                    logger.info(f"Detected progress: {progress}%, reporting to API")
+                    last_progress = progress
+                    last_report_time = current_time
+                    report_progress(job_id, progress, api_url)
+                    progress_reported = True
                 
         # Wait for the process to complete
         process.stdout.close()
         return_code = process.wait()
         
-        # Report 100% progress if completed successfully
-        if return_code == 0 and last_progress < 100:
-            report_progress(job_id, 100, api_url)
-            
+        # Report 100% progress if completed successfully or at least 90% progress was reached
+        if return_code == 0:
+            if last_progress < 100:
+                logger.info("Process completed successfully, reporting 100% completion")
+                report_progress(job_id, 100, api_url)
+            else:
+                logger.info("Process already reported 100% completion")
+        else:
+            # For errors, make sure we report up to the progress we reached
+            if progress_reported:
+                logger.info(f"Process failed but reporting last progress: {last_progress}%")
+                # We don't reset progress on failure
+            else:
+                logger.info("Process failed without reporting any progress")
+        
         logger.info(f"Process completed with return code {return_code}")
         return return_code
         
