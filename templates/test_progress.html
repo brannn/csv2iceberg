@@ -13,31 +13,81 @@
             max-width: 800px;
             margin: 0 auto;
         }
+        .progress {
+            height: 30px;  /* Larger progress bar */
+            margin-bottom: 20px;
+        }
+        .progress-bar {
+            font-size: 16px; /* Larger font for readability */
+            font-weight: 500;
+        }
+        .job-id-badge {
+            font-family: monospace;
+            padding: 5px 10px;
+            border-radius: 4px;
+            background-color: rgba(255,255,255,0.1);
+        }
+        .phase-indicator {
+            font-weight: bold;
+            margin-left: 10px;
+        }
+        .ttl-info {
+            font-size: 0.85rem;
+            color: #aaa;
+            margin-top: 5px;
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>Progress Test</h1>
-        <p>Job ID: {{ job_id }}</p>
-        <p>Status: <span id="status-text">{{ job.status }}</span></p>
-        <p>Current Progress: <span id="progress-percent">{{ job.progress|default(0) }}%</span> - <span id="progress-phase">Initializing...</span></p>
-        
-        <div class="progress mb-3" style="height: 25px;">
-            <div id="progress-bar" class="progress-bar progress-bar-striped progress-bar-animated bg-success fs-6" 
-                 role="progressbar" 
-                 aria-valuenow="{{ job.progress|default(0) }}" 
-                 aria-valuemin="0" 
-                 aria-valuemax="100" 
-                 style="width: {{ job.progress|default(0) }}%">
-                <span id="progress-percent-inner">{{ job.progress|default(0) }}%</span>
+        <h1 class="mb-4">Progress Test</h1>
+        <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <div>
+                    <span class="fw-bold">Job:</span> 
+                    <span class="job-id-badge">{{ job_id }}</span>
+                </div>
+                <span class="badge bg-{{ 'success' if job.status == 'completed' else ('warning' if job.status == 'running' else 'danger') }}">
+                    <span id="status-text">{{ job.status|upper }}</span>
+                </span>
             </div>
-        </div>
-        
-        <div class="mt-3">
-            <a href="/" class="btn btn-secondary">Home</a>
-            <a href="/jobs" class="btn btn-primary">All Jobs</a>
-            <a href="{{ url_for('job_status', job_id=job_id) }}" class="btn btn-info">View Full Details</a>
-            <button id="refresh-btn" class="btn btn-warning">Refresh</button>
+            <div class="card-body">
+                <h5 class="card-title">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            Progress: <span id="progress-percent">{{ job.progress|default(0) }}%</span>
+                            <span id="progress-phase" class="phase-indicator">Initializing...</span>
+                        </div>
+                        <span id="elapsed-time" class="badge bg-secondary">00:00</span>
+                    </div>
+                </h5>
+                
+                <div class="progress">
+                    <div id="progress-bar" 
+                         class="progress-bar progress-bar-striped progress-bar-animated {{ 'bg-info' if job.status == 'running' else ('bg-success' if job.status == 'completed' else 'bg-danger') }}" 
+                         role="progressbar" 
+                         aria-valuenow="{{ job.progress|default(0) }}" 
+                         aria-valuemin="0" 
+                         aria-valuemax="100" 
+                         style="width: {{ job.progress|default(0) }}%">
+                        <span id="progress-percent-inner">{{ job.progress|default(0) }}%</span>
+                    </div>
+                </div>
+                
+                <div class="ttl-info">
+                    <p>This job will remain in memory for 
+                        <strong>{{ (job_ttl / 60)|int }} minutes</strong> 
+                        after completion to allow for debugging.
+                    </p>
+                </div>
+                
+                <div class="d-flex gap-2 mt-3">
+                    <a href="/" class="btn btn-secondary">Home</a>
+                    <a href="/jobs" class="btn btn-primary">All Jobs</a>
+                    <a href="{{ url_for('job_status', job_id=job_id) }}" class="btn btn-info">View Full Details</a>
+                    <button id="refresh-btn" class="btn btn-warning">Refresh</button>
+                </div>
+            </div>
         </div>
         
         <div class="card mt-3">
@@ -88,18 +138,24 @@
                     progressPercentInner.textContent = progress + '%';
                     statusText.textContent = data.status;
                     
-                    // Update the progress phase text
+                    // Update the progress phase text using the server-provided phase if available
                     if (progressPhase) {
-                        if (progress < 25) {
-                            progressPhase.textContent = 'Initializing...';
-                        } else if (progress < 50) {
-                            progressPhase.textContent = 'Analyzing Schema';
-                        } else if (progress < 75) {
-                            progressPhase.textContent = 'Processing & Writing Data';
-                        } else if (progress < 100) {
-                            progressPhase.textContent = 'Finalizing';
+                        if (data.phase) {
+                            // Use the server-provided phase information
+                            progressPhase.textContent = data.phase;
                         } else {
-                            progressPhase.textContent = 'Complete!';
+                            // Fallback to client-side phase determination
+                            if (progress < 25) {
+                                progressPhase.textContent = 'Initializing...';
+                            } else if (progress < 50) {
+                                progressPhase.textContent = 'Analyzing Schema';
+                            } else if (progress < 75) {
+                                progressPhase.textContent = 'Processing & Writing Data';
+                            } else if (progress < 100) {
+                                progressPhase.textContent = 'Finalizing';
+                            } else {
+                                progressPhase.textContent = 'Complete!';
+                            }
                         }
                     }
                     
@@ -189,9 +245,34 @@
                 });
         }
         
+        // Timer to track elapsed time
+        let startTime = new Date();
+        let timerInterval;
+        
+        function updateElapsedTime() {
+            const elapsedTimeElement = document.getElementById('elapsed-time');
+            if (elapsedTimeElement) {
+                const now = new Date();
+                const elapsedMs = now - startTime;
+                
+                // Format as minutes:seconds
+                const minutes = Math.floor(elapsedMs / 60000);
+                const seconds = Math.floor((elapsedMs % 60000) / 1000);
+                
+                elapsedTimeElement.textContent = 
+                    `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+            }
+        }
+        
         // Start progress updates when page loads
         document.addEventListener('DOMContentLoaded', function() {
             log('Page loaded, starting progress updates');
+            
+            // Start the timer
+            startTime = new Date();
+            timerInterval = setInterval(updateElapsedTime, 1000);
+            
+            // Start progress updates
             updateProgress();
             
             // Add refresh button handler

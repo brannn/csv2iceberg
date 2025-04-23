@@ -28,8 +28,13 @@ app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB limit
 
 # Constants for job management
-MAX_JOBS_TO_KEEP = 50  # Maximum number of jobs to keep in memory
-COMPLETED_JOB_TTL = 120  # Seconds to keep completed jobs in memory (2 minutes)
+MAX_JOBS_TO_KEEP = 50      # Maximum number of jobs to keep in memory
+COMPLETED_JOB_TTL = 1800   # Seconds to keep completed jobs in memory (30 minutes)
+TEST_JOB_TTL = 3600        # Seconds to keep test jobs in memory (1 hour)
+
+# Dictionary to track which jobs are being actively viewed
+# This prevents cleanup of jobs that are currently being viewed
+active_job_views = {}
 
 # Utility function for job duration
 def format_duration(start_time, end_time):
@@ -266,12 +271,16 @@ def job_status(job_id):
         flash('Job not found or has been archived', 'info')
         return redirect(url_for('jobs'))
     
+    # Mark this job as being actively viewed (to prevent premature cleanup)
+    mark_job_as_active(job_id)
+    
     now = datetime.datetime.now()
     return render_template('job_status.html', 
                           job=conversion_jobs[job_id], 
                           job_id=job_id,
                           now=now,
-                          format_duration=format_duration)
+                          format_duration=format_duration,
+                          job_ttl=COMPLETED_JOB_TTL if not (job_id.startswith('test_') or job_id.startswith('running_test_')) else TEST_JOB_TTL)
 
 @app.route('/test/progress/<job_id>')
 def test_progress(job_id):
@@ -283,10 +292,16 @@ def test_progress(job_id):
         flash('Job not found or has been archived', 'info')
         return redirect(url_for('jobs'))
     
+    # Mark this job as being actively viewed (to prevent premature cleanup)
+    mark_job_as_active(job_id)
+    
+    # Determine appropriate TTL based on job type
+    ttl = TEST_JOB_TTL if job_id.startswith('test_') or job_id.startswith('running_test_') else COMPLETED_JOB_TTL
+    
     return render_template('test_progress.html',
                           job=conversion_jobs[job_id],
                           job_id=job_id,
-                          job_ttl=COMPLETED_JOB_TTL)
+                          job_ttl=ttl)
 
 @app.route('/jobs')
 def jobs():
@@ -307,6 +322,18 @@ def update_job_progress(job_id, percent):
     else:
         return jsonify({"status": "error", "message": "Job not found"}), 404
 
+# Function to mark a job as being actively viewed
+def mark_job_as_active(job_id):
+    """
+    Mark a job as being actively viewed to prevent cleanup.
+    
+    Args:
+        job_id: The ID of the job to mark as active
+    """
+    if job_id in conversion_jobs:
+        active_job_views[job_id] = datetime.datetime.now()
+        logger.debug(f"Marked job {job_id} as active (being viewed)")
+
 # Function to clean up old jobs (both completed/failed and to prevent memory leaks)
 def cleanup_old_jobs():
     """
@@ -315,30 +342,54 @@ def cleanup_old_jobs():
     This function:
     1. Keeps a maximum number of jobs in memory
     2. Removes completed/failed jobs after their TTL expires
+    3. Respects active job views to prevent removing jobs that are being viewed
+    4. Uses a longer TTL for test jobs
     """
     try:
         current_time = datetime.datetime.now()
         jobs_to_remove = []
         
-        # First, mark jobs that have been completed and exceeded their TTL
+        # First, clean up the active job views list (remove old entries)
+        active_view_ids = list(active_job_views.keys())
+        for job_id in active_view_ids:
+            # Remove active view entry if older than 5 minutes
+            if (current_time - active_job_views[job_id]).total_seconds() > 300:  # 5 minutes
+                del active_job_views[job_id]
+                logger.debug(f"Removed stale active view for job {job_id}")
+        
+        # Mark jobs that have been completed and exceeded their TTL
         for job_id, job in conversion_jobs.items():
+            # Skip jobs that are being actively viewed
+            if job_id in active_job_views:
+                logger.debug(f"Skipping cleanup for job {job_id} (actively viewed)")
+                continue
+                
             if job['status'] in ['completed', 'failed']:
                 if 'completed_at' in job and job['completed_at']:
+                    # Use a longer TTL for test jobs
+                    ttl = TEST_JOB_TTL if job_id.startswith('test_') or job_id.startswith('running_test_') else COMPLETED_JOB_TTL
                     time_since_completion = (current_time - job['completed_at']).total_seconds()
-                    if time_since_completion > COMPLETED_JOB_TTL:
+                    
+                    if time_since_completion > ttl:
                         jobs_to_remove.append(job_id)
         
         # Remove marked jobs
         for job_id in jobs_to_remove:
+            if job_id in active_job_views:
+                logger.debug(f"Not removing job {job_id} despite TTL expiry (actively viewed)")
+                continue
+                
             logger.debug(f"Removing completed job {job_id} (TTL expired)")
             if job_id in conversion_jobs:
                 del conversion_jobs[job_id]
         
         # If still too many jobs, remove oldest completed ones first, then oldest of any type
         if len(conversion_jobs) > MAX_JOBS_TO_KEEP:
-            # Sort completed jobs by completion time
+            # Sort completed jobs by completion time, but exclude actively viewed jobs
             completed_jobs = [(job_id, job) for job_id, job in conversion_jobs.items() 
-                             if job['status'] in ['completed', 'failed'] and 'completed_at' in job]
+                             if job['status'] in ['completed', 'failed'] 
+                             and 'completed_at' in job
+                             and job_id not in active_job_views]
             completed_jobs.sort(key=lambda x: x[1]['completed_at'])
             
             # Remove oldest completed jobs first
@@ -346,13 +397,14 @@ def cleanup_old_jobs():
                 if len(conversion_jobs) <= MAX_JOBS_TO_KEEP:
                     break
                 logger.debug(f"Removing oldest completed job {job_id} (max jobs limit)")
-                if job_id in conversion_jobs:
+                if job_id in conversion_jobs and job_id not in active_job_views:
                     del conversion_jobs[job_id]
             
-            # If still too many, remove oldest by start time
+            # If still too many, remove oldest by start time (excluding active ones)
             if len(conversion_jobs) > MAX_JOBS_TO_KEEP:
-                # Get oldest jobs by start time
-                all_jobs = [(job_id, job) for job_id, job in conversion_jobs.items()]
+                # Get oldest jobs by start time (excluding active ones)
+                all_jobs = [(job_id, job) for job_id, job in conversion_jobs.items()
+                           if job_id not in active_job_views]
                 all_jobs.sort(key=lambda x: x[1]['started_at'])
                 
                 # Remove oldest jobs
@@ -360,7 +412,7 @@ def cleanup_old_jobs():
                     if len(conversion_jobs) <= MAX_JOBS_TO_KEEP:
                         break
                     logger.debug(f"Removing oldest job {job_id} (max jobs limit)")
-                    if job_id in conversion_jobs:
+                    if job_id in conversion_jobs and job_id not in active_job_views:
                         del conversion_jobs[job_id]
     
     except Exception as e:
@@ -369,14 +421,20 @@ def cleanup_old_jobs():
 @app.route('/job/<job_id>/progress', methods=['GET'])
 def get_job_progress(job_id):
     """Get the current progress of a conversion job."""
-    # Clean up old jobs first
+    # Clean up old jobs first (except the one being viewed)
     cleanup_old_jobs()
     
     if job_id in conversion_jobs:
+        # Mark this job as being actively viewed during progress polling
+        mark_job_as_active(job_id)
+        
         return jsonify({
             "job_id": job_id, 
             "progress": conversion_jobs[job_id].get('progress', 0),
-            "status": conversion_jobs[job_id]['status']
+            "status": conversion_jobs[job_id]['status'],
+            # Include extra info for UI improvements
+            "phase": _get_progress_phase(conversion_jobs[job_id].get('progress', 0)),
+            "test_job": job_id.startswith('test_') or job_id.startswith('running_test_')
         })
     else:
         # Include an archive flag to help frontend understand why the job is missing
@@ -386,6 +444,23 @@ def get_job_progress(job_id):
             "message": "Job not found",
             "possible_reason": "The job was completed and archived" if was_archived else "Unknown job ID"
         }), 404
+        
+def _get_progress_phase(progress):
+    """Get a descriptive phase label for a progress percentage."""
+    if progress < 5:
+        return "Initializing"
+    elif progress < 20:
+        return "Connecting to Services"
+    elif progress < 40:
+        return "Analyzing Data"
+    elif progress < 50:
+        return "Creating Table"
+    elif progress < 90:
+        return "Transferring Data"
+    elif progress < 100:
+        return "Finalizing"
+    else:
+        return "Completed"
 
 @app.route('/diagnostics')
 def diagnostics():
