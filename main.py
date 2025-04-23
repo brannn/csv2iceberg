@@ -100,6 +100,7 @@ def index():
 @app.route('/convert', methods=['GET', 'POST'])
 def convert():
     """Handle CSV to Iceberg conversion."""
+    logger.info(f"Convert route called with method: {request.method}")
     if request.method == 'GET':
         # Get profile name from query parameter if provided
         profile_name = request.args.get('profile')
@@ -125,8 +126,13 @@ def convert():
                                partition_settings=partition_settings)
     
     if request.method == 'POST':
+        logger.info("POST request received in convert route")
+        logger.info(f"Form data: {request.form}")
+        logger.info(f"Files: {request.files}")
+        
         # Check if a file was uploaded
         if 'csv_file' not in request.files:
+            logger.error("No file part in request")
             flash('No file part', 'error')
             return redirect(request.url)
             
@@ -146,6 +152,7 @@ def convert():
             
             # Create job ID
             job_id = os.urandom(8).hex()
+            logger.info(f"Created job ID: {job_id}")
             
             # Check if using a profile
             profile_name = request.form.get('profile')
@@ -212,6 +219,7 @@ def convert():
             }
             
             # Start conversion thread
+            logger.info(f"Starting conversion thread for job {job_id}")
             thread = threading.Thread(
                 target=run_conversion,
                 args=(job_id, file_path, params)
@@ -220,7 +228,9 @@ def convert():
             thread.start()
             
             # Redirect to job status page
-            return redirect(url_for('job_status', job_id=job_id))
+            redirect_url = url_for('job_status', job_id=job_id)
+            logger.info(f"Redirecting to job status page: {redirect_url}")
+            return redirect(redirect_url)
             
         else:
             flash('File type not allowed', 'error')
@@ -229,10 +239,17 @@ def convert():
 @app.route('/job/<job_id>')
 def job_status(job_id):
     """Show the status of a conversion job."""
+    logger.info(f"Job status route called for job ID: {job_id}")
+    
+    # Check if job exists
     if job_id not in conversion_jobs:
+        logger.error(f"Job ID {job_id} not found in conversion_jobs dictionary")
+        logger.info(f"Available jobs: {list(conversion_jobs.keys())}")
         flash('Job not found', 'error')
         return redirect(url_for('index'))
-        
+    
+    # Job exists, render the template with job details
+    logger.info(f"Rendering job status for job ID: {job_id}, status: {conversion_jobs[job_id]['status']}")
     return render_template('job_status.html', job=conversion_jobs[job_id], job_id=job_id)
 
 @app.route('/jobs')
