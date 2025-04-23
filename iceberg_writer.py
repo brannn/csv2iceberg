@@ -142,14 +142,15 @@ class IcebergWriter:
         Write a batch of data to an Iceberg table using Trino.
         
         Args:
-            batch_data: Batch of data to write (can be Pandas DataFrame from compatibility layer)
+            batch_data: Batch of data to write (Polars DataFrame or any compatible DataFrame with columns attribute)
             mode: Write mode (append or overwrite)
         """
         logger.info(f"Writing batch to {self.catalog}.{self.schema}.{self.table} in {mode} mode")
         
         try:
             # Get column names from the dataframe
-            columns = batch_data.columns.tolist()
+            # Works with both Polars and Pandas DataFrames
+            columns = batch_data.columns.tolist() if hasattr(batch_data.columns, 'tolist') else list(batch_data.columns)
             quoted_columns = [f'"{col}"' for col in columns]
             column_names_str = ", ".join(quoted_columns)
             
