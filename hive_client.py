@@ -46,6 +46,7 @@ class HiveMetastoreClient:
             logger.info(f"Connecting to Hive metastore at {self.host}:{self.port}")
             
             # Test if the host/port is available
+            import socket  # Import socket explicitly to avoid scoping issues
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.settimeout(3)
             result = sock.connect_ex((self.host, self.port))
@@ -57,8 +58,8 @@ class HiveMetastoreClient:
                 raise ConnectionError(error_msg)
             
             # Create the Thrift client
-            socket = TSocket.TSocket(self.host, self.port)
-            transport = TTransport.TBufferedTransport(socket)
+            thrift_socket = TSocket.TSocket(self.host, self.port)
+            transport = TTransport.TBufferedTransport(thrift_socket)
             protocol = TBinaryProtocol.TBinaryProtocol(transport)
             client = ThriftHiveMetastore.Client(protocol)
             transport.open()
