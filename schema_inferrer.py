@@ -2,6 +2,7 @@
 Schema inference module for CSV to Iceberg conversion
 """
 import os
+import sys
 import logging
 import time
 import datetime
@@ -139,7 +140,12 @@ def infer_schema_from_csv(
             # Create fields with string type as fallback
             fields = []
             for i, name in enumerate(column_names):
-                fields.append(Field(i+1, name, StringType(), ""))
+                # Check if we're using actual PyIceberg NestedField or our custom Field
+                if 'NestedField' in globals() or 'NestedField' in locals():
+                    # Using the real PyIceberg NestedField which requires a 'required' parameter
+                    fields.append(NestedField(i+1, True, name, StringType(), ""))
+                else:
+                    fields.append(Field(i+1, name, StringType(), ""))
                 
             schema = Schema(*fields)
             logger.info(f"Created fallback schema with {len(fields)} string columns")
@@ -153,7 +159,13 @@ def infer_schema_from_csv(
         for i, (name, dtype) in enumerate(zip(column_names, df.dtypes)):
             field_id = i + 1
             iceberg_type = _pandas_dtype_to_iceberg_type(dtype, df[name])
-            fields.append(Field(field_id, name, iceberg_type, ""))
+            
+            # Check if we're using actual PyIceberg NestedField or our custom Field
+            if 'pyiceberg.schema' in sys.modules:
+                # Using the real PyIceberg NestedField which requires a 'required' parameter
+                fields.append(NestedField(field_id, True, name, iceberg_type, ""))
+            else:
+                fields.append(Field(field_id, name, iceberg_type, ""))
         
         schema = Schema(*fields)
         logger.info(f"Inferred schema with {len(fields)} columns")
