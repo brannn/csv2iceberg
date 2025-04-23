@@ -75,6 +75,7 @@ Options:
   --trino-user TEXT              Trino user
   --trino-password TEXT          Trino password (if authentication is enabled)
   --http-scheme [http|https]     HTTP scheme for Trino connection (default: http)
+  --trino-role TEXT              Trino role for authorization (default: sysadmin)
   --trino-catalog TEXT           Trino catalog  [required]
   --trino-schema TEXT            Trino schema  [required]
   --hive-metastore-uri TEXT      Hive metastore Thrift URI  [required]
@@ -171,3 +172,34 @@ If you receive a "Cannot use authentication with HTTP" error:
    - Configure Trino to accept HTTP authentication (not recommended for production)
 
 Note: For security reasons, passwords should only be transmitted over HTTPS connections.
+
+### Role-Based Authorization
+
+This tool supports Trino's role-based authorization system using the `--trino-role` parameter. The role is passed to Trino in the `X-Trino-Role` header in the format `system=ROLE{roleName}`.
+
+```bash
+python csv_to_iceberg.py convert \
+  --csv-file data.csv \
+  --table-name hive.default.my_table \
+  --trino-host trino-server.example.com \
+  --trino-user admin \
+  --trino-password your_password \
+  --http-scheme https \
+  --trino-role my_role \   # Specifies a custom role
+  --trino-catalog hive \
+  --trino-schema default \
+  --hive-metastore-uri metastore.example.com:9083
+```
+
+By default, the tool uses the `sysadmin` role if no role is specified. You may need to adjust this based on your Trino server's security configuration:
+
+1. **Common role options**:
+   - `sysadmin`: Administrative role with high privileges (default)
+   - `user`: Standard user role with more restricted permissions
+   - Custom roles configured in your Trino deployment
+
+2. **Using different roles**:
+   - For table creation and modification: A role with DDL permissions is required
+   - For read-only operations: A role with SELECT permissions may be sufficient
+
+Contact your Trino administrator if you're unsure which role to use for your specific scenario.
