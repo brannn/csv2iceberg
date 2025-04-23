@@ -152,6 +152,18 @@
                         <div class="form-text">Number of rows to sample for schema inference.</div>
                     </div>
                     
+                    <div class="mb-3">
+                        <label for="include_columns" class="form-label">Include Columns</label>
+                        <input type="text" class="form-control" id="include_columns" name="include_columns">
+                        <div class="form-text">Optional comma-separated list of column names to include (overrides exclude columns).</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="exclude_columns" class="form-label">Exclude Columns</label>
+                        <input type="text" class="form-control" id="exclude_columns" name="exclude_columns">
+                        <div class="form-text">Optional comma-separated list of column names to exclude.</div>
+                    </div>
+                    
                     <div class="mb-3 form-check">
                         <input type="checkbox" class="form-check-input" id="verbose" name="verbose" value="true">
                         <label class="form-check-label" for="verbose">Verbose Logging</label>
@@ -345,6 +357,40 @@ document.addEventListener('DOMContentLoaded', function() {
             alert('Warning: Password authentication requires HTTPS. Your password will be ignored when using HTTP.');
         }
     });
+    
+    // Column filtering validation
+    const includeColumnsField = document.getElementById('include_columns');
+    const excludeColumnsField = document.getElementById('exclude_columns');
+    
+    // Disable exclude columns when include columns are specified
+    includeColumnsField.addEventListener('input', function() {
+        if (includeColumnsField.value.trim().length > 0) {
+            excludeColumnsField.disabled = true;
+            excludeColumnsField.placeholder = 'Include columns override exclude columns';
+        } else {
+            excludeColumnsField.disabled = false;
+            excludeColumnsField.placeholder = '';
+        }
+    });
+    
+    // Format column lists on blur
+    function formatColumnList(inputField) {
+        inputField.addEventListener('blur', function() {
+            if (inputField.value.trim()) {
+                // Split, trim, and rejoin with consistent comma spacing
+                const columns = inputField.value.split(',')
+                    .map(col => col.trim())
+                    .filter(col => col.length > 0);
+                
+                if (columns.length > 0) {
+                    inputField.value = columns.join(', ');
+                }
+            }
+        });
+    }
+    
+    formatColumnList(includeColumnsField);
+    formatColumnList(excludeColumnsField);
     
     // Set up form submission handler
     form.addEventListener('submit', function(e) {
