@@ -14,6 +14,7 @@ This tool allows data engineers to easily convert CSV data files to Apache Icebe
 - Progress tracking with percentage complete
 - Schema validation and compatibility checks
 - Configurable CSV parsing options (delimiter, quote character, headers)
+- Optional table partitioning with various transforms (year, month, day, hour, bucket, truncate)
 
 ## Requirements
 
@@ -82,6 +83,10 @@ Options:
   --sample-size INTEGER          Number of rows to sample for schema inference
                                  (default: 1000)
   -v, --verbose                  Enable verbose logging
+  -p, --partition-by TEXT        Partition specification (can be used multiple times)
+                                 Examples: "year(date)", "month(ts)", "bucket(id, 16)"
+  --list-partition-transforms    List available partition transforms and exit
+  --suggest-partitioning         Suggest potential partitioning strategies based on schema
   --help                         Show this message and exit.
 ```
 
@@ -134,6 +139,38 @@ python csv_to_iceberg.py convert \
   --trino-catalog hive \
   --trino-schema default \
   --hive-metastore-uri localhost:9083
+```
+
+### Create a partitioned table
+
+```bash
+python csv_to_iceberg.py convert \
+  --csv-file events.csv \
+  --table-name hive.default.events_table \
+  --trino-host localhost \
+  --trino-port 8080 \
+  --trino-user admin \
+  --trino-password your_password \
+  --trino-catalog hive \
+  --trino-schema default \
+  --hive-metastore-uri localhost:9083 \
+  --partition-by "year(event_date)" \
+  --partition-by "month(event_date)" \
+  --partition-by "bucket(user_id, 16)"
+```
+
+### Get partition transform suggestions
+
+```bash
+python csv_to_iceberg.py convert \
+  --csv-file data.csv \
+  --table-name hive.default.my_table \
+  --trino-host localhost \
+  --trino-port 8080 \
+  --trino-catalog hive \
+  --trino-schema default \
+  --hive-metastore-uri localhost:9083 \
+  --suggest-partitioning
 ```
 
 ## Troubleshooting

@@ -65,6 +65,11 @@ def run_conversion(job_id, file_path, params):
             cmd.extend(["--sample-size", params['sample_size']])
         if params.get('verbose') == 'true':
             cmd.append('--verbose')
+        
+        # Add partition specifications if provided
+        if params.get('partition_spec') and len(params['partition_spec']) > 0:
+            for spec in params['partition_spec']:
+                cmd.extend(["--partition-by", spec])
             
         # Run the conversion process
         logger.info(f"Starting conversion job {job_id} with command: {' '.join(cmd)}")
@@ -130,7 +135,8 @@ def convert():
                 'batch_size': request.form.get('batch_size'),
                 'mode': request.form.get('mode', 'append'),
                 'sample_size': request.form.get('sample_size'),
-                'verbose': request.form.get('verbose', 'false')
+                'verbose': request.form.get('verbose', 'false'),
+                'partition_spec': request.form.getlist('partition_spec')  # Get all partition specs as a list
             }
             
             # Create job

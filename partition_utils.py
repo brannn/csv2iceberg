@@ -154,12 +154,12 @@ def suggest_partition_columns(
     
     return suggestions
 
-def get_transform_description(transform: str) -> str:
+def get_transform_description(transform: Optional[str]) -> str:
     """
     Get a human-readable description of a partition transform.
     
     Args:
-        transform: Transform name
+        transform: Transform name or None for identity partitioning
         
     Returns:
         Description of the transform
