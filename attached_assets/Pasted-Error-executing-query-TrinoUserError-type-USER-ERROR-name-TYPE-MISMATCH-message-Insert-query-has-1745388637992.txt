@@ -1,0 +1,113 @@
+Error executing query: TrinoUserError(type=USER_ERROR, name=TYPE_MISMATCH, message="Insert query has mismatched column types: Table: [varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, double, double, timestamp(6), timestamp(6), varchar, varchar, double, double, varchar, varchar, varchar, varchar, double, varchar, varchar, varchar], Query: [varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar]", query_id=20250423_060737_38505_uvvzu)
+Traceback (most recent call last):
+  File "/Users/bhuey/Work/csv2iceberg/iceberg_writer.py", line 195, in _write_batch_to_iceberg
+    cursor.execute(insert_sql, params)
+  File "/Users/bhuey/Work/csv2iceberg/lib/python3.9/site-packages/trino/dbapi.py", line 609, in execute
+    self._iterator = iter(self._query.execute())
+  File "/Users/bhuey/Work/csv2iceberg/lib/python3.9/site-packages/trino/client.py", line 900, in execute
+    self._result.rows += self.fetch()
+  File "/Users/bhuey/Work/csv2iceberg/lib/python3.9/site-packages/trino/client.py", line 920, in fetch
+    status = self._request.process(response)
+  File "/Users/bhuey/Work/csv2iceberg/lib/python3.9/site-packages/trino/client.py", line 689, in process
+    raise self._process_error(response["error"], response.get("id"))
+trino.exceptions.TrinoUserError: TrinoUserError(type=USER_ERROR, name=INVALID_PARAMETER_USAGE, message="Incorrect number of parameters: expected 24 but found 2400", query_id=20250423_060737_38504_uvvzu)
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/bhuey/Work/csv2iceberg/trino_client.py", line 149, in execute_query
+    cursor.execute(query)
+  File "/Users/bhuey/Work/csv2iceberg/lib/python3.9/site-packages/trino/dbapi.py", line 614, in execute
+    self._iterator = iter(self._query.execute())
+  File "/Users/bhuey/Work/csv2iceberg/lib/python3.9/site-packages/trino/client.py", line 900, in execute
+    self._result.rows += self.fetch()
+  File "/Users/bhuey/Work/csv2iceberg/lib/python3.9/site-packages/trino/client.py", line 920, in fetch
+    status = self._request.process(response)
+  File "/Users/bhuey/Work/csv2iceberg/lib/python3.9/site-packages/trino/client.py", line 689, in process
+    raise self._process_error(response["error"], response.get("id"))
+trino.exceptions.TrinoUserError: TrinoUserError(type=USER_ERROR, name=TYPE_MISMATCH, message="Insert query has mismatched column types: Table: [varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, double, double, timestamp(6), timestamp(6), varchar, varchar, double, double, varchar, varchar, varchar, varchar, double, varchar, varchar, varchar], Query: [varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar]", query_id=20250423_060737_38505_uvvzu)
+Error in _write_batch_to_iceberg: Failed to execute query: TrinoUserError(type=USER_ERROR, name=TYPE_MISMATCH, message="Insert query has mismatched column types: Table: [varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, double, double, timestamp(6), timestamp(6), varchar, varchar, double, double, varchar, varchar, varchar, varchar, double, varchar, varchar, varchar], Query: [varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar]", query_id=20250423_060737_38505_uvvzu)
+Traceback (most recent call last):
+  File "/Users/bhuey/Work/csv2iceberg/iceberg_writer.py", line 195, in _write_batch_to_iceberg
+    cursor.execute(insert_sql, params)
+  File "/Users/bhuey/Work/csv2iceberg/lib/python3.9/site-packages/trino/dbapi.py", line 609, in execute
+    self._iterator = iter(self._query.execute())
+  File "/Users/bhuey/Work/csv2iceberg/lib/python3.9/site-packages/trino/client.py", line 900, in execute
+    self._result.rows += self.fetch()
+  File "/Users/bhuey/Work/csv2iceberg/lib/python3.9/site-packages/trino/client.py", line 920, in fetch
+    status = self._request.process(response)
+  File "/Users/bhuey/Work/csv2iceberg/lib/python3.9/site-packages/trino/client.py", line 689, in process
+    raise self._process_error(response["error"], response.get("id"))
+trino.exceptions.TrinoUserError: TrinoUserError(type=USER_ERROR, name=INVALID_PARAMETER_USAGE, message="Incorrect number of parameters: expected 24 but found 2400", query_id=20250423_060737_38504_uvvzu)
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/bhuey/Work/csv2iceberg/trino_client.py", line 149, in execute_query
+    cursor.execute(query)
+  File "/Users/bhuey/Work/csv2iceberg/lib/python3.9/site-packages/trino/dbapi.py", line 614, in execute
+    self._iterator = iter(self._query.execute())
+  File "/Users/bhuey/Work/csv2iceberg/lib/python3.9/site-packages/trino/client.py", line 900, in execute
+    self._result.rows += self.fetch()
+  File "/Users/bhuey/Work/csv2iceberg/lib/python3.9/site-packages/trino/client.py", line 920, in fetch
+    status = self._request.process(response)
+  File "/Users/bhuey/Work/csv2iceberg/lib/python3.9/site-packages/trino/client.py", line 689, in process
+    raise self._process_error(response["error"], response.get("id"))
+trino.exceptions.TrinoUserError: TrinoUserError(type=USER_ERROR, name=TYPE_MISMATCH, message="Insert query has mismatched column types: Table: [varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, double, double, timestamp(6), timestamp(6), varchar, varchar, double, double, varchar, varchar, varchar, varchar, double, varchar, varchar, varchar], Query: [varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar]", query_id=20250423_060737_38505_uvvzu)
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/bhuey/Work/csv2iceberg/iceberg_writer.py", line 242, in _write_batch_to_iceberg
+    self.trino_client.execute_query(direct_insert_sql)
+  File "/Users/bhuey/Work/csv2iceberg/trino_client.py", line 163, in execute_query
+    raise RuntimeError(f"Failed to execute query: {str(e)}")
+RuntimeError: Failed to execute query: TrinoUserError(type=USER_ERROR, name=TYPE_MISMATCH, message="Insert query has mismatched column types: Table: [varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, double, double, timestamp(6), timestamp(6), varchar, varchar, double, double, varchar, varchar, varchar, varchar, double, varchar, varchar, varchar], Query: [varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar]", query_id=20250423_060737_38505_uvvzu)
+Error writing CSV to Iceberg: Failed to write batch to Iceberg: Failed to execute query: TrinoUserError(type=USER_ERROR, name=TYPE_MISMATCH, message="Insert query has mismatched column types: Table: [varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, double, double, timestamp(6), timestamp(6), varchar, varchar, double, double, varchar, varchar, varchar, varchar, double, varchar, varchar, varchar], Query: [varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar]", query_id=20250423_060737_38505_uvvzu)
+Traceback (most recent call last):
+  File "/Users/bhuey/Work/csv2iceberg/iceberg_writer.py", line 195, in _write_batch_to_iceberg
+    cursor.execute(insert_sql, params)
+  File "/Users/bhuey/Work/csv2iceberg/lib/python3.9/site-packages/trino/dbapi.py", line 609, in execute
+    self._iterator = iter(self._query.execute())
+  File "/Users/bhuey/Work/csv2iceberg/lib/python3.9/site-packages/trino/client.py", line 900, in execute
+    self._result.rows += self.fetch()
+  File "/Users/bhuey/Work/csv2iceberg/lib/python3.9/site-packages/trino/client.py", line 920, in fetch
+    status = self._request.process(response)
+  File "/Users/bhuey/Work/csv2iceberg/lib/python3.9/site-packages/trino/client.py", line 689, in process
+    raise self._process_error(response["error"], response.get("id"))
+trino.exceptions.TrinoUserError: TrinoUserError(type=USER_ERROR, name=INVALID_PARAMETER_USAGE, message="Incorrect number of parameters: expected 24 but found 2400", query_id=20250423_060737_38504_uvvzu)
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/bhuey/Work/csv2iceberg/trino_client.py", line 149, in execute_query
+    cursor.execute(query)
+  File "/Users/bhuey/Work/csv2iceberg/lib/python3.9/site-packages/trino/dbapi.py", line 614, in execute
+    self._iterator = iter(self._query.execute())
+  File "/Users/bhuey/Work/csv2iceberg/lib/python3.9/site-packages/trino/client.py", line 900, in execute
+    self._result.rows += self.fetch()
+  File "/Users/bhuey/Work/csv2iceberg/lib/python3.9/site-packages/trino/client.py", line 920, in fetch
+    status = self._request.process(response)
+  File "/Users/bhuey/Work/csv2iceberg/lib/python3.9/site-packages/trino/client.py", line 689, in process
+    raise self._process_error(response["error"], response.get("id"))
+trino.exceptions.TrinoUserError: TrinoUserError(type=USER_ERROR, name=TYPE_MISMATCH, message="Insert query has mismatched column types: Table: [varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, double, double, timestamp(6), timestamp(6), varchar, varchar, double, double, varchar, varchar, varchar, varchar, double, varchar, varchar, varchar], Query: [varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar]", query_id=20250423_060737_38505_uvvzu)
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/bhuey/Work/csv2iceberg/iceberg_writer.py", line 242, in _write_batch_to_iceberg
+    self.trino_client.execute_query(direct_insert_sql)
+  File "/Users/bhuey/Work/csv2iceberg/trino_client.py", line 163, in execute_query
+    raise RuntimeError(f"Failed to execute query: {str(e)}")
+RuntimeError: Failed to execute query: TrinoUserError(type=USER_ERROR, name=TYPE_MISMATCH, message="Insert query has mismatched column types: Table: [varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, double, double, timestamp(6), timestamp(6), varchar, varchar, double, double, varchar, varchar, varchar, varchar, double, varchar, varchar, varchar], Query: [varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar]", query_id=20250423_060737_38505_uvvzu)
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/bhuey/Work/csv2iceberg/iceberg_writer.py", line 105, in write_csv_to_iceberg
+    self._write_batch_to_iceberg(chunk, current_mode)
+  File "/Users/bhuey/Work/csv2iceberg/iceberg_writer.py", line 248, in _write_batch_to_iceberg
+    raise RuntimeError(f"Failed to write batch to Iceberg: {str(e)}")
+RuntimeError: Failed to write batch to Iceberg: Failed to execute query: TrinoUserError(type=USER_ERROR, name=TYPE_MISMATCH, message="Insert query has mismatched column types: Table: [varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, double, double, timestamp(6), timestamp(6), varchar, varchar, double, double, varchar, varchar, varchar, varchar, double, varchar, varchar, varchar], Query: [varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar]", query_id=20250423_060737_38505_uvvzu)
+
+
