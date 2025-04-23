@@ -48,6 +48,10 @@ class IcebergWriter:
         self.schema = schema
         self.table = table
         
+        # Cache for target table schema to avoid repeated queries
+        self._cached_target_schema = None
+        self._cached_column_types_dict = None
+        
     def write_csv_to_iceberg(
         self,
         csv_file: str,
@@ -55,7 +59,7 @@ class IcebergWriter:
         delimiter: str = ',',
         has_header: bool = True,
         quote_char: str = '"',
-        batch_size: int = 10000,
+        batch_size: int = 20000,  # Increased default batch size from 10000 to 20000
         progress_callback: Optional[Callable[[int], None]] = None
     ) -> None:
         """
@@ -160,17 +164,53 @@ class IcebergWriter:
                 self.trino_client.execute_query(truncate_sql)
                 logger.debug(f"Truncated target table {self.table} for overwrite mode")
             
-            # Get the target table schema
+            # Get the target table schema (using cache if available)
             try:
-                target_schema = self.trino_client.get_table_schema(self.catalog, self.schema, self.table)
-                column_types_dict = {col_name: col_type for col_name, col_type in target_schema}
-                logger.debug(f"Retrieved target schema with types: {column_types_dict}")
+                # Check if schema is already cached
+                if self._cached_target_schema is None:
+                    logger.info(f"Fetching and caching schema for {self.catalog}.{self.schema}.{self.table}")
+                    self._cached_target_schema = self.trino_client.get_table_schema(self.catalog, self.schema, self.table)
+                    
+                    # Create dictionary only if we got valid schema results
+                    if self._cached_target_schema is not None and len(self._cached_target_schema) > 0:
+                        self._cached_column_types_dict = {col_name: col_type for col_name, col_type in self._cached_target_schema}
+                        logger.debug(f"Cached schema with types: {self._cached_column_types_dict}")
+                    else:
+                        # If schema retrieval returned empty result, initialize empty dict
+                        self._cached_column_types_dict = {}
+                        logger.warning(f"Retrieved empty schema for {self.catalog}.{self.schema}.{self.table}")
+                else:
+                    logger.debug(f"Using cached schema for {self.catalog}.{self.schema}.{self.table}")
+                
+                # Use the cached schema information, ensuring they're never None
+                target_schema = self._cached_target_schema if self._cached_target_schema is not None else []
+                column_types_dict = self._cached_column_types_dict if self._cached_column_types_dict is not None else {}
             except Exception as e:
                 logger.error(f"Failed to retrieve target schema: {str(e)}")
-                raise RuntimeError(f"Cannot write to table without schema information: {str(e)}")
+                
+                # Initialize empty schema info to allow fallback to dynamic type inference
+                target_schema = []
+                column_types_dict = {}
+                logger.warning(f"Will use dynamic schema inference due to schema retrieval error")
             
-            # Keep batches small to avoid query size limits
-            max_rows_per_insert = 50  # Reduce to max 50 rows per INSERT
+            # Dynamically adjust the batch size based on the column count and data complexity
+            column_count = len(columns)
+            
+            # Base max rows per query on column count - fewer rows for wide tables
+            if column_count > 50:
+                # Very wide tables - use small batches
+                max_rows_per_insert = 25
+            elif column_count > 30:
+                # Wide tables
+                max_rows_per_insert = 50
+            elif column_count > 15:
+                # Medium width tables
+                max_rows_per_insert = 100
+            else:
+                # Narrow tables
+                max_rows_per_insert = 200
+                
+            logger.info(f"Dynamically adjusted max rows per INSERT: {max_rows_per_insert} (for {column_count} columns)")
             
             # Process in smaller batches
             for i in range(0, len(batch_data), max_rows_per_insert):
@@ -186,7 +226,7 @@ class IcebergWriter:
                 column_types_by_position = []
                 
                 # First, try to get column types by position from the schema metadata
-                if len(column_types_dict) > 0:
+                if column_types_dict and len(column_types_dict) > 0:
                     # Use the schema data but be more robust with column name matching
                     # Handle quoted column names and case sensitivity
                     for col in columns:
