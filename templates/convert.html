@@ -144,8 +144,7 @@
                     </div>
                     
                     <div class="d-flex">
-                        <button type="submit" class="btn btn-primary me-2" id="submitBtn">Convert</button>
-                        <button type="submit" class="btn btn-secondary" id="analyzeBtn" name="analyze_schema" value="true">Analyze Schema Only</button>
+                        <button type="submit" class="btn btn-primary" id="submitBtn">Convert</button>
                     </div>
                 </form>
             </div>
@@ -239,31 +238,9 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
     
-    // Set up a single form submission handler that handles both normal submit and analyze schema
+    // Set up form submission handler
     form.addEventListener('submit', function(e) {
         console.log('Form submission initiated');
-        
-        // Check if this is the analyze schema button
-        const isAnalyzeSchema = e.submitter && e.submitter.id === 'analyzeBtn';
-        
-        if (isAnalyzeSchema) {
-            console.log('Analyze schema button clicked');
-            // For the analyze button, we only need to validate the CSV file
-            const csvFile = document.getElementById('csv_file');
-            if (!csvFile.value) {
-                csvFile.classList.add('is-invalid');
-                e.preventDefault();
-                return false;
-            }
-            
-            // Show loading indicator
-            const analyzeBtn = e.submitter;
-            analyzeBtn.disabled = true;
-            analyzeBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Analyzing...';
-            
-            // Allow form submission
-            return true;
-        }
         
         // Validate required fields
         const requiredFields = form.querySelectorAll('[required]');

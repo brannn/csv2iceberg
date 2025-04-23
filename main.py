@@ -221,10 +221,7 @@ def convert():
         logger.debug(f"POST request data: {request.form}")
         logger.debug(f"POST request files: {request.files.keys()}")
         
-        # Check if this is the analyze button (for schema preview)
-        if 'analyze_schema' in request.form:
-            return handle_schema_analyze()
-            
+
         # Check if a file was uploaded
         if 'csv_file' not in request.files:
             logger.error("No file part in the request")
@@ -340,45 +337,7 @@ def convert():
     logger.debug("Rendering convert.html template")
     return render_template('convert.html')
 
-def handle_schema_analyze():
-    """Handle schema analysis when the analyze button is clicked."""
-    logger.debug("Handling schema analysis request")
-    
-    if 'csv_file' not in request.files:
-        flash('No file part', 'error')
-        return redirect(url_for('convert'))
-        
-    file = request.files['csv_file']
-    if file.filename == '':
-        flash('No selected file', 'error')
-        return redirect(url_for('convert'))
-        
-    if file and allowed_file(file.filename):
-        # Save the file
-        filename = secure_filename(file.filename)
-        file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-        file.save(file_path)
-        
-        # Extract CSV parameters
-        csv_params = {
-            'delimiter': request.form.get('delimiter', ','),
-            'has_header': request.form.get('has_header', 'true') == 'true',
-            'quote_char': request.form.get('quote_char', '"'),
-            'sample_size': int(request.form.get('sample_size', '1000'))
-        }
-        
-        # Store in session for the schema preview page
-        session['schema_preview'] = {
-            'file_path': file_path,
-            'filename': filename,
-            'csv_params': csv_params,
-            'timestamp': datetime.datetime.now().isoformat()
-        }
-        
-        return redirect(url_for('schema_preview'))
-    else:
-        flash('File type not allowed', 'error')
-        return redirect(url_for('convert'))
+# The handle_schema_analyze function has been removed as it's no longer needed
 
 @app.route('/schema/preview', methods=['GET'])
 def schema_preview():
