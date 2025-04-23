@@ -4,6 +4,117 @@
 
 {% block scripts %}
 <script>
+    // Handle profile selection change
+    document.addEventListener('DOMContentLoaded', function() {
+        const profileSelect = document.getElementById('profile');
+        if (profileSelect) {
+            profileSelect.addEventListener('change', function() {
+                if (this.value) {
+                    // Redirect to the same page with profile parameter
+                    window.location.href = "{{ url_for('convert') }}?profile=" + this.value;
+                }
+            });
+        }
+        
+        // If there's a profile selected, highlight it in the UI
+        {% if profile_name %}
+        document.querySelector('.profile-notice').style.display = 'block';
+        
+        // Load partition specs from profile if available
+        {% if partition_settings.get('enabled', False) and partition_settings.get('specs', []) %}
+        const partitionSpecs = {{ partition_settings.get('specs', [])|tojson }};
+        if (partitionSpecs && partitionSpecs.length > 0) {
+            // Initialize the first partition spec
+            const firstSpec = partitionSpecs[0];
+            if (firstSpec) {
+                const specParts = parsePartitionSpec(firstSpec);
+                if (specParts) {
+                    const columnInput = document.querySelector('input[name="partition_column"]');
+                    const transformSelect = document.querySelector('select[name="partition_transform"]');
+                    const paramInput = document.querySelector('input[name="partition_param"]');
+                    
+                    columnInput.value = specParts.column;
+                    if (specParts.transform) {
+                        transformSelect.value = specParts.transform;
+                        if (specParts.transform === 'bucket' || specParts.transform === 'truncate') {
+                            if (specParts.param) {
+                                paramInput.value = specParts.param;
+                                transformSelect.closest('.row').querySelector('.transform-param').style.display = 'block';
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // Add additional partition specs
+            const partitionSpecsContainer = document.getElementById('partition-specs');
+            for (let i = 1; i < partitionSpecs.length; i++) {
+                const specParts = parsePartitionSpec(partitionSpecs[i]);
+                if (specParts) {
+                    const newSpec = partitionSpecsContainer.querySelector('.partition-spec').cloneNode(true);
+                    
+                    const columnInput = newSpec.querySelector('input[name="partition_column"]');
+                    const transformSelect = newSpec.querySelector('select[name="partition_transform"]');
+                    const paramInput = newSpec.querySelector('input[name="partition_param"]');
+                    
+                    columnInput.value = specParts.column;
+                    if (specParts.transform) {
+                        transformSelect.value = specParts.transform;
+                        if (specParts.transform === 'bucket' || specParts.transform === 'truncate') {
+                            if (specParts.param) {
+                                paramInput.value = specParts.param;
+                                transformSelect.closest('.row').querySelector('.transform-param').style.display = 'block';
+                            }
+                        }
+                    }
+                    
+                    // Add event listener to new select
+                    transformSelect.addEventListener('change', function() {
+                        const paramDiv = this.closest('.row').querySelector('.transform-param');
+                        if (this.value === 'bucket' || this.value === 'truncate') {
+                            paramDiv.style.display = 'block';
+                        } else {
+                            paramDiv.style.display = 'none';
+                        }
+                    });
+                    
+                    partitionSpecsContainer.appendChild(newSpec);
+                }
+            }
+            
+            // Show the remove button if needed
+            if (partitionSpecs.length > 1) {
+                document.getElementById('remove-partition').style.display = 'inline-block';
+            }
+        }
+        {% endif %}
+        {% endif %}
+    });
+    
+    // Helper function to parse partition spec string like "year(date)" or "bucket(id, 16)"
+    function parsePartitionSpec(spec) {
+        if (!spec) return null;
+        
+        // For simple column names (identity transforms)
+        if (!spec.includes('(')) {
+            return { column: spec, transform: null, param: null };
+        }
+        
+        // For transforms like year(date) or bucket(id, 16)
+        const regex = /^([a-z]+)\(([^,\s]+)(?:,\s*(\d+))?\)$/;
+        const match = spec.match(regex);
+        
+        if (match) {
+            return {
+                transform: match[1],
+                column: match[2],
+                param: match[3] ? parseInt(match[3]) : null
+            };
+        }
+        
+        return null;
+    }
+    
     // Show/hide parameter input based on transform selection
     document.addEventListener('DOMContentLoaded', function() {
         // Handle initial transform selects
@@ -110,14 +221,18 @@
                         <div class="alert alert-info">
                             Using a profile can pre-fill connection details and default settings. You can still override individual settings as needed.
                         </div>
+                        
+                        <div class="alert alert-success profile-notice" style="display: none;">
+                            <strong>Profile loaded:</strong> Values below are pre-filled from the selected profile. You can modify them as needed.
+                        </div>
                     </div>
                     
                     <div class="mb-3">
                         <label for="profile" class="form-label">Select Configuration Profile</label>
                         <select class="form-select" id="profile" name="profile">
                             <option value="">None (use form values)</option>
-                            {% for profile_name in config_manager.get_profiles() %}
-                                <option value="{{ profile_name }}">{{ profile_name }}</option>
+                            {% for profile in config_manager.get_profiles() %}
+                                <option value="{{ profile }}" {% if profile == profile_name %}selected{% endif %}>{{ profile }}</option>
                             {% endfor %}
                         </select>
                     </div>
@@ -136,24 +251,24 @@
                     
                     <div class="mb-3">
                         <label for="delimiter" class="form-label">Delimiter</label>
-                        <input type="text" class="form-control" id="delimiter" name="delimiter" value="," maxlength="1">
+                        <input type="text" class="form-control" id="delimiter" name="delimiter" value="{{ default_settings.get('delimiter', ',') }}" maxlength="1">
                         <div class="form-text">Default: comma (,)</div>
                     </div>
                     
                     <div class="mb-3 form-check">
-                        <input type="checkbox" class="form-check-input" id="has_header" name="has_header" value="true" checked>
+                        <input type="checkbox" class="form-check-input" id="has_header" name="has_header" value="true" {% if default_settings.get('has_header', True) %}checked{% endif %}>
                         <label class="form-check-label" for="has_header">CSV has header row</label>
                     </div>
                     
                     <div class="mb-3">
                         <label for="quote_char" class="form-label">Quote Character</label>
-                        <input type="text" class="form-control" id="quote_char" name="quote_char" value="&quot;" maxlength="1">
+                        <input type="text" class="form-control" id="quote_char" name="quote_char" value="{{ default_settings.get('quote_char', '\"') }}" maxlength="1">
                         <div class="form-text">Default: double quote (")</div>
                     </div>
                     
                     <div class="mb-3">
                         <label for="batch_size" class="form-label">Batch Size</label>
-                        <input type="number" class="form-control" id="batch_size" name="batch_size" value="10000" min="1">
+                        <input type="number" class="form-control" id="batch_size" name="batch_size" value="{{ default_settings.get('batch_size', 10000) }}" min="1">
                         <div class="form-text">Number of rows to process in each batch.</div>
                     </div>
                     
@@ -163,33 +278,33 @@
                     
                     <div class="mb-3">
                         <label for="trino_host" class="form-label">Trino Host</label>
-                        <input type="text" class="form-control" id="trino_host" name="trino_host" value="localhost" required>
+                        <input type="text" class="form-control" id="trino_host" name="trino_host" value="{{ conn_settings.get('trino_host', 'localhost') }}" required>
                     </div>
                     
                     <div class="mb-3">
                         <label for="trino_port" class="form-label">Trino Port</label>
-                        <input type="number" class="form-control" id="trino_port" name="trino_port" value="8080" required>
+                        <input type="number" class="form-control" id="trino_port" name="trino_port" value="{{ conn_settings.get('trino_port', 8080) }}" required>
                     </div>
                     
                     <div class="mb-3">
                         <label for="trino_user" class="form-label">Trino User</label>
-                        <input type="text" class="form-control" id="trino_user" name="trino_user" value="admin">
+                        <input type="text" class="form-control" id="trino_user" name="trino_user" value="{{ conn_settings.get('trino_user', 'admin') }}">
                     </div>
                     
                     <div class="mb-3">
                         <label for="trino_password" class="form-label">Trino Password</label>
-                        <input type="password" class="form-control" id="trino_password" name="trino_password">
-                        <div class="form-text">Leave empty if authentication is not enabled</div>
+                        <input type="password" class="form-control" id="trino_password" name="trino_password" {% if conn_settings.get('trino_password') %}value="●●●●●●●●"{% endif %}>
+                        <div class="form-text">{% if conn_settings.get('trino_password') %}Password will be used from profile unless you change it{% else %}Leave empty if authentication is not enabled{% endif %}</div>
                     </div>
                     
                     <div class="mb-3">
                         <label for="trino_catalog" class="form-label">Trino Catalog</label>
-                        <input type="text" class="form-control" id="trino_catalog" name="trino_catalog" value="hive" required>
+                        <input type="text" class="form-control" id="trino_catalog" name="trino_catalog" value="{{ conn_settings.get('trino_catalog', 'hive') }}" required>
                     </div>
                     
                     <div class="mb-3">
                         <label for="trino_schema" class="form-label">Trino Schema</label>
-                        <input type="text" class="form-control" id="trino_schema" name="trino_schema" value="default" required>
+                        <input type="text" class="form-control" id="trino_schema" name="trino_schema" value="{{ conn_settings.get('trino_schema', 'default') }}" required>
                     </div>
                     
                     <div class="mb-3">
@@ -198,7 +313,7 @@
                     
                     <div class="mb-3">
                         <label for="hive_metastore_uri" class="form-label">Hive Metastore URI</label>
-                        <input type="text" class="form-control" id="hive_metastore_uri" name="hive_metastore_uri" value="localhost:9083" required>
+                        <input type="text" class="form-control" id="hive_metastore_uri" name="hive_metastore_uri" value="{{ conn_settings.get('hive_metastore_uri', 'localhost:9083') }}" required>
                         <div class="form-text">Format: host:port</div>
                     </div>
                     
@@ -215,8 +330,8 @@
                     <div class="mb-3">
                         <label for="mode" class="form-label">Write Mode</label>
                         <select class="form-select" id="mode" name="mode">
-                            <option value="append" selected>Append</option>
-                            <option value="overwrite">Overwrite</option>
+                            <option value="append" {% if default_settings.get('mode', 'append') == 'append' %}selected{% endif %}>Append</option>
+                            <option value="overwrite" {% if default_settings.get('mode') == 'overwrite' %}selected{% endif %}>Overwrite</option>
                         </select>
                     </div>
                     
@@ -226,16 +341,16 @@
                     
                     <div class="mb-3">
                         <label for="sample_size" class="form-label">Schema Sample Size</label>
-                        <input type="number" class="form-control" id="sample_size" name="sample_size" value="1000" min="1">
+                        <input type="number" class="form-control" id="sample_size" name="sample_size" value="{{ default_settings.get('sample_size', 1000) }}" min="1">
                         <div class="form-text">Number of rows to sample for schema inference.</div>
                     </div>
                     
                     <!-- Optional Partitioning -->
                     <div class="mb-3">
-                        <button class="btn btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#partitioningOptions">
+                        <button class="btn btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#partitioningOptions" {% if partition_settings.get('enabled', False) %}aria-expanded="true"{% endif %}>
                             Configure Partitioning (Optional)
                         </button>
-                        <div class="collapse mt-3" id="partitioningOptions">
+                        <div class="collapse mt-3 {% if partition_settings.get('enabled', False) %}show{% endif %}" id="partitioningOptions">
                             <div class="card card-body">
                                 <h5>Table Partitioning</h5>
                                 <p class="text-muted">Partitioning can improve query performance but is entirely optional.</p>
@@ -290,7 +405,7 @@
                     </div>
                     
                     <div class="mb-3 form-check">
-                        <input type="checkbox" class="form-check-input" id="verbose" name="verbose" value="true">
+                        <input type="checkbox" class="form-check-input" id="verbose" name="verbose" value="true" {% if default_settings.get('verbose', False) %}checked{% endif %}>
                         <label class="form-check-label" for="verbose">Verbose Logging</label>
                     </div>
                     

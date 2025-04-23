@@ -100,6 +100,30 @@ def index():
 @app.route('/convert', methods=['GET', 'POST'])
 def convert():
     """Handle CSV to Iceberg conversion."""
+    if request.method == 'GET':
+        # Get profile name from query parameter if provided
+        profile_name = request.args.get('profile')
+        profile_data = {}
+        
+        # If a profile is specified, load its data
+        if profile_name and config_manager.profile_exists(profile_name):
+            profile_data = config_manager.get_profile(profile_name)
+            conn_settings = profile_data.get('connection', {})
+            default_settings = profile_data.get('defaults', {})
+            partition_settings = profile_data.get('partitioning', {})
+        else:
+            conn_settings = {}
+            default_settings = {}
+            partition_settings = {'enabled': False, 'specs': []}
+        
+        # Pass config_manager and profile data to the template
+        return render_template('convert.html', 
+                               config_manager=config_manager,
+                               profile_name=profile_name,
+                               conn_settings=conn_settings,
+                               default_settings=default_settings,
+                               partition_settings=partition_settings)
+    
     if request.method == 'POST':
         # Check if a file was uploaded
         if 'csv_file' not in request.files:
@@ -201,9 +225,6 @@ def convert():
         else:
             flash('File type not allowed', 'error')
             return redirect(request.url)
-            
-    # GET request - show conversion form
-    return render_template('convert.html')
 
 @app.route('/job/<job_id>')
 def job_status(job_id):
