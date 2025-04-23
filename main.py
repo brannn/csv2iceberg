@@ -477,9 +477,34 @@ def diagnostics():
     """Diagnostic endpoint to verify server operation."""
     logger.info("Diagnostics endpoint called")
     try:
+        # Count jobs by status
+        status_counts = {}
+        for job in conversion_jobs.values():
+            status = job.get('status', 'unknown')
+            status_counts[status] = status_counts.get(status, 0) + 1
+            
+        # Count test jobs
+        test_job_count = sum(1 for job_id in conversion_jobs if 
+                            job_id.startswith('test_') or job_id.startswith('running_test_'))
+            
+        # Get active views info
+        active_views_info = {
+            'count': len(active_job_views),
+            'jobs': [{'job_id': job_id, 'last_viewed': active_job_views[job_id].isoformat()} 
+                    for job_id in active_job_views]
+        }
+        
         data = {
             "status": "ok",
             "jobs_count": len(conversion_jobs),
+            "jobs_by_status": status_counts,
+            "test_job_count": test_job_count,
+            "active_views": active_views_info,
+            "ttl_settings": {
+                "regular_job_ttl_minutes": COMPLETED_JOB_TTL / 60,
+                "test_job_ttl_minutes": TEST_JOB_TTL / 60,
+                "max_jobs_to_keep": MAX_JOBS_TO_KEEP
+            },
             "timestamp": datetime.datetime.now().isoformat(),
             "upload_folder": UPLOAD_FOLDER,
             "template_folder": app.template_folder
