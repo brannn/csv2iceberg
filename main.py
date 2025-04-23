@@ -67,8 +67,13 @@ def allowed_file(filename):
 def run_conversion(job_id, file_path, params):
     """Run the CSV to Iceberg conversion as a background task."""
     try:
-        # Build command from parameters
-        cmd = [
+        # Get server URL from current environment
+        server_host = os.environ.get('HOST', 'localhost')
+        server_port = os.environ.get('PORT', '5000')
+        server_url = f"http://{server_host}:{server_port}"
+        
+        # Build conversion command
+        conversion_cmd = [
             "python", "csv_to_iceberg.py", "convert",
             "--csv-file", file_path,
             "--table-name", params['table_name'],
@@ -81,31 +86,39 @@ def run_conversion(job_id, file_path, params):
         
         # Add Trino authentication if provided
         if params.get('trino_user'):
-            cmd.extend(["--trino-user", params['trino_user']])
+            conversion_cmd.extend(["--trino-user", params['trino_user']])
         if params.get('trino_password'):
-            cmd.extend(["--trino-password", params['trino_password']])
+            conversion_cmd.extend(["--trino-password", params['trino_password']])
         if params.get('http_scheme'):
-            cmd.extend(["--http-scheme", params['http_scheme']])
+            conversion_cmd.extend(["--http-scheme", params['http_scheme']])
         if params.get('trino_role'):
-            cmd.extend(["--trino-role", params['trino_role']])
+            conversion_cmd.extend(["--trino-role", params['trino_role']])
         
         # Add optional parameters
         if params.get('delimiter'):
-            cmd.extend(["--delimiter", params['delimiter']])
+            conversion_cmd.extend(["--delimiter", params['delimiter']])
         if params.get('has_header') == 'false':
-            cmd.append('--no-has-header')
+            conversion_cmd.append('--no-has-header')
         if params.get('quote_char'):
-            cmd.extend(["--quote-char", params['quote_char']])
+            conversion_cmd.extend(["--quote-char", params['quote_char']])
         if params.get('batch_size'):
-            cmd.extend(["--batch-size", params['batch_size']])
+            conversion_cmd.extend(["--batch-size", params['batch_size']])
         if params.get('mode'):
-            cmd.extend(["--mode", params['mode']])
+            conversion_cmd.extend(["--mode", params['mode']])
         if params.get('sample_size'):
-            cmd.extend(["--sample-size", params['sample_size']])
+            conversion_cmd.extend(["--sample-size", params['sample_size']])
         if params.get('verbose') == 'true':
-            cmd.append('--verbose')
+            conversion_cmd.append('--verbose')
             
-        # Run the conversion process
+        # Build process monitor command (which will run the conversion command)
+        cmd = [
+            "python", "process_monitor.py",
+            "--job-id", job_id,
+            "--api-url", server_url,
+            "--"  # Separator for the conversion command
+        ] + conversion_cmd
+            
+        # Run the process monitor
         logger.info(f"Starting conversion job {job_id} with command: {' '.join(cmd)}")
         process = subprocess.run(cmd, capture_output=True, text=True)
         
@@ -116,6 +129,9 @@ def run_conversion(job_id, file_path, params):
         conversion_jobs[job_id]['returncode'] = process.returncode
         # Add completion timestamp
         conversion_jobs[job_id]['completed_at'] = datetime.datetime.now()
+        # Set progress to 100% when completed
+        if conversion_jobs[job_id]['status'] == 'completed':
+            conversion_jobs[job_id]['progress'] = 100
         
         logger.info(f"Completed conversion job {job_id} with status: {conversion_jobs[job_id]['status']}")
         
