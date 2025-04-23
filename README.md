@@ -48,6 +48,8 @@ python csv_to_iceberg.py convert \
   --table-name catalog.schema.table \
   --trino-host localhost \
   --trino-port 8080 \
+  --trino-user admin \
+  --trino-password your_password \
   --trino-catalog hive \
   --trino-schema default \
   --hive-metastore-uri localhost:9083
@@ -71,6 +73,7 @@ Options:
   --trino-host TEXT              Trino host  [required]
   --trino-port INTEGER           Trino port (default: 8080)
   --trino-user TEXT              Trino user
+  --trino-password TEXT          Trino password (if authentication is enabled)
   --trino-catalog TEXT           Trino catalog  [required]
   --trino-schema TEXT            Trino schema  [required]
   --hive-metastore-uri TEXT      Hive metastore Thrift URI  [required]
@@ -94,6 +97,8 @@ python csv_to_iceberg.py convert \
   --table-name hive.default.my_table \
   --trino-host localhost \
   --trino-port 8080 \
+  --trino-user admin \
+  --trino-password your_password \
   --trino-catalog hive \
   --trino-schema default \
   --hive-metastore-uri localhost:9083
@@ -107,6 +112,8 @@ python csv_to_iceberg.py convert \
   --table-name hive.default.existing_table \
   --trino-host localhost \
   --trino-port 8080 \
+  --trino-user admin \
+  --trino-password your_password \
   --trino-catalog hive \
   --trino-schema default \
   --hive-metastore-uri localhost:9083 \
