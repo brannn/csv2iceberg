@@ -3,11 +3,13 @@ Iceberg writer module for CSV to Iceberg conversion
 """
 import os
 import logging
-from typing import Dict, List, Any, Optional, Callable
+import time
+from typing import Dict, List, Any, Optional, Callable, Tuple
 import tempfile
 from datetime import datetime
+import pandas as pd
 
-# Import our mock Schema class
+# Import schema components
 from schema_inferrer import Schema
 
 from trino_client import TrinoClient
@@ -74,8 +76,6 @@ class IcebergWriter:
             logger.info(f"Write mode: {mode}")
             
             # Read the CSV in batches
-            import pandas as pd
-            
             chunk_iter = pd.read_csv(
                 csv_file, 
                 delimiter=delimiter, 
@@ -136,7 +136,6 @@ class IcebergWriter:
             column_names_str = ", ".join([f'"{col}"' for col in columns])
             
             # Create temporary table name with timestamp to avoid conflicts
-            import time
             temp_table = f"temp_{self.table}_{int(time.time())}"
             
             # Create a temporary table to hold the batch data

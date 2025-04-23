@@ -74,6 +74,7 @@ Options:
   --trino-port INTEGER           Trino port (default: 8080)
   --trino-user TEXT              Trino user
   --trino-password TEXT          Trino password (if authentication is enabled)
+  --http-scheme [http|https]     HTTP scheme for Trino connection (default: http)
   --trino-catalog TEXT           Trino catalog  [required]
   --trino-schema TEXT            Trino schema  [required]
   --hive-metastore-uri TEXT      Hive metastore Thrift URI  [required]
@@ -145,3 +146,28 @@ If you encounter issues:
 3. Verify connection parameters (host, port, URI)
 4. Check CSV file format and encoding
 5. For authentication errors, verify Trino username and password are correct
+
+### Authentication Issues
+
+If you receive a "Cannot use authentication with HTTP" error:
+
+1. Use HTTPS instead of HTTP when connecting to a Trino server with authentication:
+   ```bash
+   python csv_to_iceberg.py convert \
+     --csv-file data.csv \
+     --table-name hive.default.my_table \
+     --trino-host trino-server.example.com \
+     --trino-port 8443 \
+     --trino-user admin \
+     --trino-password your_password \
+     --http-scheme https \   # Use HTTPS for authentication
+     --trino-catalog hive \
+     --trino-schema default \
+     --hive-metastore-uri metastore.example.com:9083
+   ```
+
+2. If you cannot use HTTPS:
+   - Consider using a Trino server configuration without authentication
+   - Configure Trino to accept HTTP authentication (not recommended for production)
+
+Note: For security reasons, passwords should only be transmitted over HTTPS connections.

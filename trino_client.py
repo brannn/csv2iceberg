@@ -79,19 +79,27 @@ class TrinoClient:
             
             # Create the real Trino connection
             auth = None
-            if self.password:
-                auth = trino.auth.BasicAuthentication(self.user, self.password)
+            conn_args = {
+                'host': self.host,
+                'port': self.port,
+                'user': self.user,
+                'catalog': self.catalog,
+                'schema': self.schema,
+                'http_scheme': self.http_scheme,
+                'verify': False  # For testing purposes, don't verify SSL
+            }
             
-            conn = trino.dbapi.connect(
-                host=self.host,
-                port=self.port,
-                user=self.user,
-                catalog=self.catalog,
-                schema=self.schema,
-                auth=auth,
-                http_scheme=self.http_scheme,
-                verify=False  # For testing purposes, don't verify SSL
-            )
+            # Handle auth correctly based on http_scheme
+            if self.password:
+                if self.http_scheme.lower() == 'https':
+                    # Only use authentication with HTTPS
+                    auth = trino.auth.BasicAuthentication(self.user, self.password)
+                    conn_args['auth'] = auth
+                else:
+                    logger.warning("Password authentication requires HTTPS. Using HTTP without authentication.")
+            
+            # Create connection with appropriate settings            
+            conn = trino.dbapi.connect(**conn_args)
             
             logger.info(f"Successfully connected to Trino at {self.host}:{self.port}")
             return conn
