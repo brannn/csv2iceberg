@@ -105,20 +105,16 @@ class IcebergWriter:
                 batch_end = min(batch_start + batch_size, total_rows)
                 batch_size_actual = batch_end - batch_start
                 
-                # Get the current batch
+                # Get the current batch using Polars lazy evaluation
                 batch = lazy_reader.slice(batch_start, batch_size_actual).collect()
-                
-                # Convert Polars DataFrame to Pandas for compatibility with existing code
-                # We'll gradually move away from this as we refactor more code
-                batch_pd = batch.to_pandas()
                 
                 # For first batch in overwrite mode, we need to use a different approach
                 current_mode = mode if not first_batch or mode != 'overwrite' else 'overwrite'
                 if first_batch:
                     first_batch = False
                 
-                # Write the batch to the Iceberg table
-                self._write_batch_to_iceberg(batch_pd, current_mode)
+                # Write the batch to the Iceberg table directly using Polars DataFrame
+                self._write_batch_to_iceberg(batch, current_mode)
                 
                 # Update progress
                 processed_rows += len(batch)
@@ -146,7 +142,7 @@ class IcebergWriter:
         Write a batch of data to an Iceberg table using Trino.
         
         Args:
-            batch_data: Batch of data to write
+            batch_data: Batch of data to write (can be Pandas DataFrame from compatibility layer)
             mode: Write mode (append or overwrite)
         """
         logger.info(f"Writing batch to {self.catalog}.{self.schema}.{self.table} in {mode} mode")
@@ -158,7 +154,7 @@ class IcebergWriter:
             column_names_str = ", ".join(quoted_columns)
             
             # If running in overwrite mode, truncate the target table first
-            if mode == 'overwrite' and batch_data.shape[0] > 0:
+            if mode == 'overwrite' and len(batch_data) > 0:
                 truncate_sql = f"DELETE FROM {self.catalog}.{self.schema}.{self.table}"
                 self.trino_client.execute_query(truncate_sql)
                 logger.debug(f"Truncated target table {self.table} for overwrite mode")
@@ -172,20 +168,20 @@ class IcebergWriter:
                 logger.error(f"Failed to retrieve target schema: {str(e)}")
                 raise RuntimeError(f"Cannot write to table without schema information: {str(e)}")
             
-            # Skip using temporary tables and PyArrow - directly craft INSERT with explicit CAST
-            max_rows_per_insert = 100  # Keep batches small to avoid query size limits
-            
-            # Make the batch size even smaller to avoid query size limits
-            max_rows_per_insert = min(max_rows_per_insert, 50)  # Reduce to max 50 rows per INSERT
+            # Keep batches small to avoid query size limits
+            max_rows_per_insert = 50  # Reduce to max 50 rows per INSERT
             
             # Process in smaller batches
             for i in range(0, len(batch_data), max_rows_per_insert):
-                batch_slice = batch_data.iloc[i:i+max_rows_per_insert]
+                # Handle both Pandas and Polars dataframes
+                if hasattr(batch_data, 'iloc'):
+                    # Pandas DataFrame
+                    batch_slice = batch_data.iloc[i:i+max_rows_per_insert]
+                else:
+                    # Polars DataFrame
+                    batch_slice = batch_data.slice(i, min(max_rows_per_insert, len(batch_data) - i))
                 
-                # Looking at the error message, we need exact column-by-column type matching
-                # Create a static column index mapping based on the error message
-                # Target schema: [varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, double, double, timestamp(6), timestamp(6), varchar, varchar, double, double, varchar, varchar, varchar, varchar, double, varchar, varchar, varchar]
-                
+                # Determine column types by position
                 column_types_by_position = []
                 
                 # First, try to get column types by position from the schema metadata
@@ -196,12 +192,12 @@ class IcebergWriter:
                 else:
                     # We need to manually map types based on what we know from the error message
                     # This is a fallback approach for when metadata is incomplete
-                    for i, col in enumerate(columns):
-                        if i >= 0 and i <= 7:
+                    for j, col in enumerate(columns):
+                        if j >= 0 and j <= 7:
                             column_types_by_position.append("VARCHAR")
-                        elif i == 8 or i == 9 or i == 14 or i == 15 or i == 20:
+                        elif j == 8 or j == 9 or j == 14 or j == 15 or j == 20:
                             column_types_by_position.append("DOUBLE")
-                        elif i == 10 or i == 11:
+                        elif j == 10 or j == 11:
                             column_types_by_position.append("TIMESTAMP(6)")
                         else:
                             column_types_by_position.append("VARCHAR")
@@ -209,10 +205,26 @@ class IcebergWriter:
                     logger.debug(f"Using fallback column types mapping: {column_types_by_position}")
                 
                 values_list = []
-                for _, row in batch_slice.iterrows():
+                
+                # Handle iterating over rows based on DataFrame type
+                if hasattr(batch_slice, 'iterrows'):
+                    # Pandas DataFrame
+                    row_iterator = batch_slice.iterrows()
+                else:
+                    # Polars DataFrame - convert to dictionary records
+                    row_iterator = [(i, row) for i, row in enumerate(batch_slice.to_dicts())]
+                
+                for _, row in row_iterator:
                     row_values = []
                     for idx, col in enumerate(columns):
-                        val = row[col]
+                        # Get value based on DataFrame type
+                        if hasattr(row, '__getitem__'):
+                            # Dictionary-like row (Polars to_dicts)
+                            val = row[col]
+                        else:
+                            # Pandas Series
+                            val = row[col]
+                            
                         # Get type from our position-based mapping
                         target_type = column_types_by_position[idx] if idx < len(column_types_by_position) else "VARCHAR"
                         
