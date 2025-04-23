@@ -55,11 +55,14 @@ def cli():
               help='Write mode (append or overwrite, default: append)')
 @click.option('--sample-size', default=1000, help='Number of rows to sample for schema inference (default: 1000)')
 @click.option('--custom-schema', help='Path to a JSON file containing a custom schema definition')
+@click.option('--include-columns', help='Comma-separated list of column names to include (overrides exclude-columns)')
+@click.option('--exclude-columns', help='Comma-separated list of column names to exclude')
 @click.option('--verbose', '-v', is_flag=True, help='Enable verbose logging')
 def convert(csv_file: str, delimiter: str, has_header: bool, quote_char: str, batch_size: int,
             table_name: str, trino_host: str, trino_port: int, trino_user: str, trino_password: Optional[str],
             http_scheme: str, trino_role: str, trino_catalog: str, trino_schema: str, hive_metastore_uri: str,
-            use_hive_metastore: bool, mode: str, sample_size: int, custom_schema: Optional[str], verbose: bool):
+            use_hive_metastore: bool, mode: str, sample_size: int, custom_schema: Optional[str], 
+            include_columns: Optional[str], exclude_columns: Optional[str], verbose: bool):
     """
     Convert a CSV file to an Iceberg table.
     
@@ -143,6 +146,18 @@ def convert(csv_file: str, delimiter: str, has_header: bool, quote_char: str, ba
             console.print(f"[bold green]✓[/bold green] Custom schema loaded successfully")
         else:
             # 1. Infer schema from CSV
+            # Parse include/exclude columns lists if provided
+            include_cols = None
+            exclude_cols = None
+            
+            if include_columns:
+                include_cols = [col.strip() for col in include_columns.split(',')]
+                logger.info(f"Including only these columns: {include_cols}")
+                
+            if exclude_columns and not include_cols:  # Include columns takes precedence
+                exclude_cols = [col.strip() for col in exclude_columns.split(',')]
+                logger.info(f"Excluding these columns: {exclude_cols}")
+                
             with console.status("[bold blue]Inferring schema from CSV...[/bold blue]") as status:
                 logger.info(f"Inferring schema from CSV file: {csv_file}")
                 iceberg_schema = infer_schema_from_csv(
@@ -150,7 +165,9 @@ def convert(csv_file: str, delimiter: str, has_header: bool, quote_char: str, ba
                     delimiter=delimiter, 
                     has_header=has_header,
                     quote_char=quote_char,
-                    sample_size=sample_size
+                    sample_size=sample_size,
+                    include_columns=include_cols,
+                    exclude_columns=exclude_cols
                 )
                 logger.debug(f"Inferred schema: {iceberg_schema}")
             console.print(f"[bold green]✓[/bold green] Schema inferred successfully")
@@ -226,6 +243,8 @@ def convert(csv_file: str, delimiter: str, has_header: bool, quote_char: str, ba
             has_header=has_header,
             quote_char=quote_char,
             batch_size=batch_size,
+            include_columns=include_cols,
+            exclude_columns=exclude_cols,
             progress_callback=progress_update
         )
         

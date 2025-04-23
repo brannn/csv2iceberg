@@ -71,6 +71,8 @@ class IcebergWriter:
         has_header: bool = True,
         quote_char: str = '"',
         batch_size: int = 20000,  # Increased default batch size from 10000 to 20000
+        include_columns: Optional[List[str]] = None,
+        exclude_columns: Optional[List[str]] = None,
         progress_callback: Optional[Callable[[int], None]] = None
     ) -> None:
         """
@@ -83,6 +85,8 @@ class IcebergWriter:
             has_header: Whether the CSV has a header row
             quote_char: CSV quote character
             batch_size: Number of rows to process in each batch
+            include_columns: List of column names to include (if None, include all except excluded)
+            exclude_columns: List of column names to exclude (if None, no exclusions)
             progress_callback: Callback function to report progress
         """
         try:
@@ -93,6 +97,12 @@ class IcebergWriter:
             # Process the CSV in batches
             logger.info(f"Processing CSV file in batch mode (batch size: {batch_size})")
             logger.info(f"Write mode: {mode}")
+            
+            # Log column filtering parameters if provided
+            if include_columns:
+                logger.info(f"Including only these columns: {include_columns}")
+            if exclude_columns:
+                logger.info(f"Excluding these columns: {exclude_columns}")
             
             # Use Polars lazy reader for better memory efficiency
             lazy_reader = pl.scan_csv(
@@ -107,7 +117,32 @@ class IcebergWriter:
             )
             
             # Get column names - using slice and collect for compatibility with older Polars versions
-            column_names = lazy_reader.slice(0, 10).collect().columns
+            all_columns = lazy_reader.slice(0, 10).collect().columns
+            
+            # Apply column filtering
+            columns_to_keep = all_columns  # Default to keeping all columns
+            
+            if has_header and (include_columns or exclude_columns):
+                # Determine which columns to keep
+                if include_columns:
+                    columns_to_keep = [col for col in all_columns if col in include_columns]
+                    logger.info(f"After include filtering: keeping {len(columns_to_keep)} of {len(all_columns)} columns")
+                elif exclude_columns:
+                    columns_to_keep = [col for col in all_columns if col not in exclude_columns]
+                    logger.info(f"After exclude filtering: keeping {len(columns_to_keep)} of {len(all_columns)} columns")
+                
+                if len(columns_to_keep) == 0:
+                    # Safety check to avoid empty schema
+                    logger.error("Column filtering resulted in empty column set - using all columns instead")
+                    columns_to_keep = all_columns
+                
+                # Apply column selection to the lazy reader
+                if len(columns_to_keep) < len(all_columns):
+                    lazy_reader = lazy_reader.select(columns_to_keep)
+                    logger.info(f"Selected columns: {columns_to_keep}")
+            
+            # Update column names based on filtering
+            column_names = columns_to_keep
             
             # Track progress
             processed_rows = 0
