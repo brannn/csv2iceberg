@@ -159,87 +159,70 @@ class IcebergWriter:
             # Skip using temporary tables and PyArrow - directly craft INSERT with explicit CAST
             max_rows_per_insert = 100  # Keep batches small to avoid query size limits
             
+            # Make the batch size even smaller to avoid query size limits
+            max_rows_per_insert = min(max_rows_per_insert, 50)  # Reduce to max 50 rows per INSERT
+            
             # Process in smaller batches
             for i in range(0, len(batch_data), max_rows_per_insert):
                 batch_slice = batch_data.iloc[i:i+max_rows_per_insert]
                 
-                # Generate the CAST expressions for each column
-                cast_expressions = []
-                for col in columns:
-                    if col in column_types_dict:
-                        target_type = column_types_dict[col]
-                        cast_expressions.append(f'CAST(? AS {target_type}) AS "{col}"')
-                    else:
-                        cast_expressions.append(f'CAST(? AS VARCHAR) AS "{col}"')
+                # The parameterized query approach doesn't work well with Trino
+                # due to parameter count limitations and type inference issues
+                # Going directly to the fallback approach with explicit VALUES
                 
-                # Create the INSERT statement with explicit casts
-                insert_sql = f"""
-                INSERT INTO {self.catalog}.{self.schema}.{self.table} ({column_names_str})
-                SELECT {', '.join(cast_expressions)}
-                """
-                
-                # Generate parameters for the query
-                params = []
+                values_list = []
                 for _, row in batch_slice.iterrows():
+                    row_values = []
                     for col in columns:
                         val = row[col]
-                        if pd.isna(val):
-                            params.append(None)
-                        else:
-                            params.append(val)
-                
-                # Execute the parameterized query
-                try:
-                    # Create a cursor with parameterized query support
-                    cursor = self.trino_client.connection.cursor()
-                    cursor.execute(insert_sql, params)
-                    self.trino_client.connection.commit()
-                    logger.debug(f"Inserted batch of {len(batch_slice)} rows with parameterized query")
-                except Exception as e:
-                    logger.warning(f"Parameterized query failed: {str(e)}, trying alternative approach")
-                    
-                    # Try direct INSERT instead
-                    values_list = []
-                    for _, row in batch_slice.iterrows():
-                        row_values = []
-                        for col in columns:
-                            val = row[col]
-                            target_type = column_types_dict.get(col, "VARCHAR").upper()
-                            
-                            if pd.isna(val):
-                                row_values.append("NULL")
-                            elif isinstance(val, (int, float)):
-                                if 'DOUBLE' in target_type or 'REAL' in target_type or 'FLOAT' in target_type:
-                                    row_values.append(f"CAST({val} AS {target_type})")
-                                elif 'DECIMAL' in target_type:
-                                    row_values.append(f"CAST({val} AS {target_type})")
-                                elif 'INT' in target_type or 'SMALL' in target_type or 'TINY' in target_type or 'BIG' in target_type:
-                                    row_values.append(f"CAST({int(val)} AS {target_type})")
-                                else:
-                                    row_values.append(f"CAST({val} AS {target_type})")
-                            elif isinstance(val, bool):
-                                bool_val = 'TRUE' if val else 'FALSE'
-                                row_values.append(f"CAST({bool_val} AS {target_type})")
-                            elif isinstance(val, datetime.date) and not isinstance(val, datetime.datetime):
-                                val_str = str(val).replace("'", "''")
-                                row_values.append(f"CAST(DATE '{val_str}' AS {target_type})")
-                            elif isinstance(val, datetime.datetime):
-                                val_str = str(val).replace("'", "''")
-                                row_values.append(f"CAST(TIMESTAMP '{val_str}' AS {target_type})")
-                            else:
-                                val_str = str(val).replace("'", "''")
-                                row_values.append(f"CAST('{val_str}' AS {target_type})")
+                        target_type = column_types_dict.get(col, "VARCHAR").upper()
                         
-                        values_list.append(f"({', '.join(row_values)})")
+                        if pd.isna(val):
+                            row_values.append("NULL")
+                        elif isinstance(val, (int, float)):
+                            # Custom handling based on the error messages
+                            if target_type == 'DOUBLE' or target_type == 'REAL' or target_type == 'FLOAT':
+                                # Directly insert as a double without quotes
+                                row_values.append(str(val))
+                            elif 'TIMESTAMP' in target_type:
+                                # Format as a timestamp string for date-like numbers
+                                row_values.append(f"CAST('{datetime.datetime.fromtimestamp(int(val))}' AS {target_type})")
+                            elif target_type == 'INTEGER' or target_type == 'BIGINT' or target_type == 'SMALLINT' or target_type == 'TINYINT':
+                                # Directly insert as an integer without quotes and cast
+                                row_values.append(str(int(val)))
+                            else:
+                                # Default handling for other numeric types with explicit cast
+                                row_values.append(f"CAST('{val}' AS {target_type})")
+                        elif isinstance(val, bool):
+                            bool_val = 'TRUE' if val else 'FALSE'
+                            row_values.append(f"CAST({bool_val} AS {target_type})")
+                        elif isinstance(val, datetime.date) and not isinstance(val, datetime.datetime):
+                            val_str = str(val).replace("'", "''")
+                            if 'DATE' in target_type:
+                                row_values.append(f"DATE '{val_str}'")
+                            else:
+                                row_values.append(f"CAST('{val_str}' AS {target_type})")
+                        elif isinstance(val, datetime.datetime):
+                            val_str = str(val).replace("'", "''")
+                            if 'TIMESTAMP' in target_type:
+                                # Match the format exactly to the target type
+                                row_values.append(f"TIMESTAMP '{val_str}'")
+                            else:
+                                row_values.append(f"CAST('{val_str}' AS {target_type})")
+                        else:
+                            val_str = str(val).replace("'", "''")
+                            row_values.append(f"CAST('{val_str}' AS {target_type})")
                     
-                    # Direct insertion with VALUES clause and explicit casts
-                    direct_insert_sql = f"""
-                    INSERT INTO {self.catalog}.{self.schema}.{self.table} ({column_names_str})
-                    VALUES {', '.join(values_list)}
-                    """
-                    
-                    logger.debug(f"Trying direct INSERT with {len(values_list)} rows")
-                    self.trino_client.execute_query(direct_insert_sql)
+                    values_list.append(f"({', '.join(row_values)})")
+                
+                # Direct insertion with VALUES clause and explicit casts
+                direct_insert_sql = f"""
+                INSERT INTO {self.catalog}.{self.schema}.{self.table} ({column_names_str})
+                VALUES {', '.join(values_list)}
+                """
+                
+                self.trino_client.execute_query(direct_insert_sql)
+                logger.debug(f"Inserted batch of {len(values_list)} rows with explicit casts")
             
             logger.info(f"Successfully wrote {len(batch_data)} rows to {self.catalog}.{self.schema}.{self.table}")
             
