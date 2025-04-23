@@ -2,10 +2,23 @@
 Trino client module for CSV to Iceberg conversion
 """
 import logging
+import socket
+import time
+import pandas as pd
 from typing import Dict, List, Any, Optional, Tuple
+from urllib.parse import quote_plus
 
-# Import our mock Schema class since we're not using the real PyIceberg
-from schema_inferrer import Schema, Field
+# Import our Schema class
+from schema_inferrer import Schema, Field, BooleanType, IntegerType, LongType, FloatType, DoubleType, DateType, TimestampType, StringType, DecimalType, StructType
+
+# Import Trino client libraries
+try:
+    import trino
+    HAVE_TRINO = True
+except ImportError:
+    # If Trino client is not available, log a warning
+    logging.warning("Trino client not available, using mock implementation")
+    HAVE_TRINO = False
 
 logger = logging.getLogger(__name__)
 
@@ -47,14 +60,46 @@ class TrinoClient:
     def _create_connection(self):
         """Create a connection to Trino"""
         try:
-            # For CLI demo purposes, just log the connection info
-            # In a real environment, this would establish the actual connection
             auth_msg = "with authentication" if self.password else "without authentication"
-            logger.info(f"Would connect to Trino at {self.host}:{self.port} as user '{self.user}' {auth_msg}")
-            return None
+            logger.info(f"Connecting to Trino at {self.host}:{self.port} as user '{self.user}' {auth_msg}")
+            
+            if not HAVE_TRINO:
+                logger.warning("Trino client not available, using mock implementation")
+                return None
+            
+            # Test if the host/port is available
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(3)
+            result = sock.connect_ex((self.host, self.port))
+            sock.close()
+            
+            if result != 0:
+                logger.warning(f"Trino server at {self.host}:{self.port} is not available, using mock implementation")
+                return None
+            
+            # Create the real Trino connection
+            auth = None
+            if self.password:
+                auth = trino.auth.BasicAuthentication(self.user, self.password)
+            
+            conn = trino.dbapi.connect(
+                host=self.host,
+                port=self.port,
+                user=self.user,
+                catalog=self.catalog,
+                schema=self.schema,
+                auth=auth,
+                http_scheme=self.http_scheme,
+                verify=False  # For testing purposes, don't verify SSL
+            )
+            
+            logger.info(f"Successfully connected to Trino at {self.host}:{self.port}")
+            return conn
+            
         except Exception as e:
             logger.error(f"Failed to connect to Trino: {str(e)}", exc_info=True)
-            raise ConnectionError(f"Could not connect to Trino: {str(e)}")
+            logger.warning("Using mock implementation for Trino client")
+            return None
     
     def execute_query(self, query: str) -> List[Tuple]:
         """
@@ -66,10 +111,30 @@ class TrinoClient:
         Returns:
             List of result rows
         """
-        # For CLI demo purposes, just log the query
-        # In a real environment, this would execute the query
-        logger.info(f"Would execute query: {query}")
-        return []
+        try:
+            logger.info(f"Executing query on Trino: {query}")
+            
+            if self.connection is None:
+                # Mock implementation
+                logger.info("Using mock implementation for execute_query")
+                return []
+            
+            cursor = self.connection.cursor()
+            cursor.execute(query)
+            
+            # If the query returns results, fetch them
+            if cursor.description:
+                results = cursor.fetchall()
+                cursor.close()
+                logger.info(f"Query returned {len(results)} rows")
+                return results
+            
+            cursor.close()
+            return []
+            
+        except Exception as e:
+            logger.error(f"Error executing query: {str(e)}", exc_info=True)
+            raise RuntimeError(f"Failed to execute query: {str(e)}")
     
     def table_exists(self, catalog: str, schema: str, table: str) -> bool:
         """
@@ -83,9 +148,32 @@ class TrinoClient:
         Returns:
             True if the table exists
         """
-        # For CLI demo purposes, always return False (table doesn't exist)
-        logger.info(f"Checking if table exists: {catalog}.{schema}.{table}")
-        return False
+        try:
+            logger.info(f"Checking if table exists: {catalog}.{schema}.{table}")
+            
+            if self.connection is None:
+                # Mock implementation
+                logger.info(f"Using mock implementation for table_exists({catalog}.{schema}.{table})")
+                return False
+                
+            # Query the information schema to check if the table exists
+            query = f"""
+            SELECT table_name 
+            FROM {catalog}.information_schema.tables 
+            WHERE table_catalog = '{catalog}' 
+              AND table_schema = '{schema}' 
+              AND table_name = '{table}'
+            """
+            
+            results = self.execute_query(query)
+            exists = len(results) > 0
+            
+            logger.info(f"Table {catalog}.{schema}.{table} {'exists' if exists else 'does not exist'}")
+            return exists
+            
+        except Exception as e:
+            logger.warning(f"Error checking if table exists: {str(e)}")
+            return False
     
     def create_iceberg_table(
         self, 

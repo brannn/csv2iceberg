@@ -25,6 +25,10 @@ try:
         StructType,
         NestedField
     )
+    
+    # Create Field alias for backward compatibility
+    Field = NestedField
+    
 except ImportError:
     # If PyIceberg is not available, use fallback definitions for testing/compatibility
     logging.warning("PyIceberg not available, using fallback type definitions")
@@ -33,13 +37,16 @@ except ImportError:
         def __init__(self, *fields):
             self.fields = fields
             
-    class NestedField:
-        def __init__(self, field_id, required, name, field_type, doc=None):
+    class Field:
+        """Field class for compatibility"""
+        def __init__(self, field_id, name, field_type, doc=""):
             self.field_id = field_id
-            self.required = required
             self.name = name
             self.field_type = field_type
             self.doc = doc
+    
+    # Alias for PyIceberg compatibility
+    NestedField = Field
             
     # Basic type classes
     class BooleanType:
@@ -104,26 +111,50 @@ def infer_schema_from_csv(
         if not os.path.exists(csv_file):
             raise FileNotFoundError(f"CSV file not found: {csv_file}")
         
-        # Create a simple mock schema for demonstration purposes
-        # In a real implementation, this would infer types from the CSV data
+        # Use pandas to read a sample of the CSV file
+        header = 0 if has_header else None
+        try:
+            # Try to read with pandas to get column names and infer types
+            df = pd.read_csv(
+                csv_file, 
+                delimiter=delimiter,
+                quotechar=quote_char,
+                header=header,
+                nrows=sample_size,
+                low_memory=False  # Disable low memory warnings
+            )
+        except Exception as e:
+            logger.warning(f"Error reading CSV with pandas: {str(e)}")
+            # Fallback to simple file reading for column names
+            with open(csv_file, 'r') as f:
+                first_line = f.readline().strip()
+                
+            if has_header:
+                column_names = [col.strip() for col in first_line.split(delimiter)]
+            else:
+                # Generate default column names based on delimiter count
+                col_count = first_line.count(delimiter) + 1
+                column_names = [f"col_{i}" for i in range(col_count)]
+                
+            # Create fields with string type as fallback
+            fields = []
+            for i, name in enumerate(column_names):
+                fields.append(Field(i+1, name, StringType(), ""))
+                
+            schema = Schema(*fields)
+            logger.info(f"Created fallback schema with {len(fields)} string columns")
+            return schema
         
-        # Read the first line to get column names
-        with open(csv_file, 'r') as f:
-            first_line = f.readline().strip()
-            
-        if has_header:
-            column_names = [col.strip() for col in first_line.split(delimiter)]
-        else:
-            # Generate default column names based on delimiter count
-            col_count = first_line.count(delimiter) + 1
-            column_names = [f"col_{i}" for i in range(col_count)]
-            
-        # For this demo, we'll create a schema with all string types
+        # Get column names - use pandas column names
+        column_names = df.columns.tolist()
+        
+        # Map pandas dtypes to Iceberg types
         fields = []
-        for i, name in enumerate(column_names):
-            # Create field with ID, name, type and doc
-            fields.append(Field(i+1, name, StringType(), ""))
-            
+        for i, (name, dtype) in enumerate(zip(column_names, df.dtypes)):
+            field_id = i + 1
+            iceberg_type = _pandas_dtype_to_iceberg_type(dtype, df[name])
+            fields.append(Field(field_id, name, iceberg_type, ""))
+        
         schema = Schema(*fields)
         logger.info(f"Inferred schema with {len(fields)} columns")
         
@@ -132,6 +163,57 @@ def infer_schema_from_csv(
     except Exception as e:
         logger.error(f"Error inferring schema: {str(e)}", exc_info=True)
         raise RuntimeError(f"Failed to infer schema: {str(e)}")
+        
+def _pandas_dtype_to_iceberg_type(dtype, series) -> Any:
+    """
+    Convert a pandas dtype to an Iceberg type.
+    
+    Args:
+        dtype: pandas dtype
+        series: The pandas Series with this dtype
+        
+    Returns:
+        Iceberg type
+    """
+    dtype_name = str(dtype)
+    
+    # Check for numeric types
+    if 'int' in dtype_name:
+        if dtype_name in ['int8', 'int16', 'int32']:
+            return IntegerType()
+        else:
+            return LongType()
+    elif 'float' in dtype_name:
+        return DoubleType()
+    elif 'bool' in dtype_name:
+        return BooleanType()
+    elif 'datetime' in dtype_name:
+        return TimestampType()
+    elif 'date' in dtype_name:
+        return DateType()
+    else:
+        # For object/string types, check if they're actually dates/timestamps
+        if series.dtype == 'object':
+            # Try to parse as date/timestamp
+            try:
+                # If more than 80% of non-null values can be parsed as timestamps
+                non_null = series.dropna()
+                if len(non_null) > 0:
+                    success = 0
+                    for val in non_null.head(min(100, len(non_null))):
+                        try:
+                            pd.to_datetime(val)
+                            success += 1
+                        except (ValueError, TypeError):
+                            pass
+                    
+                    if success / len(non_null.head(min(100, len(non_null)))) > 0.8:
+                        return TimestampType()
+            except Exception:
+                pass
+    
+    # Default to string for anything else
+    return StringType()
 
 def _infer_schema_from_large_csv(
     csv_file: str, 
