@@ -221,24 +221,47 @@ def convert():
         logger.debug(f"POST request data: {request.form}")
         logger.debug(f"POST request files: {request.files.keys()}")
         
+        # Define csv_params at this scope
+        csv_params = {}
+        file_path = None
+        filename = None
 
-        # Check if a file was uploaded
-        if 'csv_file' not in request.files:
-            logger.error("No file part in the request")
-            flash('No file part', 'error')
-            return redirect(request.url)
+        # Check if we're coming from the schema preview page
+        if 'file_path' in request.form and os.path.exists(request.form['file_path']):
+            # File already exists (from schema preview flow)
+            file_path = request.form['file_path']
+            filename = os.path.basename(file_path)
+            logger.debug(f"Using existing file from schema preview: {file_path}")
             
-        file = request.files['csv_file']
-        logger.debug(f"File received: {file.filename}")
-        
-        # Check if the file is empty
-        if file.filename == '':
-            logger.error("No selected file")
-            flash('No selected file', 'error')
-            return redirect(request.url)
+            # Extract CSV parameters from the form
+            csv_params = {
+                'delimiter': request.form.get('delimiter', ','),
+                'has_header': request.form.get('has_header', 'true') == 'true',
+                'quote_char': request.form.get('quote_char', '"'),
+                'sample_size': int(request.form.get('sample_size', '1000'))
+            }
+        else:
+            # Normal file upload flow
+            if 'csv_file' not in request.files:
+                logger.error("No file part in the request")
+                flash('No file part', 'error')
+                return redirect(request.url)
+                
+            file = request.files['csv_file']
+            logger.debug(f"File received: {file.filename}")
             
-        # Check if the file is allowed
-        if file and allowed_file(file.filename):
+            # Check if the file is empty
+            if file.filename == '':
+                logger.error("No selected file")
+                flash('No selected file', 'error')
+                return redirect(request.url)
+                
+            # Check if the file is allowed
+            if not (file and allowed_file(file.filename)):
+                logger.error(f"File type not allowed: {file.filename}")
+                flash('File type not allowed', 'error')
+                return redirect(request.url)
+                
             # Save the file
             filename = secure_filename(file.filename)
             file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
@@ -264,74 +287,71 @@ def convert():
                 }
                 logger.debug(f"Created schema preview session: {session['schema_preview']}")
                 return redirect(url_for('schema_preview'))
-            
-            # Regular conversion flow
-            # Create job ID
-            job_id = os.urandom(8).hex()
-            logger.debug(f"Created job ID: {job_id}")
-            
-            # Collect parameters
-            params = {
-                'table_name': request.form.get('table_name'),
-                'trino_host': request.form.get('trino_host'),
-                'trino_port': request.form.get('trino_port'),
-                'trino_user': request.form.get('trino_user'),
-                'trino_password': request.form.get('trino_password'),
-                'http_scheme': request.form.get('http_scheme', 'http'),
-                'trino_role': request.form.get('trino_role', 'sysadmin'),
-                'trino_catalog': request.form.get('trino_catalog'),
-                'trino_schema': request.form.get('trino_schema'),
-                'hive_metastore_uri': request.form.get('hive_metastore_uri'),
-                'delimiter': csv_params['delimiter'],
-                'has_header': 'true' if csv_params['has_header'] else 'false',
-                'quote_char': csv_params['quote_char'],
-                'batch_size': request.form.get('batch_size'),
-                'mode': request.form.get('mode', 'append'),
-                'sample_size': str(csv_params['sample_size']),
-                'verbose': request.form.get('verbose', 'false')
-            }
-            logger.debug(f"Collected parameters: {params}")
-            
-            # Apply schema customizations if they exist in the session
-            if 'schema_customization' in session:
-                logger.debug("Found schema customization in session")
-                # This will be implemented in the run_conversion function
-                params['schema_customization'] = session['schema_customization']
-                # Clean up the session
-                session.pop('schema_customization', None)
-            
-            # Create job
-            conversion_jobs[job_id] = {
-                'file_path': file_path,
-                'filename': filename,
-                'params': params,
-                'status': 'running',
-                'stdout': '',
-                'stderr': '',
-                'error': None,
-                'returncode': None,
-                'started_at': datetime.datetime.now(),
-                'progress': 0  # Initialize progress to 0
-            }
-            logger.debug(f"Created job entry: {conversion_jobs[job_id]}")
-            
-            # Start conversion thread
-            thread = threading.Thread(
-                target=run_conversion,
-                args=(job_id, file_path, params)
-            )
-            thread.daemon = True
-            thread.start()
-            logger.debug(f"Started conversion thread for job {job_id}")
-            
-            # Redirect to job status page
-            logger.debug(f"Redirecting to job status page for job {job_id}")
-            return redirect(url_for('job_status', job_id=job_id))
-            
-        else:
-            logger.error(f"File type not allowed: {file.filename}")
-            flash('File type not allowed', 'error')
-            return redirect(request.url)
+        
+        # At this point, we have a valid file_path and filename, plus csv_params
+        # Proceed with the conversion flow
+        
+        # Create job ID
+        job_id = os.urandom(8).hex()
+        logger.debug(f"Created job ID: {job_id}")
+        
+        # Collect parameters
+        params = {
+            'table_name': request.form.get('table_name'),
+            'trino_host': request.form.get('trino_host'),
+            'trino_port': request.form.get('trino_port'),
+            'trino_user': request.form.get('trino_user'),
+            'trino_password': request.form.get('trino_password'),
+            'http_scheme': request.form.get('http_scheme', 'http'),
+            'trino_role': request.form.get('trino_role', 'sysadmin'),
+            'trino_catalog': request.form.get('trino_catalog'),
+            'trino_schema': request.form.get('trino_schema'),
+            'hive_metastore_uri': request.form.get('hive_metastore_uri'),
+            'delimiter': csv_params.get('delimiter', ','),
+            'has_header': 'true' if csv_params.get('has_header', True) else 'false',
+            'quote_char': csv_params.get('quote_char', '"'),
+            'batch_size': request.form.get('batch_size'),
+            'mode': request.form.get('mode', 'append'),
+            'sample_size': str(csv_params.get('sample_size', 1000)),
+            'verbose': request.form.get('verbose', 'false')
+        }
+        logger.debug(f"Collected parameters: {params}")
+        
+        # Apply schema customizations if they exist in the session
+        if 'schema_customization' in session:
+            logger.debug("Found schema customization in session")
+            # This will be implemented in the run_conversion function
+            params['schema_customization'] = session['schema_customization']
+            # Clean up the session
+            session.pop('schema_customization', None)
+        
+        # Create job
+        conversion_jobs[job_id] = {
+            'file_path': file_path,
+            'filename': filename,
+            'params': params,
+            'status': 'running',
+            'stdout': '',
+            'stderr': '',
+            'error': None,
+            'returncode': None,
+            'started_at': datetime.datetime.now(),
+            'progress': 0  # Initialize progress to 0
+        }
+        logger.debug(f"Created job entry: {conversion_jobs[job_id]}")
+        
+        # Start conversion thread
+        thread = threading.Thread(
+            target=run_conversion,
+            args=(job_id, file_path, params)
+        )
+        thread.daemon = True
+        thread.start()
+        logger.debug(f"Started conversion thread for job {job_id}")
+        
+        # Redirect to job status page
+        logger.debug(f"Redirecting to job status page for job {job_id}")
+        return redirect(url_for('job_status', job_id=job_id))
             
     # GET request - show conversion form
     logger.debug("Rendering convert.html template")
