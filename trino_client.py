@@ -12,13 +12,7 @@ from urllib.parse import quote_plus
 from schema_inferrer import Schema, Field, BooleanType, IntegerType, LongType, FloatType, DoubleType, DateType, TimestampType, StringType, DecimalType, StructType
 
 # Import Trino client libraries
-try:
-    import trino
-    HAVE_TRINO = True
-except ImportError:
-    # If Trino client is not available, log a warning
-    logging.warning("Trino client not available, using mock implementation")
-    HAVE_TRINO = False
+import trino
 
 logger = logging.getLogger(__name__)
 
@@ -66,10 +60,6 @@ class TrinoClient:
             auth_msg = "with authentication" if self.password else "without authentication"
             logger.info(f"Connecting to Trino at {self.host}:{self.port} as user '{self.user}' {auth_msg}")
             
-            if not HAVE_TRINO:
-                logger.warning("Trino client not available, using mock implementation")
-                return None
-            
             # Test if the host/port is available
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.settimeout(3)
@@ -77,8 +67,9 @@ class TrinoClient:
             sock.close()
             
             if result != 0:
-                logger.warning(f"Trino server at {self.host}:{self.port} is not available, using mock implementation")
-                return None
+                error_msg = f"Trino server at {self.host}:{self.port} is not available"
+                logger.error(error_msg)
+                raise ConnectionError(error_msg)
             
             # Create the real Trino connection
             auth = None
@@ -107,7 +98,9 @@ class TrinoClient:
                     auth = trino.auth.BasicAuthentication(self.user, self.password)
                     conn_args['auth'] = auth
                 else:
-                    logger.warning("Password authentication requires HTTPS. Using HTTP without authentication.")
+                    error_msg = "Password authentication requires HTTPS. Cannot use HTTP with authentication."
+                    logger.error(error_msg)
+                    raise ValueError(error_msg)
             
             # Create connection with appropriate settings            
             conn = trino.dbapi.connect(**conn_args)
@@ -117,8 +110,7 @@ class TrinoClient:
             
         except Exception as e:
             logger.error(f"Failed to connect to Trino: {str(e)}", exc_info=True)
-            logger.warning("Using mock implementation for Trino client")
-            return None
+            raise ConnectionError(f"Failed to connect to Trino: {str(e)}")
     
     def execute_query(self, query: str) -> List[Tuple]:
         """
@@ -134,9 +126,9 @@ class TrinoClient:
             logger.info(f"Executing query on Trino: {query}")
             
             if self.connection is None:
-                # Mock implementation
-                logger.info("Using mock implementation for execute_query")
-                return []
+                error_msg = "No active Trino connection"
+                logger.error(error_msg)
+                raise ConnectionError(error_msg)
             
             cursor = self.connection.cursor()
             cursor.execute(query)
@@ -171,9 +163,9 @@ class TrinoClient:
             logger.info(f"Checking if table exists: {catalog}.{schema}.{table}")
             
             if self.connection is None:
-                # Mock implementation
-                logger.info(f"Using mock implementation for table_exists({catalog}.{schema}.{table})")
-                return False
+                error_msg = "No active Trino connection"
+                logger.error(error_msg)
+                raise ConnectionError(error_msg)
                 
             # Query the information schema to check if the table exists
             query = f"""
@@ -191,8 +183,8 @@ class TrinoClient:
             return exists
             
         except Exception as e:
-            logger.warning(f"Error checking if table exists: {str(e)}")
-            return False
+            logger.error(f"Error checking if table exists: {str(e)}")
+            raise RuntimeError(f"Failed to check if table exists: {str(e)}")
     
     def create_iceberg_table(
         self, 
@@ -340,14 +332,13 @@ def iceberg_type_to_trino_type(iceberg_type: Any) -> str:
     Returns:
         Trino SQL type string
     """
-    # Import our mock types
+    # Import schema types directly from schema_inferrer
     from schema_inferrer import (
         BooleanType, IntegerType, LongType, FloatType, DoubleType, 
         DateType, TimestampType, StringType, DecimalType, StructType
     )
     
-    # For this demo implementation, we'll return default SQL types
-    # based on the instance type
+    # Return SQL types based on the instance type
     if isinstance(iceberg_type, BooleanType):
         return 'BOOLEAN'
     elif isinstance(iceberg_type, IntegerType):
@@ -369,7 +360,6 @@ def iceberg_type_to_trino_type(iceberg_type: Any) -> str:
         scale = getattr(iceberg_type, 'scale', 18)
         return f'DECIMAL({precision}, {scale})'
     elif isinstance(iceberg_type, StructType):
-        # Since this is a mock implementation, we'll just return a placeholder
         return 'ROW()'
     else:
         # Default to VARCHAR for unknown types

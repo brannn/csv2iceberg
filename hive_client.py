@@ -106,9 +106,9 @@ class HiveMetastoreClient:
             logger.info(f"Creating database: {db_name}")
             
             if self.client is None:
-                # Mock implementation
-                logger.info(f"Using mock implementation for create_database({db_name})")
-                return
+                error_msg = "No active Hive metastore connection"
+                logger.error(error_msg)
+                raise ConnectionError(error_msg)
                 
             if self.database_exists(db_name):
                 logger.info(f"Database {db_name} already exists")
@@ -144,9 +144,9 @@ class HiveMetastoreClient:
             logger.info(f"Checking if table exists: {db_name}.{table_name}")
             
             if self.client is None:
-                # Mock implementation
-                logger.info(f"Using mock implementation for table_exists({db_name}.{table_name})")
-                return False
+                error_msg = "No active Hive metastore connection"
+                logger.error(error_msg)
+                raise ConnectionError(error_msg)
                 
             if not self.database_exists(db_name):
                 return False
@@ -155,8 +155,8 @@ class HiveMetastoreClient:
             return table_name in tables
             
         except Exception as e:
-            logger.warning(f"Error checking if table exists: {str(e)}")
-            return False
+            logger.error(f"Error checking if table exists: {str(e)}")
+            raise RuntimeError(f"Failed to check if table exists: {str(e)}")
     
     def get_table(self, db_name: str, table_name: str):
         """
@@ -173,9 +173,9 @@ class HiveMetastoreClient:
             logger.info(f"Getting table: {db_name}.{table_name}")
             
             if self.client is None:
-                # Mock implementation
-                logger.info(f"Using mock implementation for get_table({db_name}.{table_name})")
-                raise ValueError(f"Table does not exist: {db_name}.{table_name}")
+                error_msg = "No active Hive metastore connection"
+                logger.error(error_msg)
+                raise ConnectionError(error_msg)
                 
             if not self.table_exists(db_name, table_name):
                 raise ValueError(f"Table does not exist: {db_name}.{table_name}")
@@ -229,9 +229,9 @@ class HiveMetastoreClient:
             logger.info(f"Properties: {merged_props}")
             
             if self.client is None:
-                # Mock implementation
-                logger.info(f"Using mock implementation for create_iceberg_table({db_name}.{table_name})")
-                return
+                error_msg = "No active Hive metastore connection"
+                logger.error(error_msg)
+                raise ConnectionError(error_msg)
                 
             # Create the database if it doesn't exist
             if not self.database_exists(db_name):
