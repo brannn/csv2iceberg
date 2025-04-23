@@ -259,21 +259,9 @@ def _create_profile_interactive() -> Dict[str, Any]:
     profile["defaults"]["sample_size"] = click.prompt("Schema inference sample size", default=1000, type=int)
     profile["defaults"]["verbose"] = click.confirm("Verbose logging?", default=False)
     
-    # Partitioning settings
-    click.echo("\nPartitioning Settings:")
-    profile["partitioning"]["enabled"] = click.confirm("Enable partitioning by default?", default=False)
-    
-    if profile["partitioning"]["enabled"]:
-        specs = []
-        while True:
-            add_spec = click.confirm("Add a partition specification?", default=True)
-            if not add_spec:
-                break
-            
-            spec = click.prompt("Enter partition spec (e.g., 'year(date)' or 'bucket(id, 16)')")
-            specs.append(spec)
-        
-        profile["partitioning"]["specs"] = specs
+    # Partitioning has been removed
+    profile["partitioning"]["enabled"] = False
+    profile["partitioning"]["specs"] = []
     
     return profile
 
