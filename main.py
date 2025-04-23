@@ -11,6 +11,8 @@ from utils import setup_logging
 
 # Set up logging
 logger = setup_logging()
+# Enable more verbose Flask logging
+logging.basicConfig(level=logging.DEBUG)
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -86,21 +88,36 @@ def run_conversion(job_id, file_path, params):
 @app.route('/')
 def index():
     """Render the home page."""
-    return render_template('index.html')
+    logger.debug("Index route called")
+    try:
+        rendered = render_template('index.html')
+        logger.debug("Successfully rendered index.html")
+        return rendered
+    except Exception as e:
+        logger.error(f"Error rendering index.html: {str(e)}", exc_info=True)
+        return "Error rendering template. Check logs."
 
 @app.route('/convert', methods=['GET', 'POST'])
 def convert():
     """Handle CSV to Iceberg conversion."""
+    logger.debug(f"Convert route called with method: {request.method}")
+    
     if request.method == 'POST':
+        logger.debug(f"POST request data: {request.form}")
+        logger.debug(f"POST request files: {request.files.keys()}")
+        
         # Check if a file was uploaded
         if 'csv_file' not in request.files:
+            logger.error("No file part in the request")
             flash('No file part', 'error')
             return redirect(request.url)
             
         file = request.files['csv_file']
+        logger.debug(f"File received: {file.filename}")
         
         # Check if the file is empty
         if file.filename == '':
+            logger.error("No selected file")
             flash('No selected file', 'error')
             return redirect(request.url)
             
@@ -109,10 +126,12 @@ def convert():
             # Save the file
             filename = secure_filename(file.filename)
             file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            logger.debug(f"Saving file to: {file_path}")
             file.save(file_path)
             
             # Create job ID
             job_id = os.urandom(8).hex()
+            logger.debug(f"Created job ID: {job_id}")
             
             # Collect parameters
             params = {
@@ -132,6 +151,7 @@ def convert():
                 'sample_size': request.form.get('sample_size'),
                 'verbose': request.form.get('verbose', 'false')
             }
+            logger.debug(f"Collected parameters: {params}")
             
             # Create job
             conversion_jobs[job_id] = {
@@ -144,6 +164,7 @@ def convert():
                 'error': None,
                 'returncode': None
             }
+            logger.debug(f"Created job entry: {conversion_jobs[job_id]}")
             
             # Start conversion thread
             thread = threading.Thread(
@@ -152,15 +173,19 @@ def convert():
             )
             thread.daemon = True
             thread.start()
+            logger.debug(f"Started conversion thread for job {job_id}")
             
             # Redirect to job status page
+            logger.debug(f"Redirecting to job status page for job {job_id}")
             return redirect(url_for('job_status', job_id=job_id))
             
         else:
+            logger.error(f"File type not allowed: {file.filename}")
             flash('File type not allowed', 'error')
             return redirect(request.url)
             
     # GET request - show conversion form
+    logger.debug("Rendering convert.html template")
     return render_template('convert.html')
 
 @app.route('/job/<job_id>')

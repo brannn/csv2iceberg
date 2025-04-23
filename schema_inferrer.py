@@ -140,12 +140,13 @@ def infer_schema_from_csv(
             # Create fields with string type as fallback
             fields = []
             for i, name in enumerate(column_names):
-                # Check if we're using actual PyIceberg NestedField or our custom Field
-                if 'NestedField' in globals() or 'NestedField' in locals():
-                    # Using the real PyIceberg NestedField which requires a 'required' parameter
-                    fields.append(NestedField(i+1, True, name, StringType(), ""))
-                else:
-                    fields.append(Field(i+1, name, StringType(), ""))
+                # Try to create a field with the appropriate parameters
+                try:
+                    # Using the real PyIceberg NestedField which requires named parameters
+                    fields.append(NestedField(field_id=i+1, required=True, name=name, field_type=StringType()))
+                except (TypeError, ValueError):
+                    # Fallback to using positional arguments
+                    fields.append(Field(i+1, name, StringType()))
                 
             schema = Schema(*fields)
             logger.info(f"Created fallback schema with {len(fields)} string columns")
@@ -160,12 +161,17 @@ def infer_schema_from_csv(
             field_id = i + 1
             iceberg_type = _pandas_dtype_to_iceberg_type(dtype, df[name])
             
-            # Check if we're using actual PyIceberg NestedField or our custom Field
-            if 'pyiceberg.schema' in sys.modules:
-                # Using the real PyIceberg NestedField which requires a 'required' parameter
-                fields.append(NestedField(field_id, True, name, iceberg_type, ""))
-            else:
-                fields.append(Field(field_id, name, iceberg_type, ""))
+            # Try to create a field with the appropriate parameters
+            try:
+                # Using the real PyIceberg NestedField with named parameters
+                fields.append(NestedField(field_id=field_id, required=True, name=name, field_type=iceberg_type))
+            except (TypeError, ValueError):
+                # Fallback to using positional arguments or custom Field
+                try:
+                    fields.append(Field(field_id, name, iceberg_type))
+                except (TypeError, ValueError):
+                    # Last resort fallback
+                    fields.append(Field(field_id, name, StringType()))
         
         schema = Schema(*fields)
         logger.info(f"Inferred schema with {len(fields)} columns")
