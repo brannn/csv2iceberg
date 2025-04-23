@@ -25,8 +25,8 @@
                             {% endif %}
                         </div>
                         <div class="alert alert-secondary mb-3 text-center">
-                            <span id="progress-status">Converting CSV to Iceberg</span>
-                            <div id="progress-percent" class="fw-bold mt-2">Progress: {{ job.progress|default(0) }}%</div>
+                            <div id="status-message" class="fw-bold">Converting CSV to Iceberg</div>
+                            <div class="text-muted mt-2">Please wait while the conversion completes...</div>
                         </div>
                     {% elif job.status == 'completed' %}
                         <div class="alert alert-success">
@@ -222,8 +222,8 @@
     let startTime = new Date('{{ job.started_at.isoformat() }}');
     let timer = document.getElementById('running-time');
     
-    // Function to update timer and job progress
-    function updateStatus() {
+    // Function to update timer only
+    function updateTimer() {
         // Update running time
         if (timer) {
             const now = new Date();
@@ -231,48 +231,29 @@
             timer.textContent = 'Running for: ' + formatDuration(seconds);
         }
         
-        // Fetch job progress from server
+        // Check job status periodically
         fetch('/job/{{ job_id }}/progress')
             .then(response => response.json())
             .then(data => {
-                // Update progress percentage
-                const progressPercent = document.getElementById('progress-percent');
-                const progress = Math.min(100, Math.max(0, data.progress || 0));
-                
-                if (progressPercent) {
-                    progressPercent.textContent = 'Progress: ' + progress + '%';
-                }
-                
-                // Update status text if phase info available
-                const progressStatus = document.getElementById('progress-status');
-                if (progressStatus && data.phase) {
-                    progressStatus.textContent = data.phase;
-                }
-                
-                // If job still running, poll again after 2 seconds
+                // If job still running, update timer again after 1 second
                 if (data.status === 'running') {
-                    setTimeout(updateStatus, 2000);
+                    setTimeout(updateTimer, 1000);
                 } else {
-                    // Reload the page to show completion
+                    // If job completed or failed, reload the page
                     window.location.reload();
                 }
             })
             .catch(error => {
-                console.error('Error fetching progress:', error);
+                console.error('Error checking job status:', error);
                 
-                // If job not found (possibly completed and cleaned up), reload page
-                if (error.message && error.message.includes('404')) {
-                    window.location.reload();
-                } else {
-                    // For other errors, try again
-                    setTimeout(updateStatus, 5000);
-                }
+                // On error, try again after 2 seconds
+                setTimeout(updateTimer, 2000);
             });
     }
     
-    // Start status updates when page loads
+    // Start timer updates when page loads
     document.addEventListener('DOMContentLoaded', function() {
-        updateStatus();
+        updateTimer();
     });
 </script>
 {% endif %}
