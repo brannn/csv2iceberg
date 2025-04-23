@@ -306,11 +306,21 @@ def test_progress(job_id):
 @app.route('/jobs')
 def jobs():
     """List all conversion jobs."""
+    # Clean up old jobs first
+    cleanup_old_jobs()
+    
+    # When the jobs list is viewed, all jobs being viewed are considered "active"
+    # This prevents cleanup of jobs shown in the list while user is viewing them
+    for job_id in conversion_jobs.keys():
+        mark_job_as_active(job_id)
+        
     now = datetime.datetime.now()
     return render_template('jobs.html', 
                           jobs=conversion_jobs, 
                           now=now, 
-                          format_duration=format_duration)
+                          format_duration=format_duration,
+                          regular_ttl=COMPLETED_JOB_TTL,
+                          test_ttl=TEST_JOB_TTL)
 
 @app.route('/job/<job_id>/progress/<int:percent>', methods=['POST'])
 def update_job_progress(job_id, percent):
