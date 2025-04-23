@@ -355,6 +355,67 @@ def add_test_job():
     flash(f'Test job created with ID: {job_id}', 'success')
     return redirect(url_for('jobs'))
 
+@app.route('/add_running_test_job')
+def add_running_test_job():
+    """Add a test job with running status for testing progress updates."""
+    job_id = "running_test_" + os.urandom(4).hex()
+    
+    # Create a mock job with running status and timestamps
+    now = datetime.datetime.now()
+    
+    conversion_jobs[job_id] = {
+        'file_path': '/tmp/test.csv',
+        'filename': 'test.csv',
+        'params': {
+            'table_name': 'iceberg.test.running_test',
+            'trino_host': 'sep.sdp-dev.pd.switchnet.nv',
+            'trino_port': '443',
+            'trino_user': 'test_user',
+            'trino_password': None,
+            'http_scheme': 'https',
+            'trino_role': 'sysadmin',
+            'trino_catalog': 'iceberg',
+            'trino_schema': 'test',
+            'hive_metastore_uri': 'localhost:9083',
+            'delimiter': ',',
+            'has_header': 'true',
+            'quote_char': '"',
+            'batch_size': '100',
+            'mode': 'append',
+            'sample_size': '1000',
+            'verbose': 'false'
+        },
+        'status': 'running',
+        'stdout': 'Mock conversion in progress...',
+        'stderr': '',
+        'error': None,
+        'returncode': None,
+        'started_at': now,
+        'progress': 0  # Start with 0% progress
+    }
+    
+    # Start a thread to simulate progress updates
+    def simulate_progress():
+        try:
+            for progress in range(0, 101, 5):
+                conversion_jobs[job_id]['progress'] = progress
+                logger.debug(f"Updated progress for job {job_id} to {progress}%")
+                time.sleep(1)  # Update every second
+                
+            # Mark as completed when done
+            conversion_jobs[job_id]['status'] = 'completed'
+            conversion_jobs[job_id]['completed_at'] = datetime.datetime.now()
+            logger.debug(f"Marked job {job_id} as completed")
+        except Exception as e:
+            logger.error(f"Error in progress simulation: {str(e)}")
+    
+    # Start the simulation thread
+    import time
+    threading.Thread(target=simulate_progress, daemon=True).start()
+    
+    flash(f'Running test job created with ID: {job_id}', 'success')
+    return redirect(url_for('job_status', job_id=job_id))
+
 if __name__ == '__main__':
     # Create templates directory if it doesn't exist
     os.makedirs('templates', exist_ok=True)

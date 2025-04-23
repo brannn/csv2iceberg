@@ -25,7 +25,7 @@
                             {% endif %}
                         </div>
                         <div class="progress mb-3">
-                            <div id="progress-bar" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" aria-valuenow="{{ job.progress|default(0) }}" aria-valuemin="0" aria-valuemax="100" style="width: {{ job.progress|default(0) }}%"></div>
+                            <div id="progress-bar" class="progress-bar progress-bar-striped progress-bar-animated bg-info" role="progressbar" aria-valuenow="{{ job.progress|default(0) }}" aria-valuemin="0" aria-valuemax="100" style="width: {{ job.progress|default(0) }}%"></div>
                         </div>
                         <p id="progress-text" class="text-center">Progress: <span id="progress-percent">{{ job.progress|default(0) }}%</span></p>
                     {% elif job.status == 'completed' %}
@@ -183,21 +183,37 @@
 <script>
     // Function to update progress bar and text
     function updateProgress() {
+        console.log('Polling for progress updates...');
+        
         fetch('/job/{{ job_id }}/progress')
-            .then(response => response.json())
+            .then(response => {
+                console.log('Got response:', response.status);
+                return response.json();
+            })
             .then(data => {
+                console.log('Progress data:', data);
+                
                 // Update progress bar width and text
                 const progressBar = document.getElementById('progress-bar');
                 const progressPercent = document.getElementById('progress-percent');
                 
-                progressBar.style.width = data.progress + '%';
-                progressBar.setAttribute('aria-valuenow', data.progress);
-                progressPercent.textContent = data.progress + '%';
+                // Make sure progress is at least 0 and at most 100
+                const progress = Math.min(100, Math.max(0, data.progress));
+                console.log('Setting progress to:', progress);
+                
+                progressBar.style.width = progress + '%';
+                progressBar.setAttribute('aria-valuenow', progress);
+                progressPercent.textContent = progress + '%';
+                
+                // Keep the animation running for all "running" jobs
+                progressBar.classList.add('progress-bar-animated');
                 
                 // If job is still running, poll again after 1 second
-                if (data.status === 'running' && data.progress < 100) {
+                if (data.status === 'running') {
+                    console.log('Job still running, will poll again in 1 second');
                     setTimeout(updateProgress, 1000);
                 } else {
+                    console.log('Job status changed to:', data.status);
                     // Otherwise, reload the page to show completion
                     window.location.reload();
                 }
@@ -211,6 +227,12 @@
     
     // Start progress updates when page loads
     document.addEventListener('DOMContentLoaded', function() {
+        console.log('Page loaded, starting progress updates');
+        // Add default animation to the progress bar
+        const progressBar = document.getElementById('progress-bar');
+        progressBar.classList.add('progress-bar-animated');
+        
+        // Start polling for updates
         updateProgress();
     });
 </script>
