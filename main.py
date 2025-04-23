@@ -1082,7 +1082,7 @@ def profile_add():
             "name": request.form.get('name'),
             "description": request.form.get('description', ''),
             "trino_host": request.form.get('trino_host'),
-            "trino_port": int(request.form.get('trino_port', 8080)),
+            "trino_port": int(request.form.get('trino_port', 443)),
             "trino_user": request.form.get('trino_user', ''),
             "trino_password": request.form.get('trino_password', ''),
             "http_scheme": request.form.get('http_scheme', 'http'),
@@ -1115,7 +1115,7 @@ def profile_edit(name):
             "name": name,  # Keep the original name
             "description": request.form.get('description', ''),
             "trino_host": request.form.get('trino_host'),
-            "trino_port": int(request.form.get('trino_port', 8080)),
+            "trino_port": int(request.form.get('trino_port', 443)),
             "trino_user": request.form.get('trino_user', ''),
             "trino_password": request.form.get('trino_password') or profile.get('trino_password', ''),  # Keep existing password if not provided
             "http_scheme": request.form.get('http_scheme', 'http'),

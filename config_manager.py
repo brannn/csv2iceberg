@@ -13,10 +13,10 @@ DEFAULT_CONFIG_FILE = os.path.expanduser("~/.csv_to_iceberg_config.json")
 DEFAULT_PROFILE = {
     "name": "Default",
     "trino_host": "sep.sdp-dev.pd.switchnet.nv",
-    "trino_port": 8080,
+    "trino_port": 443,
     "trino_user": "",
     "trino_password": "",
-    "http_scheme": "http",
+    "http_scheme": "https",
     "trino_role": "sysadmin",
     "trino_catalog": "iceberg",
     "trino_schema": "default",
