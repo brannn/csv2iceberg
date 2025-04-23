@@ -191,19 +191,80 @@ class IcebergWriter:
                     column_types_by_position = [column_types_dict.get(col, "VARCHAR") for col in columns]
                     logger.debug(f"Using column types from schema: {column_types_by_position}")
                 else:
-                    # We need to manually map types based on what we know from the error message
+                    # Use the data itself to infer column types dynamically
                     # This is a fallback approach for when metadata is incomplete
-                    for j, col in enumerate(columns):
-                        if j >= 0 and j <= 7:
-                            column_types_by_position.append("VARCHAR")
-                        elif j == 8 or j == 9 or j == 14 or j == 15 or j == 20:
-                            column_types_by_position.append("BIGINT")
-                        elif j == 10 or j == 11:
-                            column_types_by_position.append("TIMESTAMP(6)")
-                        else:
-                            column_types_by_position.append("VARCHAR")
+                    logger.info("Target schema metadata unavailable - inferring types from data")
                     
-                    logger.debug(f"Using fallback column types mapping: {column_types_by_position}")
+                    # Sample first row to dynamically infer types
+                    sample_row = None
+                    
+                    # Handle getting first row from different DataFrame types
+                    if len(batch_slice) > 0:
+                        if hasattr(batch_slice, 'iloc'):
+                            # Pandas DataFrame
+                            sample_row = batch_slice.iloc[0]
+                        elif hasattr(batch_slice, 'row'):
+                            # Polars DataFrame
+                            sample_row = batch_slice.row(0)
+                        elif hasattr(batch_slice, 'to_dicts'):
+                            # Polars DataFrame - get first row as dict
+                            sample_row = batch_slice.to_dicts()[0] if len(batch_slice.to_dicts()) > 0 else None
+                    
+                    for j, col in enumerate(columns):
+                        # Get the value from the sample row for this column
+                        try:
+                            if sample_row is not None:
+                                if hasattr(sample_row, '__getitem__'):
+                                    # Dictionary-like row (Polars to_dicts)
+                                    sample_val = sample_row[col]
+                                else:
+                                    # Pandas Series
+                                    sample_val = sample_row[col]
+                            else:
+                                sample_val = None
+                        except (KeyError, IndexError):
+                            sample_val = None
+                        
+                        # Try to infer type from the value
+                        if sample_val is None:
+                            # Default to VARCHAR for null values
+                            column_types_by_position.append("VARCHAR")
+                        elif isinstance(sample_val, bool):
+                            column_types_by_position.append("BOOLEAN")
+                        elif isinstance(sample_val, int):
+                            column_types_by_position.append("BIGINT")
+                        elif isinstance(sample_val, float):
+                            column_types_by_position.append("DOUBLE")
+                        elif isinstance(sample_val, datetime.datetime):
+                            column_types_by_position.append("TIMESTAMP(6)")
+                        elif isinstance(sample_val, datetime.date):
+                            column_types_by_position.append("DATE")
+                        else:
+                            # Try to infer type from string data
+                            val_str = str(sample_val)
+                            
+                            # Check if it's a number
+                            try:
+                                if '.' in val_str:
+                                    float(val_str)
+                                    column_types_by_position.append("DOUBLE")
+                                else:
+                                    int(val_str)
+                                    column_types_by_position.append("BIGINT")
+                            except ValueError:
+                                # Check for date formats
+                                try:
+                                    datetime.datetime.strptime(val_str, "%Y-%m-%d")
+                                    column_types_by_position.append("DATE")
+                                except ValueError:
+                                    try:
+                                        datetime.datetime.strptime(val_str, "%Y-%m-%d %H:%M:%S")
+                                        column_types_by_position.append("TIMESTAMP(6)")
+                                    except ValueError:
+                                        # Default to VARCHAR
+                                        column_types_by_position.append("VARCHAR")
+                                        
+                    logger.debug(f"Dynamically inferred column types: {column_types_by_position}")
                 
                 values_list = []
                 
