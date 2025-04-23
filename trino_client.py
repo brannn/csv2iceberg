@@ -66,6 +66,12 @@ class TrinoClient:
         self.http_scheme = http_scheme
         self.role = role
         
+        # Schema cache dict: {(catalog, schema, table): [(column_name, column_type), ...]}
+        self._schema_cache = {}
+        
+        # Table existence cache dict: {(catalog, schema, table): bool}
+        self._table_existence_cache = {}
+        
         self.connection = self._create_connection()
         
     def _create_connection(self):
@@ -176,6 +182,14 @@ class TrinoClient:
             True if the table exists
         """
         try:
+            cache_key = (catalog, schema, table)
+            
+            # Check cache first
+            if cache_key in self._table_existence_cache:
+                cached_result = self._table_existence_cache[cache_key]
+                logger.debug(f"Using cached result for table_exists({catalog}.{schema}.{table}): {cached_result}")
+                return cached_result
+            
             logger.info(f"Checking if table exists: {catalog}.{schema}.{table}")
             
             if self.connection is None:
@@ -195,12 +209,36 @@ class TrinoClient:
             results = self.execute_query(query)
             exists = len(results) > 0
             
+            # Cache the result
+            self._table_existence_cache[cache_key] = exists
+            
             logger.info(f"Table {catalog}.{schema}.{table} {'exists' if exists else 'does not exist'}")
             return exists
             
         except Exception as e:
             logger.error(f"Error checking if table exists: {str(e)}")
             raise RuntimeError(f"Failed to check if table exists: {str(e)}")
+    
+    def _clear_cache_for_table(self, catalog: str, schema: str, table: str) -> None:
+        """
+        Clear caches for a specific table.
+        
+        Args:
+            catalog: Catalog name
+            schema: Schema name
+            table: Table name
+        """
+        cache_key = (catalog, schema, table)
+        
+        # Clear schema cache
+        if cache_key in self._schema_cache:
+            logger.debug(f"Clearing schema cache for {catalog}.{schema}.{table}")
+            del self._schema_cache[cache_key]
+        
+        # Clear table existence cache
+        if cache_key in self._table_existence_cache:
+            logger.debug(f"Clearing table existence cache for {catalog}.{schema}.{table}")
+            del self._table_existence_cache[cache_key]
     
     def create_iceberg_table(
         self, 
@@ -220,6 +258,9 @@ class TrinoClient:
             iceberg_schema: PyIceberg Schema object
         """
         try:
+            # Clear any cached data for this table first
+            self._clear_cache_for_table(catalog, schema, table)
+            
             # Convert PyIceberg schema to Trino DDL
             columns_ddl = []
             for field in iceberg_schema.fields:
@@ -245,6 +286,10 @@ class TrinoClient:
             logger.debug(f"Create table SQL: {create_table_sql}")
             
             self.execute_query(create_table_sql)
+            
+            # Update the cache to indicate the table now exists
+            self._table_existence_cache[(catalog, schema, table)] = True
+            
             logger.info(f"Successfully created table: {catalog}.{schema}.{table}")
         except Exception as e:
             logger.error(f"Error creating table: {str(e)}", exc_info=True)
@@ -260,9 +305,16 @@ class TrinoClient:
             table: Table name
         """
         try:
+            # Clear any cached data for this table first
+            self._clear_cache_for_table(catalog, schema, table)
+            
             drop_table_sql = f"DROP TABLE IF EXISTS {catalog}.{schema}.{table}"
             logger.info(f"Dropping table: {catalog}.{schema}.{table}")
             self.execute_query(drop_table_sql)
+            
+            # Update the cache to indicate the table no longer exists
+            self._table_existence_cache[(catalog, schema, table)] = False
+            
             logger.info(f"Successfully dropped table: {catalog}.{schema}.{table}")
         except Exception as e:
             logger.error(f"Error dropping table: {str(e)}", exc_info=True)
@@ -281,6 +333,16 @@ class TrinoClient:
             List of (column_name, column_type) tuples
         """
         try:
+            cache_key = (catalog, schema, table)
+            
+            # Check cache first
+            if cache_key in self._schema_cache:
+                cached_schema = self._schema_cache[cache_key]
+                logger.debug(f"Using cached schema for {catalog}.{schema}.{table}: {len(cached_schema)} columns")
+                return cached_schema
+                
+            logger.info(f"Fetching schema for {catalog}.{schema}.{table}")
+            
             query = f"""
             SELECT column_name, data_type 
             FROM {catalog}.information_schema.columns 
@@ -289,7 +351,14 @@ class TrinoClient:
               AND table_name = '{table}'
             ORDER BY ordinal_position
             """
-            return self.execute_query(query)
+            
+            result = self.execute_query(query)
+            
+            # Cache the result
+            self._schema_cache[cache_key] = result
+            logger.info(f"Cached schema for {catalog}.{schema}.{table}: {len(result)} columns")
+            
+            return result
         except Exception as e:
             logger.error(f"Error getting table schema: {str(e)}", exc_info=True)
             raise RuntimeError(f"Failed to get table schema: {str(e)}")
