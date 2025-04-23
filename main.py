@@ -25,6 +25,38 @@ ALLOWED_EXTENSIONS = {'csv', 'txt'}
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB limit
 
+# Utility function for job duration
+def format_duration(start_time, end_time):
+    """
+    Calculate and format the duration between two timestamps.
+    
+    Args:
+        start_time: Start timestamp (datetime object)
+        end_time: End timestamp (datetime object)
+        
+    Returns:
+        Formatted duration string (e.g., "5 minutes 30 seconds")
+    """
+    if not start_time or not end_time:
+        return "N/A"
+        
+    # Calculate duration in seconds
+    duration_seconds = (end_time - start_time).total_seconds()
+    
+    # Format duration
+    if duration_seconds < 60:
+        return f"{int(duration_seconds)} seconds"
+    elif duration_seconds < 3600:
+        minutes = int(duration_seconds // 60)
+        seconds = int(duration_seconds % 60)
+        return f"{minutes} minute{'s' if minutes != 1 else ''} {seconds} second{'s' if seconds != 1 else ''}"
+    else:
+        hours = int(duration_seconds // 3600)
+        remaining = duration_seconds % 3600
+        minutes = int(remaining // 60)
+        seconds = int(remaining % 60)
+        return f"{hours} hour{'s' if hours != 1 else ''} {minutes} minute{'s' if minutes != 1 else ''} {seconds} second{'s' if seconds != 1 else ''}"
+
 # Store conversion jobs
 conversion_jobs = {}
 
@@ -173,7 +205,8 @@ def convert():
                 'stdout': '',
                 'stderr': '',
                 'error': None,
-                'returncode': None
+                'returncode': None,
+                'started_at': datetime.datetime.now()
             }
             logger.debug(f"Created job entry: {conversion_jobs[job_id]}")
             
@@ -235,7 +268,10 @@ def add_test_job():
     """Add a test job for development purposes."""
     job_id = "test_job_" + os.urandom(4).hex()
     
-    # Create a mock job with completed status and timestamp
+    # Create a mock job with completed status and timestamps
+    now = datetime.datetime.now()
+    ten_minutes_ago = now - datetime.timedelta(minutes=10)
+    
     conversion_jobs[job_id] = {
         'file_path': '/tmp/test.csv',
         'filename': 'test.csv',
@@ -263,7 +299,8 @@ def add_test_job():
         'stderr': '',
         'error': None,
         'returncode': 0,
-        'completed_at': datetime.datetime.now()
+        'started_at': ten_minutes_ago,
+        'completed_at': now
     }
     
     flash(f'Test job created with ID: {job_id}', 'success')
