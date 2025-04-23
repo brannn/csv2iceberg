@@ -27,10 +27,10 @@ class IcebergWriter:
     def __init__(
         self,
         trino_client: TrinoClient,
-        hive_client: HiveMetastoreClient,
         catalog: str,
         schema: str,
         table: str,
+        hive_client: Optional[HiveMetastoreClient] = None,
     ):
         """
         Initialize Iceberg writer.

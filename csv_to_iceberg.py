@@ -49,7 +49,8 @@ def cli():
 @click.option('--trino-role', default='sysadmin', help='Trino role for authorization (default: sysadmin)')
 @click.option('--trino-catalog', required=True, help='Trino catalog')
 @click.option('--trino-schema', required=True, help='Trino schema')
-@click.option('--hive-metastore-uri', required=True, help='Hive metastore Thrift URI')
+@click.option('--hive-metastore-uri', default="localhost:9083", help='Hive metastore Thrift URI')
+@click.option('--use-hive-metastore/--no-hive-metastore', default=True, help='Use direct Hive Metastore connection')
 @click.option('--mode', '-m', type=click.Choice(['append', 'overwrite']), default='append', 
               help='Write mode (append or overwrite, default: append)')
 @click.option('--sample-size', default=1000, help='Number of rows to sample for schema inference (default: 1000)')
@@ -58,7 +59,7 @@ def cli():
 def convert(csv_file: str, delimiter: str, has_header: bool, quote_char: str, batch_size: int,
             table_name: str, trino_host: str, trino_port: int, trino_user: str, trino_password: Optional[str],
             http_scheme: str, trino_role: str, trino_catalog: str, trino_schema: str, hive_metastore_uri: str,
-            mode: str, sample_size: int, custom_schema: Optional[str], verbose: bool):
+            use_hive_metastore: bool, mode: str, sample_size: int, custom_schema: Optional[str], verbose: bool):
     """
     Convert a CSV file to an Iceberg table.
     
