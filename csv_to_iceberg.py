@@ -5,17 +5,21 @@ CSV to Iceberg - CLI tool for converting CSV files to Iceberg tables using Trino
 import os
 import sys
 import logging
-from typing import Optional, Tuple
+from typing import Optional, Tuple, List
 
 import click
 from rich.console import Console
 from rich.progress import Progress, TextColumn, BarColumn, TimeElapsedColumn, TimeRemainingColumn
 
 from schema_inferrer import infer_schema_from_csv
-from trino_client import TrinoClient
+from trino_client import TrinoClient, iceberg_type_to_trino_type
 from hive_client import HiveMetastoreClient
 from iceberg_writer import IcebergWriter
 from utils import setup_logging, validate_csv_file, validate_connection_params
+from partition_utils import (
+    parse_partition_spec, validate_partition_spec, format_partition_spec,
+    suggest_partition_columns, get_transform_description, VALID_TRANSFORMS
+)
 
 # Initialize console for rich output
 console = Console()
@@ -51,10 +55,29 @@ def cli():
               help='Write mode (append or overwrite, default: append)')
 @click.option('--sample-size', default=1000, help='Number of rows to sample for schema inference (default: 1000)')
 @click.option('--verbose', '-v', is_flag=True, help='Enable verbose logging')
+@click.option(
+    '--partition-by', 
+    multiple=True, 
+    help='Optional: Column to partition by, with optional transform. ' +
+         'Format: transform(column_name) or column_name. ' +
+         'Examples: year(date), month(timestamp), id. ' +
+         'Can be specified multiple times for multi-level partitioning.'
+)
+@click.option(
+    '--list-partition-transforms', 
+    is_flag=True, 
+    help='List available partition transforms and exit.'
+)
+@click.option(
+    '--suggest-partitioning', 
+    is_flag=True, 
+    help='Analyze CSV data and suggest appropriate partition strategies.'
+)
 def convert(csv_file: str, delimiter: str, has_header: bool, quote_char: str, batch_size: int,
             table_name: str, trino_host: str, trino_port: int, trino_user: str, trino_password: Optional[str],
             trino_catalog: str, trino_schema: str, hive_metastore_uri: str,
-            mode: str, sample_size: int, verbose: bool):
+            mode: str, sample_size: int, verbose: bool, partition_by: Tuple[str], 
+            list_partition_transforms: bool, suggest_partitioning: bool):
     """
     Convert a CSV file to an Iceberg table.
     
@@ -63,6 +86,28 @@ def convert(csv_file: str, delimiter: str, has_header: bool, quote_char: str, ba
     """
     if verbose:
         logging.getLogger().setLevel(logging.DEBUG)
+    
+    # Display partition transforms if requested
+    if list_partition_transforms:
+        console.print("[bold]Available Partition Transforms:[/bold]")
+        for transform, compatible_types in VALID_TRANSFORMS.items():
+            compatible_str = ", ".join(compatible_types)
+            description = get_transform_description(transform)
+            console.print(f"  [cyan]{transform}(...)[/cyan] - {description}")
+            console.print(f"    Compatible with column types: {compatible_str}")
+        
+        # Show identity partitioning
+        console.print("  [cyan]column_name[/cyan] - Identity partitioning (partition by exact values)")
+        console.print("    Compatible with all column types")
+        
+        # Examples
+        console.print("\n[bold]Examples:[/bold]")
+        console.print("  --partition-by year(date_column)")
+        console.print("  --partition-by month(timestamp_column)")
+        console.print("  --partition-by bucket(id, 16)")
+        console.print("  --partition-by truncate(name, 10)")
+        console.print("  --partition-by country")
+        return 0
     
     try:
         # Validate CSV file
@@ -94,6 +139,73 @@ def convert(csv_file: str, delimiter: str, has_header: bool, quote_char: str, ba
             logger.debug(f"Inferred schema: {iceberg_schema}")
         console.print(f"[bold green]✓[/bold green] Schema inferred successfully")
         
+        # Get column names and types from the schema
+        column_names = [field.name for field in iceberg_schema.fields]
+        column_types = [iceberg_type_to_trino_type(field.field_type) for field in iceberg_schema.fields]
+        
+        # Handle partitioning suggestion if requested
+        if suggest_partitioning:
+            # Sample some data to help with suggestions
+            with console.status("[bold blue]Analyzing data for partition recommendations...[/bold blue]") as status:
+                # In a real implementation, we would sample data here
+                # For this demo, we'll just use the schema information
+                partition_suggestions = suggest_partition_columns(column_names, column_types)
+            
+            console.print("[bold]Recommended Partition Strategies:[/bold]")
+            if partition_suggestions:
+                for col_name, transform, param in partition_suggestions:
+                    if transform:
+                        if param:
+                            spec = f"{transform}({col_name}, {param})"
+                        else:
+                            spec = f"{transform}({col_name})"
+                    else:
+                        spec = col_name
+                    
+                    description = get_transform_description(transform)
+                    console.print(f"  [cyan]--partition-by {spec}[/cyan] - {description}")
+            else:
+                console.print("  No suitable partitioning columns found in this dataset")
+            
+            console.print("\n[bold yellow]Note:[/bold yellow] These are suggestions only. Choose based on your query patterns.")
+            console.print("For time-series data, consider using year(), month(), or day() transforms.")
+            console.print("For high-cardinality columns, consider using bucket() transform.")
+            console.print("Avoid over-partitioning - 1-3 partition levels are usually sufficient.")
+            
+            # Ask if user wants to continue with these suggestions
+            return 0
+        
+        # Process partition specifications if provided
+        partition_specs = []
+        if partition_by and len(partition_by) > 0:
+            with console.status("[bold blue]Validating partition specifications...[/bold blue]") as status:
+                for spec in partition_by:
+                    # Validate the partition specification
+                    is_valid, error = validate_partition_spec(spec, column_names, column_types)
+                    if not is_valid:
+                        console.print(f"[bold red]Error:[/bold red] Invalid partition specification: {spec}")
+                        console.print(f"  {error}")
+                        sys.exit(1)
+                    
+                    # Parse and format the specification for SQL
+                    transform, column, param = parse_partition_spec(spec)
+                    formatted_spec = format_partition_spec(transform, column, param)
+                    partition_specs.append(formatted_spec)
+                    
+                    # Log the partition info
+                    if transform:
+                        if param:
+                            logger.info(f"Using partition specification: {transform}({column}, {param})")
+                        else:
+                            logger.info(f"Using partition specification: {transform}({column})")
+                    else:
+                        logger.info(f"Using identity partition on column: {column}")
+            
+            if partition_specs:
+                console.print(f"[bold green]✓[/bold green] Partition specifications validated")
+                for spec in partition_specs:
+                    console.print(f"  - {spec}")
+        
         # 2. Connect to Trino
         with console.status("[bold blue]Connecting to Trino...[/bold blue]") as status:
             logger.info(f"Connecting to Trino at {trino_host}:{trino_port}")
@@ -124,13 +236,29 @@ def convert(csv_file: str, delimiter: str, has_header: bool, quote_char: str, ba
             
             if not table_exists:
                 logger.info(f"Creating table {table_name}")
-                trino_client.create_iceberg_table(catalog, schema, table, iceberg_schema)
+                if partition_specs:
+                    logger.info(f"With partitioning: {partition_specs}")
+                trino_client.create_iceberg_table(
+                    catalog=catalog, 
+                    schema=schema, 
+                    table=table, 
+                    iceberg_schema=iceberg_schema,
+                    partition_spec=partition_specs
+                )
             else:
                 logger.info(f"Table {table_name} already exists, verifying schema compatibility")
                 if not trino_client.validate_table_schema(catalog, schema, table, iceberg_schema):
                     console.print("[bold red]Error:[/bold red] Existing table schema is incompatible with inferred schema")
                     sys.exit(1)
-        console.print(f"[bold green]✓[/bold green] Iceberg table ready")
+                # Note: We can't change partitioning of an existing table
+                if partition_specs:
+                    console.print("[bold yellow]Warning:[/bold yellow] Partitioning specifications are ignored for existing tables")
+        
+        # Display partition info if provided
+        if partition_specs:
+            console.print(f"[bold green]✓[/bold green] Iceberg table created with partitioning: {', '.join(partition_specs)}")
+        else:
+            console.print(f"[bold green]✓[/bold green] Iceberg table ready (no partitioning)")
         
         # 5. Write data to Iceberg table
         logger.info(f"Writing data from {csv_file} to {table_name} in {mode} mode")

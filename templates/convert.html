@@ -2,6 +2,102 @@
 
 {% block title %}CSV to Iceberg - Convert{% endblock %}
 
+{% block scripts %}
+<script>
+    // Show/hide parameter input based on transform selection
+    document.addEventListener('DOMContentLoaded', function() {
+        // Handle initial transform selects
+        document.querySelectorAll('select[name="partition_transform"]').forEach(function(select) {
+            select.addEventListener('change', function() {
+                const paramDiv = this.closest('.row').querySelector('.transform-param');
+                if (this.value === 'bucket' || this.value === 'truncate') {
+                    paramDiv.style.display = 'block';
+                } else {
+                    paramDiv.style.display = 'none';
+                }
+            });
+        });
+        
+        // Add partition level button
+        document.getElementById('add-partition').addEventListener('click', function() {
+            const partitionSpecs = document.getElementById('partition-specs');
+            const newSpec = partitionSpecs.querySelector('.partition-spec').cloneNode(true);
+            
+            // Clear values
+            newSpec.querySelectorAll('input').forEach(input => input.value = '');
+            newSpec.querySelector('select').selectedIndex = 0;
+            newSpec.querySelector('.transform-param').style.display = 'none';
+            
+            // Add event listener to new select
+            newSpec.querySelector('select[name="partition_transform"]').addEventListener('change', function() {
+                const paramDiv = this.closest('.row').querySelector('.transform-param');
+                if (this.value === 'bucket' || this.value === 'truncate') {
+                    paramDiv.style.display = 'block';
+                } else {
+                    paramDiv.style.display = 'none';
+                }
+            });
+            
+            partitionSpecs.appendChild(newSpec);
+            document.getElementById('remove-partition').style.display = 'inline-block';
+        });
+        
+        // Remove partition level button
+        document.getElementById('remove-partition').addEventListener('click', function() {
+            const partitionSpecs = document.getElementById('partition-specs');
+            const specs = partitionSpecs.querySelectorAll('.partition-spec');
+            
+            if (specs.length > 1) {
+                partitionSpecs.removeChild(specs[specs.length - 1]);
+                
+                if (specs.length <= 2) {
+                    this.style.display = 'none';
+                }
+            }
+        });
+    });
+    
+    // Process partition specs before form submission
+    document.addEventListener('DOMContentLoaded', function() {
+        const form = document.querySelector('form');
+        form.addEventListener('submit', function(e) {
+            // Get all partition specs
+            const specs = document.querySelectorAll('.partition-spec');
+            const partitionSpecInputs = [];
+            
+            specs.forEach(function(spec) {
+                const column = spec.querySelector('input[name="partition_column"]').value.trim();
+                if (column) {
+                    const transform = spec.querySelector('select[name="partition_transform"]').value;
+                    const param = spec.querySelector('input[name="partition_param"]').value;
+                    
+                    let partitionSpec;
+                    if (transform) {
+                        if ((transform === 'bucket' || transform === 'truncate') && param) {
+                            partitionSpec = `${transform}(${column}, ${param})`;
+                        } else {
+                            partitionSpec = `${transform}(${column})`;
+                        }
+                    } else {
+                        partitionSpec = column;
+                    }
+                    
+                    // Create hidden input for the partition spec
+                    const input = document.createElement('input');
+                    input.type = 'hidden';
+                    input.name = 'partition_spec';
+                    input.value = partitionSpec;
+                    partitionSpecInputs.push(input);
+                }
+            });
+            
+            // Add hidden inputs to form
+            partitionSpecInputs.forEach(input => form.appendChild(input));
+        });
+    });
+</script>
+{% endblock %}
+
 {% block content %}
 <div class="row">
     <div class="col-lg-12">
@@ -115,6 +211,65 @@
                         <label for="sample_size" class="form-label">Schema Sample Size</label>
                         <input type="number" class="form-control" id="sample_size" name="sample_size" value="1000" min="1">
                         <div class="form-text">Number of rows to sample for schema inference.</div>
+                    </div>
+                    
+                    <!-- Optional Partitioning -->
+                    <div class="mb-3">
+                        <button class="btn btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#partitioningOptions">
+                            Configure Partitioning (Optional)
+                        </button>
+                        <div class="collapse mt-3" id="partitioningOptions">
+                            <div class="card card-body">
+                                <h5>Table Partitioning</h5>
+                                <p class="text-muted">Partitioning can improve query performance but is entirely optional.</p>
+                                
+                                <div id="partition-specs">
+                                    <div class="partition-spec mb-3">
+                                        <div class="row">
+                                            <div class="col-md-5">
+                                                <label class="form-label">Column</label>
+                                                <input type="text" class="form-control" name="partition_column" placeholder="Column name">
+                                            </div>
+                                            <div class="col-md-4">
+                                                <label class="form-label">Transform (Optional)</label>
+                                                <select class="form-select" name="partition_transform">
+                                                    <option value="">Identity (exact values)</option>
+                                                    <option value="year">Year</option>
+                                                    <option value="month">Month</option>
+                                                    <option value="day">Day</option>
+                                                    <option value="hour">Hour</option>
+                                                    <option value="bucket">Bucket</option>
+                                                    <option value="truncate">Truncate</option>
+                                                </select>
+                                            </div>
+                                            <div class="col-md-3 transform-param" style="display: none;">
+                                                <label class="form-label">Parameter</label>
+                                                <input type="number" class="form-control" name="partition_param" min="1" value="10">
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div class="mb-3">
+                                    <button type="button" class="btn btn-outline-primary btn-sm" id="add-partition">
+                                        Add Another Partition Level
+                                    </button>
+                                    <button type="button" class="btn btn-outline-danger btn-sm" id="remove-partition" style="display: none;">
+                                        Remove Last Partition Level
+                                    </button>
+                                </div>
+                                
+                                <div class="form-text mb-3">
+                                    <strong>Recommended Practices:</strong>
+                                    <ul>
+                                        <li>For date columns, consider using year(), month() or day() transforms</li>
+                                        <li>For high cardinality columns, use bucket() transform</li>
+                                        <li>For string columns, use truncate() or identity partitioning</li>
+                                        <li>Avoid over-partitioning - 1-3 partition levels are usually sufficient</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                     
                     <div class="mb-3 form-check">
