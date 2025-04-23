@@ -70,10 +70,7 @@ def run_conversion(job_id, file_path, params):
         if params.get('verbose') == 'true':
             cmd.append('--verbose')
         
-        # Add partition specifications if provided
-        if params.get('partition_spec') and len(params['partition_spec']) > 0:
-            for spec in params['partition_spec']:
-                cmd.extend(["--partition-by", spec])
+        # Partitioning support has been removed
             
         # Run the conversion process
         logger.info(f"Starting conversion job {job_id} with command: {' '.join(cmd)}")
@@ -196,17 +193,7 @@ def convert():
                 'verbose': request.form.get('verbose') or str(default_settings.get('verbose', False)).lower(),
             }
             
-            # Handle partitioning
-            partition_spec = request.form.getlist('partition_spec')
-            
-            # If no partitioning specified in form but profile has partitioning enabled,
-            # use profile partition specs
-            if (not partition_spec or len(partition_spec) == 0) and profile_data:
-                if profile_data.get('partitioning', {}).get('enabled', False):
-                    partition_spec = profile_data.get('partitioning', {}).get('specs', [])
-                    logger.info(f"Using partition specs from profile: {partition_spec}")
-            
-            params['partition_spec'] = partition_spec
+            # Partitioning support has been removed
             
             # Create job
             conversion_jobs[job_id] = {
@@ -303,13 +290,10 @@ def save_profile():
     if sample_size and sample_size.isdigit():
         defaults['sample_size'] = int(sample_size)
     
-    # Prepare partitioning settings
-    has_partitioning = request.form.get('has_partitioning') == 'true'
-    partition_specs = request.form.getlist('partition_specs')
-    
+    # Partitioning support has been removed
     partitioning = {
-        'enabled': has_partitioning and len(partition_specs) > 0,
-        'specs': partition_specs if partition_specs else []
+        'enabled': False,
+        'specs': []
     }
     
     # Create profile settings

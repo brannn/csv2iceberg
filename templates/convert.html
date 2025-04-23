@@ -48,36 +48,7 @@
                 // Add profile name
                 formData.append('profile_name', profileName);
                 
-                // Process partition specs and add them
-                const partitionSpecs = [];
-                document.querySelectorAll('.partition-spec').forEach(function(spec) {
-                    const column = spec.querySelector('input[name="partition_column"]').value.trim();
-                    if (column) {
-                        const transform = spec.querySelector('select[name="partition_transform"]').value;
-                        const param = spec.querySelector('input[name="partition_param"]').value;
-                        
-                        let partitionSpec;
-                        if (transform) {
-                            if ((transform === 'bucket' || transform === 'truncate') && param) {
-                                partitionSpec = `${transform}(${column}, ${param})`;
-                            } else {
-                                partitionSpec = `${transform}(${column})`;
-                            }
-                        } else {
-                            partitionSpec = column;
-                        }
-                        
-                        partitionSpecs.push(partitionSpec);
-                    }
-                });
-                
-                // Add partition specs
-                if (partitionSpecs.length > 0) {
-                    formData.append('has_partitioning', 'true');
-                    partitionSpecs.forEach(spec => {
-                        formData.append('partition_specs', spec);
-                    });
-                }
+                // Partitioning support has been removed
                 
                 // Send request to save profile
                 fetch('/save_profile', {
@@ -108,42 +79,12 @@
         }
     });
     
-    // Process partition specs before form submission
+    // Form submission handler
     document.addEventListener('DOMContentLoaded', function() {
         const form = document.querySelector('form');
         form.addEventListener('submit', function(e) {
-            // Get all partition specs
-            const specs = document.querySelectorAll('.partition-spec');
-            const partitionSpecInputs = [];
-            
-            specs.forEach(function(spec) {
-                const column = spec.querySelector('input[name="partition_column"]').value.trim();
-                if (column) {
-                    const transform = spec.querySelector('select[name="partition_transform"]').value;
-                    const param = spec.querySelector('input[name="partition_param"]').value;
-                    
-                    let partitionSpec;
-                    if (transform) {
-                        if ((transform === 'bucket' || transform === 'truncate') && param) {
-                            partitionSpec = `${transform}(${column}, ${param})`;
-                        } else {
-                            partitionSpec = `${transform}(${column})`;
-                        }
-                    } else {
-                        partitionSpec = column;
-                    }
-                    
-                    // Create hidden input for the partition spec
-                    const input = document.createElement('input');
-                    input.type = 'hidden';
-                    input.name = 'partition_spec';
-                    input.value = partitionSpec;
-                    partitionSpecInputs.push(input);
-                }
-            });
-            
-            // Add hidden inputs to form
-            partitionSpecInputs.forEach(input => form.appendChild(input));
+            // Partitioning support has been removed
+            // No additional form processing needed
         });
     });
 </script>
