@@ -109,12 +109,56 @@
                         setTimeout(updateProgress, 1000);
                     } else {
                         log(`Job finished with status: ${data.status}`);
+                        
+                        // For completed jobs, update UI to show completion
+                        if (data.status === 'completed') {
+                            progressBar.classList.add('bg-success');
+                            progressBar.classList.remove('bg-info');
+                            progressPhase.textContent = 'Complete!';
+                            
+                            // Add a completion message
+                            const container = document.querySelector('.container');
+                            const completionAlert = document.createElement('div');
+                            completionAlert.className = 'alert alert-success mt-3';
+                            completionAlert.innerHTML = '<strong>Success!</strong> The conversion has completed successfully.';
+                            container.insertBefore(completionAlert, document.querySelector('.card'));
+                        } else if (data.status === 'failed') {
+                            progressBar.classList.add('bg-danger');
+                            progressBar.classList.remove('bg-success');
+                            progressPhase.textContent = 'Failed!';
+                            
+                            // Add an error message
+                            const container = document.querySelector('.container');
+                            const errorAlert = document.createElement('div');
+                            errorAlert.className = 'alert alert-danger mt-3';
+                            errorAlert.innerHTML = '<strong>Error!</strong> The conversion failed. Check the logs for details.';
+                            container.insertBefore(errorAlert, document.querySelector('.card'));
+                        }
                     }
                 })
                 .catch(error => {
                     log(`Error fetching progress: ${error}`);
-                    // Try again after 3 seconds
-                    setTimeout(updateProgress, 3000);
+                    
+                    // Check if this might be a 404 from a job that has already been removed
+                    if (error.message && error.message.includes('404')) {
+                        // Job may have been deleted or expired, show a friendly message
+                        const container = document.querySelector('.container');
+                        const errorAlert = document.createElement('div');
+                        errorAlert.className = 'alert alert-warning mt-3';
+                        errorAlert.id = 'error-message'; // Add an ID to avoid duplicates
+                        errorAlert.innerHTML = '<strong>Note:</strong> Unable to fetch job status - the job may have completed or expired. Check the Jobs list for the final status.';
+                        
+                        // Only add if we haven't already added this message
+                        if (!document.getElementById('error-message')) {
+                            container.insertBefore(errorAlert, document.querySelector('.card'));
+                        }
+                        
+                        // Try again after 5 seconds (longer timeout for missing jobs)
+                        setTimeout(updateProgress, 5000);
+                    } else {
+                        // For other errors, try again sooner
+                        setTimeout(updateProgress, 3000);
+                    }
                 });
         }
         

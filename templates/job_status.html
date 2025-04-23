@@ -244,8 +244,18 @@
             })
             .catch(error => {
                 console.error('Error fetching progress:', error);
-                // Try again after 2 seconds
-                setTimeout(updateProgress, 2000);
+                log(`Error fetching progress: ${error}`);
+                
+                // Check if this might be a 404 from a job that has already been removed
+                if (error.message && error.message.includes('404')) {
+                    // Job may have been deleted or expired, show a friendly message
+                    log('Job not found (404), refreshing page to show updated status');
+                    window.location.reload(); // Reload to show completed status
+                } else {
+                    // For other errors, try again
+                    log('Other error occurred, trying again in 2 seconds');
+                    setTimeout(updateProgress, 2000);
+                }
             });
     }
     
