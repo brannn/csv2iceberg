@@ -3,65 +3,77 @@ Schema inference module for CSV to Iceberg conversion
 """
 import os
 import logging
-from typing import Dict, List, Any, Optional
+import time
+import datetime
+import pandas as pd
+import numpy as np
+from typing import Dict, List, Any, Optional, Tuple
 
-# Mock Schema and types for PyIceberg compatibility
-class Schema:
-    """Mock Schema class for compatibility"""
-    def __init__(self, *fields):
-        self.fields = fields
-        
-class Field:
-    """Mock Field class for compatibility"""
-    def __init__(self, field_id, name, field_type, doc=""):
-        self.field_id = field_id
-        self.name = name
-        self.field_type = field_type
-        self.doc = doc
+# Import PyIceberg Schema and type classes
+try:
+    from pyiceberg.schema import Schema
+    from pyiceberg.types import (
+        BooleanType,
+        IntegerType,
+        LongType,
+        FloatType,
+        DoubleType,
+        DateType,
+        TimestampType,
+        StringType,
+        DecimalType,
+        StructType,
+        NestedField
+    )
+except ImportError:
+    # If PyIceberg is not available, use fallback definitions for testing/compatibility
+    logging.warning("PyIceberg not available, using fallback type definitions")
+    
+    class Schema:
+        def __init__(self, *fields):
+            self.fields = fields
+            
+    class NestedField:
+        def __init__(self, field_id, required, name, field_type, doc=None):
+            self.field_id = field_id
+            self.required = required
+            self.name = name
+            self.field_type = field_type
+            self.doc = doc
+            
+    # Basic type classes
+    class BooleanType:
+        pass
 
-# Mock type classes
-class BooleanType:
-    """Mock BooleanType class"""
-    pass
+    class IntegerType:
+        pass
 
-class IntegerType:
-    """Mock IntegerType class"""
-    pass
+    class LongType:
+        pass
 
-class LongType:
-    """Mock LongType class"""
-    pass
+    class FloatType:
+        pass
 
-class FloatType:
-    """Mock FloatType class"""
-    pass
+    class DoubleType:
+        pass
 
-class DoubleType:
-    """Mock DoubleType class"""
-    pass
+    class DateType:
+        pass
 
-class DateType:
-    """Mock DateType class"""
-    pass
+    class TimestampType:
+        pass
 
-class TimestampType:
-    """Mock TimestampType class"""
-    pass
+    class StringType:
+        pass
 
-class StringType:
-    """Mock StringType class"""
-    pass
+    class DecimalType:
+        def __init__(self, precision=38, scale=18):
+            self.precision = precision
+            self.scale = scale
 
-class DecimalType:
-    """Mock DecimalType class"""
-    def __init__(self, precision=38, scale=18):
-        self.precision = precision
-        self.scale = scale
-
-class StructType:
-    """Mock StructType class"""
-    def __init__(self, *fields):
-        self.fields = fields
+    class StructType:
+        def __init__(self, *fields):
+            self.fields = fields
 
 logger = logging.getLogger(__name__)
 
