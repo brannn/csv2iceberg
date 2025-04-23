@@ -229,41 +229,59 @@ class IcebergWriter:
                     self.trino_client.execute_query(truncate_sql)
                     logger.debug(f"Truncated target table {self.table} for overwrite mode")
                 
-                # Create a temporary table with appropriate types from PyArrow schema
-                pa_schema = arrow_table.schema
-                column_defs = []
-                
-                for i, field in enumerate(pa_schema):
-                    col_name = field.name
-                    pa_type = field.type
+                # Use the target table schema directly to ensure type compatibility
+                try:
+                    # Get the target table schema
+                    target_schema = self.trino_client.get_table_schema(self.catalog, self.schema, self.table)
+                    column_types_dict = {col_name: col_type for col_name, col_type in target_schema}
                     
-                    # Map PyArrow types to Trino types
-                    if pa.types.is_integer(pa_type):
-                        if pa.types.is_int64(pa_type):
-                            col_type = "BIGINT"
-                        elif pa.types.is_int32(pa_type):
-                            col_type = "INTEGER"
-                        elif pa.types.is_int16(pa_type):
-                            col_type = "SMALLINT"
-                        elif pa.types.is_int8(pa_type):
-                            col_type = "TINYINT"
+                    # Create temp table with EXACTLY the same types as the target table
+                    column_defs = []
+                    for col in columns:
+                        if col in column_types_dict:
+                            col_type = column_types_dict[col]
+                            column_defs.append(f'"{col}" {col_type}')
                         else:
-                            col_type = "BIGINT"
-                    elif pa.types.is_floating(pa_type):
-                        col_type = "DOUBLE"
-                    elif pa.types.is_boolean(pa_type):
-                        col_type = "BOOLEAN"
-                    elif pa.types.is_timestamp(pa_type):
-                        col_type = "TIMESTAMP(3)"
-                    elif pa.types.is_date(pa_type):
-                        col_type = "DATE"
-                    elif pa.types.is_decimal(pa_type):
-                        col_type = f"DECIMAL({pa_type.precision}, {pa_type.scale})"
-                    else:
-                        # Default to varchar for other types
-                        col_type = "VARCHAR"
+                            # If column not in target (should not happen), default to VARCHAR
+                            logger.warning(f"Column '{col}' not found in target table schema, defaulting to VARCHAR")
+                            column_defs.append(f'"{col}" VARCHAR')
+                except Exception as e:
+                    # If we can't get the target schema, fall back to PyArrow schema
+                    logger.warning(f"Could not get target table schema: {str(e)}, falling back to PyArrow schema")
+                    pa_schema = arrow_table.schema
+                    column_defs = []
                     
-                    column_defs.append(f'"{col_name}" {col_type}')
+                    for i, field in enumerate(pa_schema):
+                        col_name = field.name
+                        pa_type = field.type
+                        
+                        # Map PyArrow types to Trino types
+                        if pa.types.is_integer(pa_type):
+                            if pa.types.is_int64(pa_type):
+                                col_type = "BIGINT"
+                            elif pa.types.is_int32(pa_type):
+                                col_type = "INTEGER"
+                            elif pa.types.is_int16(pa_type):
+                                col_type = "SMALLINT"
+                            elif pa.types.is_int8(pa_type):
+                                col_type = "TINYINT"
+                            else:
+                                col_type = "BIGINT"
+                        elif pa.types.is_floating(pa_type):
+                            col_type = "DOUBLE"
+                        elif pa.types.is_boolean(pa_type):
+                            col_type = "BOOLEAN"
+                        elif pa.types.is_timestamp(pa_type):
+                            col_type = "TIMESTAMP(6)"  # Use timestamp(6) to match target
+                        elif pa.types.is_date(pa_type):
+                            col_type = "DATE"
+                        elif pa.types.is_decimal(pa_type):
+                            col_type = f"DECIMAL({pa_type.precision}, {pa_type.scale})"
+                        else:
+                            # Default to varchar for other types
+                            col_type = "VARCHAR"
+                        
+                        column_defs.append(f'"{col_name}" {col_type}')
                 
                 # Create a temporary table with the schema
                 create_temp_table_sql = f"""
@@ -282,7 +300,7 @@ class IcebergWriter:
                     end_idx = min(start_idx + batch_size, total_rows)
                     batch = arrow_table.slice(start_idx, end_idx - start_idx)
                     
-                    # Generate VALUES clause from PyArrow table
+                    # Generate VALUES clause from PyArrow table with proper data types
                     values = []
                     for row_idx in range(batch.num_rows):
                         row_values = []
@@ -290,20 +308,47 @@ class IcebergWriter:
                             val = batch.column(col_idx)[row_idx].as_py()
                             if val is None:
                                 row_values.append("NULL")
-                            elif isinstance(val, (int, float)):
-                                row_values.append(str(val))
-                            elif isinstance(val, bool):
-                                row_values.append('TRUE' if val else 'FALSE')
-                            elif isinstance(val, datetime.date):
-                                val_str = str(val).replace("'", "''")
-                                row_values.append(f"DATE '{val_str}'")
-                            elif isinstance(val, datetime.datetime):
-                                val_str = str(val).replace("'", "''")
-                                row_values.append(f"TIMESTAMP '{val_str}'")
                             else:
-                                # Escape single quotes in string values
-                                val_str = str(val).replace("'", "''")
-                                row_values.append(f"'{val_str}'")
+                                # Get target column type if available
+                                target_type = column_types_dict.get(col, "").lower() if col in column_types_dict else ""
+                                
+                                # Format value based on target type
+                                if isinstance(val, (int, float)):
+                                    if 'double' in target_type or 'float' in target_type or 'real' in target_type:
+                                        # Explicit cast to DOUBLE for floating point types
+                                        row_values.append(f"CAST({val} AS DOUBLE)")
+                                    elif 'decimal' in target_type:
+                                        # Explicit cast to DECIMAL for decimal types
+                                        row_values.append(f"CAST({val} AS {target_type.upper()})")
+                                    else:
+                                        # Just use the value as is for integer types
+                                        row_values.append(str(val))
+                                elif isinstance(val, bool):
+                                    row_values.append('TRUE' if val else 'FALSE')
+                                elif isinstance(val, datetime.date) and not isinstance(val, datetime.datetime):
+                                    val_str = str(val).replace("'", "''")
+                                    if 'date' in target_type:
+                                        row_values.append(f"DATE '{val_str}'")
+                                    else:
+                                        # Default to CAST if target isn't explicitly date
+                                        row_values.append(f"CAST('{val_str}' AS {target_type.upper() or 'DATE'})")
+                                elif isinstance(val, datetime.datetime):
+                                    val_str = str(val).replace("'", "''")
+                                    if 'timestamp' in target_type:
+                                        # Match the timestamp precision from the target
+                                        row_values.append(f"CAST('{val_str}' AS {target_type.upper()})")
+                                    else:
+                                        # Default timestamp with precision 6
+                                        row_values.append(f"TIMESTAMP '{val_str}'")
+                                else:
+                                    # Escape single quotes in string values
+                                    val_str = str(val).replace("'", "''")
+                                    if target_type and target_type != 'varchar':
+                                        # Try to cast to the target type explicitly
+                                        row_values.append(f"CAST('{val_str}' AS {target_type.upper()})")
+                                    else:
+                                        # Default string format
+                                        row_values.append(f"'{val_str}'")
                         
                         values.append(f"({', '.join(row_values)})")
                     
