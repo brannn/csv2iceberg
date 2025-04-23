@@ -7,7 +7,7 @@ import time
 import csv
 from typing import Dict, List, Any, Optional, Callable, Tuple
 import tempfile
-from datetime import datetime
+import datetime
 import pandas as pd
 
 # Import PyIceberg schema
@@ -294,7 +294,10 @@ class IcebergWriter:
                                 row_values.append(str(val))
                             elif isinstance(val, bool):
                                 row_values.append('TRUE' if val else 'FALSE')
-                            elif isinstance(val, (datetime.date, datetime.datetime)):
+                            elif isinstance(val, datetime.date):
+                                val_str = str(val).replace("'", "''")
+                                row_values.append(f"DATE '{val_str}'")
+                            elif isinstance(val, datetime.datetime):
                                 val_str = str(val).replace("'", "''")
                                 row_values.append(f"TIMESTAMP '{val_str}'")
                             else:
@@ -365,9 +368,12 @@ class IcebergWriter:
                                 row_values.append(str(val))
                             elif isinstance(val, bool):
                                 row_values.append('TRUE' if val else 'FALSE')
-                            elif isinstance(val, (datetime.date, datetime.datetime)):
+                            elif isinstance(val, datetime.date):
                                 val_str = str(val).replace("'", "''")
-                                row_values.append(f"'{val_str}'")
+                                row_values.append(f"DATE '{val_str}'")
+                            elif isinstance(val, datetime.datetime):
+                                val_str = str(val).replace("'", "''")
+                                row_values.append(f"TIMESTAMP '{val_str}'")
                             else:
                                 # Escape single quotes in string values
                                 val_str = str(val).replace("'", "''")
