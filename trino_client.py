@@ -103,14 +103,8 @@ class TrinoClient:
                 'http_scheme': self.http_scheme,
                 'http_headers': http_headers,
                 'verify': False,  # For testing purposes, don't verify SSL
-                'request_timeout': 120,  # Longer timeout for large operations
-                'session_properties': {
-                    # Use only essential session properties that are universally supported
-                    'query_max_run_time': '2h',
-                    'query_max_execution_time': '2h',
-                    'task_writer_count': '4',
-                    # Explicitly removed 'exchange_compression' as it's not supported by all Trino versions
-                }
+                'request_timeout': 120  # Longer timeout for large operations
+                # No custom session properties - keep it simple
             }
             
             # Handle auth correctly based on http_scheme
