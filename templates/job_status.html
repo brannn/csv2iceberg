@@ -24,10 +24,12 @@
                                 <small>Running for: {{ format_duration(job.started_at, now) }}</small>
                             {% endif %}
                         </div>
-                        <div class="progress mb-3">
-                            <div id="progress-bar" class="progress-bar progress-bar-striped progress-bar-animated bg-info" role="progressbar" aria-valuenow="{{ job.progress|default(0) }}" aria-valuemin="0" aria-valuemax="100" style="width: {{ job.progress|default(0) }}%"></div>
+                        <div class="progress mb-3" style="height: 25px;">
+                            <div id="progress-bar" class="progress-bar progress-bar-striped progress-bar-animated bg-info fs-6" role="progressbar" aria-valuenow="{{ job.progress|default(0) }}" aria-valuemin="0" aria-valuemax="100" style="width: {{ job.progress|default(0) }}%">
+                                <span id="progress-percent">{{ job.progress|default(0) }}%</span>
+                            </div>
                         </div>
-                        <p id="progress-text" class="text-center">Progress: <span id="progress-percent">{{ job.progress|default(0) }}%</span></p>
+                        <p id="progress-text" class="text-center">Converting CSV to Iceberg - <span id="progress-status">In Progress</span></p>
                     {% elif job.status == 'completed' %}
                         <div class="alert alert-success">
                             <strong>Completed</strong> - Conversion completed successfully.
@@ -181,39 +183,61 @@
 {% block scripts %}
 {% if job.status == 'running' %}
 <script>
+    // Debug logging function
+    function log(message) {
+        console.log(message);
+    }
+    
     // Function to update progress bar and text
     function updateProgress() {
-        console.log('Polling for progress updates...');
+        log('Polling for progress updates...');
         
         fetch('/job/{{ job_id }}/progress')
             .then(response => {
-                console.log('Got response:', response.status);
+                log(`Response status: ${response.status}`);
                 return response.json();
             })
             .then(data => {
-                console.log('Progress data:', data);
+                log(`Progress data: ${JSON.stringify(data)}`);
                 
                 // Update progress bar width and text
                 const progressBar = document.getElementById('progress-bar');
                 const progressPercent = document.getElementById('progress-percent');
                 
                 // Make sure progress is at least 0 and at most 100
-                const progress = Math.min(100, Math.max(0, data.progress));
-                console.log('Setting progress to:', progress);
+                const progress = Math.min(100, Math.max(0, data.progress || 0));
+                log(`Setting progress to: ${progress}%`);
                 
                 progressBar.style.width = progress + '%';
                 progressBar.setAttribute('aria-valuenow', progress);
                 progressPercent.textContent = progress + '%';
                 
+                // Update the status text
+                const progressStatus = document.getElementById('progress-status');
+                if (progressStatus) {
+                    if (progress < 25) {
+                        progressStatus.textContent = 'Preparing...';
+                    } else if (progress < 50) {
+                        progressStatus.textContent = 'Schema Analysis';
+                    } else if (progress < 75) {
+                        progressStatus.textContent = 'Writing Data';
+                    } else if (progress < 100) {
+                        progressStatus.textContent = 'Finalizing...';
+                    } else {
+                        progressStatus.textContent = 'Completed!';
+                    }
+                }
+                
                 // Keep the animation running for all "running" jobs
                 progressBar.classList.add('progress-bar-animated');
+                progressBar.classList.add('bg-info');
                 
                 // If job is still running, poll again after 1 second
                 if (data.status === 'running') {
-                    console.log('Job still running, will poll again in 1 second');
+                    log('Job still running, will poll again in 1 second');
                     setTimeout(updateProgress, 1000);
                 } else {
-                    console.log('Job status changed to:', data.status);
+                    log(`Job status changed to: ${data.status}`);
                     // Otherwise, reload the page to show completion
                     window.location.reload();
                 }
@@ -227,10 +251,11 @@
     
     // Start progress updates when page loads
     document.addEventListener('DOMContentLoaded', function() {
-        console.log('Page loaded, starting progress updates');
+        log('Page loaded, starting progress updates');
         // Add default animation to the progress bar
         const progressBar = document.getElementById('progress-bar');
         progressBar.classList.add('progress-bar-animated');
+        progressBar.classList.add('bg-info');
         
         // Start polling for updates
         updateProgress();

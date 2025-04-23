@@ -20,15 +20,16 @@
         <h1>Progress Test</h1>
         <p>Job ID: {{ job_id }}</p>
         <p>Status: <span id="status-text">{{ job.status }}</span></p>
-        <p>Current Progress: <span id="progress-percent">{{ job.progress|default(0) }}%</span></p>
+        <p>Current Progress: <span id="progress-percent">{{ job.progress|default(0) }}%</span> - <span id="progress-phase">Initializing...</span></p>
         
-        <div class="progress mb-3">
-            <div id="progress-bar" class="progress-bar progress-bar-striped progress-bar-animated bg-success" 
+        <div class="progress mb-3" style="height: 25px;">
+            <div id="progress-bar" class="progress-bar progress-bar-striped progress-bar-animated bg-success fs-6" 
                  role="progressbar" 
                  aria-valuenow="{{ job.progress|default(0) }}" 
                  aria-valuemin="0" 
                  aria-valuemax="100" 
                  style="width: {{ job.progress|default(0) }}%">
+                <span id="progress-percent-inner">{{ job.progress|default(0) }}%</span>
             </div>
         </div>
         
@@ -73,6 +74,8 @@
                     // Update progress bar and text
                     const progressBar = document.getElementById('progress-bar');
                     const progressPercent = document.getElementById('progress-percent');
+                    const progressPercentInner = document.getElementById('progress-percent-inner');
+                    const progressPhase = document.getElementById('progress-phase');
                     const statusText = document.getElementById('status-text');
                     
                     // Update values
@@ -82,7 +85,23 @@
                     progressBar.style.width = progress + '%';
                     progressBar.setAttribute('aria-valuenow', progress);
                     progressPercent.textContent = progress + '%';
+                    progressPercentInner.textContent = progress + '%';
                     statusText.textContent = data.status;
+                    
+                    // Update the progress phase text
+                    if (progressPhase) {
+                        if (progress < 25) {
+                            progressPhase.textContent = 'Initializing...';
+                        } else if (progress < 50) {
+                            progressPhase.textContent = 'Analyzing Schema';
+                        } else if (progress < 75) {
+                            progressPhase.textContent = 'Processing & Writing Data';
+                        } else if (progress < 100) {
+                            progressPhase.textContent = 'Finalizing';
+                        } else {
+                            progressPhase.textContent = 'Complete!';
+                        }
+                    }
                     
                     // If job is still running, poll again after 1 second
                     if (data.status === 'running') {
