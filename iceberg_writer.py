@@ -91,8 +91,8 @@ class IcebergWriter:
                 ignore_errors=True
             )
             
-            # Get column names
-            column_names = lazy_reader.collect(10).columns
+            # Get column names - using slice and collect for compatibility with older Polars versions
+            column_names = lazy_reader.slice(0, 10).collect().columns
             
             # Track progress
             processed_rows = 0
