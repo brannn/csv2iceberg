@@ -50,7 +50,7 @@
                     
                     <div class="mb-3">
                         <label for="trino_host" class="form-label">Trino Host</label>
-                        <input type="text" class="form-control" id="trino_host" name="trino_host" value="localhost" required>
+                        <input type="text" class="form-control" id="trino_host" name="trino_host" value="sep.sdp-dev.pd.switchnet.nv" required>
                     </div>
                     
                     <div class="mb-3">
@@ -86,7 +86,7 @@
                     
                     <div class="mb-3">
                         <label for="trino_catalog" class="form-label">Trino Catalog</label>
-                        <input type="text" class="form-control" id="trino_catalog" name="trino_catalog" value="hive" required>
+                        <input type="text" class="form-control" id="trino_catalog" name="trino_catalog" value="iceberg" required>
                     </div>
                     
                     <div class="mb-3">
@@ -152,6 +152,69 @@ document.addEventListener('DOMContentLoaded', function() {
     const submitBtn = document.getElementById('submitBtn');
     const passwordField = document.getElementById('trino_password');
     const httpSchemeSelect = document.getElementById('http_scheme');
+    const trinoCatalog = document.getElementById('trino_catalog');
+    const trinoSchema = document.getElementById('trino_schema');
+    const tableNameField = document.getElementById('table_name');
+    
+    // Function to update the table name field based on catalog and schema
+    function updateTableName() {
+        const catalog = trinoCatalog.value.trim();
+        const schema = trinoSchema.value.trim();
+        
+        // Only set the prefix if both catalog and schema have values
+        if (catalog && schema) {
+            // Get the current table name (after the last dot if it exists)
+            let tablePart = '';
+            const currentValue = tableNameField.value.trim();
+            const parts = currentValue.split('.');
+            
+            // If the current value has at least 3 parts (catalog.schema.table)
+            // or if it has no dots, use the table part
+            if (parts.length >= 3) {
+                tablePart = parts[2];
+            } else if (!currentValue.includes('.') && currentValue) {
+                tablePart = currentValue;
+            }
+            
+            // Update the table name field with the new format
+            tableNameField.value = `${catalog}.${schema}.${tablePart}`;
+        }
+    }
+    
+    // Initialize the table name field with catalog and schema values
+    updateTableName();
+    
+    // Update the table name field when catalog or schema changes
+    trinoCatalog.addEventListener('input', updateTableName);
+    trinoSchema.addEventListener('input', updateTableName);
+    
+    // Special handling for the table name field
+    tableNameField.addEventListener('focus', function() {
+        // If the field follows the pattern catalog.schema., place cursor at the end
+        const val = tableNameField.value;
+        if (val.split('.').length === 3 && val.endsWith('.')) {
+            tableNameField.setSelectionRange(val.length, val.length);
+        }
+    });
+    
+    // Handle the case when user enters a simple table name without dots
+    tableNameField.addEventListener('input', function() {
+        const val = tableNameField.value.trim();
+        // If it doesn't contain dots, it's likely just the table part
+        if (!val.includes('.') && val) {
+            const catalog = trinoCatalog.value.trim();
+            const schema = trinoSchema.value.trim();
+            if (catalog && schema) {
+                // Wait a short time to see if the user is still typing
+                setTimeout(() => {
+                    // Check again if dots have been added manually
+                    if (!tableNameField.value.includes('.') && tableNameField.value.trim() === val) {
+                        tableNameField.value = `${catalog}.${schema}.${val}`;
+                    }
+                }, 1500);
+            }
+        }
+    });
     
     // Automatically switch to HTTPS when password is entered
     passwordField.addEventListener('input', function() {
