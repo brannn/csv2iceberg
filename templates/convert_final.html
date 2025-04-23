@@ -88,8 +88,14 @@
                     
                     <div class="mb-3">
                         <label for="hive_metastore_uri" class="form-label">Hive Metastore URI</label>
-                        <input type="text" class="form-control" id="hive_metastore_uri" name="hive_metastore_uri" value="localhost:9083" required>
+                        <input type="text" class="form-control" id="hive_metastore_uri" name="hive_metastore_uri" value="localhost:9083">
                         <div class="form-text">Format: host:port</div>
+                    </div>
+                    
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" class="form-check-input" id="use_hive_metastore" name="use_hive_metastore" value="true" checked>
+                        <label class="form-check-label" for="use_hive_metastore">Use direct Hive Metastore connection</label>
+                        <div class="form-text">When disabled, all operations will be performed through Trino only. Hive Metastore URI is optional when disabled.</div>
                     </div>
                     
                     <div class="mb-3">
@@ -144,6 +150,26 @@ document.addEventListener('DOMContentLoaded', function() {
     const trinoSchema = document.getElementById('trino_schema');
     const tableNameField = document.getElementById('table_name');
     
+    // Function to toggle Hive Metastore URI field based on checkbox
+    const useHiveMetastoreCheckbox = document.getElementById('use_hive_metastore');
+    const hiveMetastoreUriField = document.getElementById('hive_metastore_uri');
+    
+    function toggleHiveMetastoreField() {
+        if (useHiveMetastoreCheckbox.checked) {
+            hiveMetastoreUriField.required = true;
+            hiveMetastoreUriField.disabled = false;
+        } else {
+            hiveMetastoreUriField.required = false;
+            hiveMetastoreUriField.disabled = true;
+        }
+    }
+    
+    // Initial toggle state
+    toggleHiveMetastoreField();
+    
+    // Toggle on checkbox change
+    useHiveMetastoreCheckbox.addEventListener('change', toggleHiveMetastoreField);
+
     // Function to update the table name field based on catalog and schema
     function updateTableName() {
         const catalog = trinoCatalog.value.trim();

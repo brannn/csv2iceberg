@@ -119,9 +119,18 @@ def run_conversion(job_id, file_path, params):
             "--trino-host", params['trino_host'],
             "--trino-port", params['trino_port'],
             "--trino-catalog", params['trino_catalog'],
-            "--trino-schema", params['trino_schema'],
-            "--hive-metastore-uri", params['hive_metastore_uri']
+            "--trino-schema", params['trino_schema']
         ]
+        
+        # Add Hive Metastore parameters
+        if params.get('use_hive_metastore'):
+            # If Hive is enabled, add the URI and enable flag
+            conversion_cmd.append("--use-hive-metastore")
+            if params.get('hive_metastore_uri'):
+                conversion_cmd.extend(["--hive-metastore-uri", params['hive_metastore_uri']])
+        else:
+            # If Hive is disabled, add the no-hive-metastore flag
+            conversion_cmd.append("--no-hive-metastore")
         
         # Add Trino authentication if provided
         if params.get('trino_user'):
