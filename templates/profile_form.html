@@ -37,7 +37,7 @@
                     
                     <div class="mb-3">
                         <label for="trino_port" class="form-label">Trino Port</label>
-                        <input type="number" class="form-control" id="trino_port" name="trino_port" value="{{ profile.trino_port if profile else 8080 }}" required>
+                        <input type="number" class="form-control" id="trino_port" name="trino_port" value="{{ profile.trino_port if profile else 443 }}" required>
                     </div>
                     
                     <div class="mb-3">
@@ -54,9 +54,10 @@
                     <div class="mb-3">
                         <label for="http_scheme" class="form-label">HTTP Scheme</label>
                         <select class="form-select" id="http_scheme" name="http_scheme">
-                            <option value="http" {% if profile and profile.http_scheme == 'http' %}selected{% endif %}>HTTP</option>
-                            <option value="https" {% if profile and profile.http_scheme == 'https' %}selected{% endif %}>HTTPS</option>
+                            <option value="http" {% if profile and profile.http_scheme == 'http' %}selected{% elif not profile %}{% endif %}>HTTP</option>
+                            <option value="https" {% if profile and profile.http_scheme == 'https' %}selected{% elif not profile %}selected{% endif %}>HTTPS (Required for authentication)</option>
                         </select>
+                        <div class="form-text">Use HTTPS if Trino authentication is enabled</div>
                     </div>
                     
                     <div class="mb-3">
