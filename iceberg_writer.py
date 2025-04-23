@@ -9,8 +9,8 @@ import tempfile
 from datetime import datetime
 import pandas as pd
 
-# Import schema components
-from schema_inferrer import Schema
+# Import PyIceberg schema
+from pyiceberg.schema import Schema
 
 from trino_client import TrinoClient
 from hive_client import HiveMetastoreClient

@@ -8,8 +8,21 @@ import pandas as pd
 from typing import Dict, List, Any, Optional, Tuple
 from urllib.parse import quote_plus
 
-# Import our Schema class
-from schema_inferrer import Schema, Field, BooleanType, IntegerType, LongType, FloatType, DoubleType, DateType, TimestampType, StringType, DecimalType, StructType
+# Import PyIceberg schema and types
+from pyiceberg.schema import Schema
+from pyiceberg.types import (
+    BooleanType,
+    IntegerType,
+    LongType,
+    FloatType,
+    DoubleType,
+    DateType,
+    TimestampType,
+    StringType,
+    DecimalType,
+    StructType,
+    NestedField as Field
+)
 
 # Import Trino client libraries
 import trino
