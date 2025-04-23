@@ -242,7 +242,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Handle the analyze schema button
     const analyzeBtn = document.getElementById('analyzeBtn');
     
-    analyzeBtn.addEventListener('click', function() {
+    analyzeBtn.addEventListener('click', function(e) {
         // For the analyze button, we only need the CSV file and parsing options
         // We don't need to validate the other fields like trino connection details
         
