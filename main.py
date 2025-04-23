@@ -44,6 +44,12 @@ def run_conversion(job_id, file_path, params):
             "--hive-metastore-uri", params['hive_metastore_uri']
         ]
         
+        # Add Trino authentication if provided
+        if params.get('trino_user'):
+            cmd.extend(["--trino-user", params['trino_user']])
+        if params.get('trino_password'):
+            cmd.extend(["--trino-password", params['trino_password']])
+        
         # Add optional parameters
         if params.get('delimiter'):
             cmd.extend(["--delimiter", params['delimiter']])
@@ -113,6 +119,8 @@ def convert():
                 'table_name': request.form.get('table_name'),
                 'trino_host': request.form.get('trino_host'),
                 'trino_port': request.form.get('trino_port'),
+                'trino_user': request.form.get('trino_user'),
+                'trino_password': request.form.get('trino_password'),
                 'trino_catalog': request.form.get('trino_catalog'),
                 'trino_schema': request.form.get('trino_schema'),
                 'hive_metastore_uri': request.form.get('hive_metastore_uri'),
