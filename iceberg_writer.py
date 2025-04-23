@@ -142,30 +142,89 @@ class IcebergWriter:
             # Create temporary table name with timestamp to avoid conflicts
             temp_table = f"temp_{self.table}_{int(time.time())}"
             
-            # Create a temporary table to hold the batch data
-            create_temp_table_sql = f"""
-            CREATE TABLE {self.catalog}.{self.schema}.{temp_table} (
-                {", ".join([f'"{col}" VARCHAR' for col in columns])}
-            )
-            """
+            # Get the schema of the target table to ensure type compatibility
+            try:
+                target_schema = self.trino_client.get_table_schema(self.catalog, self.schema, self.table)
+                column_types = {col_name: col_type for col_name, col_type in target_schema}
+                
+                # Create column definitions with proper types
+                column_defs = []
+                for col in columns:
+                    # If column exists in target schema, use the same type, otherwise default to VARCHAR
+                    if col in column_types:
+                        column_defs.append(f'"{col}" {column_types[col]}')
+                    else:
+                        column_defs.append(f'"{col}" VARCHAR')
+                
+                # Create a temporary table to hold the batch data with appropriate data types
+                create_temp_table_sql = f"""
+                CREATE TABLE {self.catalog}.{self.schema}.{temp_table} (
+                    {", ".join(column_defs)}
+                )
+                """
+            except Exception as e:
+                # Fallback to creating all columns as VARCHAR if we can't get the target schema
+                logger.warning(f"Could not get target table schema: {str(e)}. Creating temp table with all VARCHAR columns.")
+                create_temp_table_sql = f"""
+                CREATE TABLE {self.catalog}.{self.schema}.{temp_table} (
+                    {", ".join([f'"{col}" VARCHAR' for col in columns])}
+                )
+                """
             self.trino_client.execute_query(create_temp_table_sql)
             logger.debug(f"Created temporary table {temp_table}")
             
+            # Get column types from target schema if available
+            try:
+                target_schema = self.trino_client.get_table_schema(self.catalog, self.schema, self.table)
+                column_types_dict = {col_name: col_type for col_name, col_type in target_schema}
+            except Exception:
+                column_types_dict = {}  # Empty dict if we can't get the schema
+                
             # Insert data into the temporary table
             # Convert dataframe to list of tuples for insertion
             values = []
             for _, row in batch_data.iterrows():
-                # Properly escape and quote string values
+                # Properly escape and quote string values based on data types
                 row_values = []
-                for val in row:
+                for i, (col_name, val) in enumerate(zip(batch_data.columns, row)):
                     if pd.isna(val):
                         row_values.append("NULL")
-                    elif isinstance(val, (int, float)):
-                        row_values.append(str(val))
+                    elif col_name in column_types_dict:
+                        # Format based on target column type
+                        col_type = column_types_dict[col_name].lower()
+                        
+                        if 'int' in col_type or 'long' in col_type or 'decimal' in col_type or 'double' in col_type or 'float' in col_type:
+                            # Numeric types don't need quotes
+                            row_values.append(str(val))
+                        elif 'bool' in col_type:
+                            # Boolean values are TRUE or FALSE without quotes
+                            bool_val = str(val).lower()
+                            if bool_val in ('true', 't', 'yes', 'y', '1'):
+                                row_values.append('TRUE')
+                            elif bool_val in ('false', 'f', 'no', 'n', '0'):
+                                row_values.append('FALSE')
+                            else:
+                                # Handle unexpected values as strings
+                                val_str = str(val).replace("'", "''")
+                                row_values.append(f"'{val_str}'")
+                        elif 'date' in col_type or 'time' in col_type:
+                            # Date/time types need quotes
+                            val_str = str(val).replace("'", "''")
+                            row_values.append(f"'{val_str}'")
+                        else:
+                            # Default to string format for other types
+                            val_str = str(val).replace("'", "''")
+                            row_values.append(f"'{val_str}'")
                     else:
-                        # Escape single quotes in string values
-                        val_str = str(val).replace("'", "''")
-                        row_values.append(f"'{val_str}'")
+                        # If no type info, format based on Python type
+                        if isinstance(val, (int, float)):
+                            row_values.append(str(val))
+                        elif isinstance(val, bool):
+                            row_values.append('TRUE' if val else 'FALSE')
+                        else:
+                            # Escape single quotes in string values
+                            val_str = str(val).replace("'", "''")
+                            row_values.append(f"'{val_str}'")
                 
                 values.append(f"({', '.join(row_values)})")
             

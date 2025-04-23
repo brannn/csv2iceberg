@@ -368,8 +368,9 @@ def iceberg_type_to_trino_type(iceberg_type: Any) -> str:
     elif isinstance(iceberg_type, DateType):
         return 'DATE'
     elif isinstance(iceberg_type, TimestampType):
-        # In Trino, we need to specify the type properly as 'TIMESTAMP' rather than 'TIMESTAMP WITH TIME ZONE'
-        return 'TIMESTAMP'
+        # In Trino, we need to specify the type with precision to avoid syntax errors
+        # Using TIMESTAMP(3) which is for millisecond precision
+        return 'TIMESTAMP(3)'
     elif isinstance(iceberg_type, StringType):
         return 'VARCHAR'
     elif isinstance(iceberg_type, DecimalType):
