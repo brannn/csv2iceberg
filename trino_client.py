@@ -101,7 +101,13 @@ class TrinoClient:
                 'schema': self.schema,
                 'http_scheme': self.http_scheme,
                 'http_headers': http_headers,
-                'verify': False  # For testing purposes, don't verify SSL
+                'verify': False,  # For testing purposes, don't verify SSL
+                'request_timeout': 120,  # Longer timeout for large operations
+                'session_properties': {
+                    'query_max_stage_count': '101',  # Allow more complex queries
+                    'exchange_compression': 'true',   # Enable compression
+                    'join_distribution_type': 'AUTOMATIC'  # Better query performance
+                }
             }
             
             # Handle auth correctly based on http_scheme
