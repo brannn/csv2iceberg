@@ -308,19 +308,48 @@ def convert():
         job_id = os.urandom(8).hex()
         logger.debug(f"Created job ID: {job_id}")
         
-        # Collect parameters
+        # Check if a profile was selected and use its values
+        profile_name = request.form.get('connection_profile')
+        connection_params = {}
+        
+        if profile_name:
+            # Get the profile
+            profile = config_manager.get_profile(profile_name)
+            if profile:
+                logger.debug(f"Using connection profile: {profile_name}")
+                # Set the profile as last used
+                config_manager.set_last_used_profile(profile_name)
+                
+                # Use the profile values for connection settings
+                connection_params = {
+                    'trino_host': profile.get('trino_host'),
+                    'trino_port': str(profile.get('trino_port')),
+                    'trino_user': profile.get('trino_user'),
+                    'trino_password': profile.get('trino_password'),
+                    'http_scheme': profile.get('http_scheme'),
+                    'trino_role': profile.get('trino_role'),
+                    'trino_catalog': profile.get('trino_catalog'),
+                    'trino_schema': profile.get('trino_schema'),
+                    'hive_metastore_uri': profile.get('hive_metastore_uri'),
+                    'use_hive_metastore': profile.get('use_hive_metastore', False)
+                }
+                logger.debug(f"Applied connection parameters from profile: {profile_name}")
+            else:
+                logger.warning(f"Selected profile '{profile_name}' not found, using form values instead")
+        
+        # Use form values as defaults or fallbacks if no profile is selected
         params = {
             'table_name': request.form.get('table_name'),
-            'trino_host': request.form.get('trino_host'),
-            'trino_port': request.form.get('trino_port'),
-            'trino_user': request.form.get('trino_user'),
-            'trino_password': request.form.get('trino_password'),
-            'http_scheme': request.form.get('http_scheme', 'http'),
-            'trino_role': request.form.get('trino_role', 'sysadmin'),
-            'trino_catalog': request.form.get('trino_catalog'),
-            'trino_schema': request.form.get('trino_schema'),
-            'hive_metastore_uri': request.form.get('hive_metastore_uri'),
-            'use_hive_metastore': request.form.get('use_hive_metastore', 'false') == 'true',
+            'trino_host': connection_params.get('trino_host') or request.form.get('trino_host'),
+            'trino_port': connection_params.get('trino_port') or request.form.get('trino_port'),
+            'trino_user': connection_params.get('trino_user') or request.form.get('trino_user'),
+            'trino_password': connection_params.get('trino_password') or request.form.get('trino_password'),
+            'http_scheme': connection_params.get('http_scheme') or request.form.get('http_scheme', 'http'),
+            'trino_role': connection_params.get('trino_role') or request.form.get('trino_role', 'sysadmin'),
+            'trino_catalog': connection_params.get('trino_catalog') or request.form.get('trino_catalog'),
+            'trino_schema': connection_params.get('trino_schema') or request.form.get('trino_schema'),
+            'hive_metastore_uri': connection_params.get('hive_metastore_uri') or request.form.get('hive_metastore_uri'),
+            'use_hive_metastore': connection_params.get('use_hive_metastore') if 'use_hive_metastore' in connection_params else (request.form.get('use_hive_metastore', 'false') == 'true'),
             'delimiter': csv_params.get('delimiter', ','),
             'has_header': 'true' if csv_params.get('has_header', True) else 'false',
             'quote_char': csv_params.get('quote_char', '"'),
@@ -505,13 +534,22 @@ def schema_apply():
         # Get parameters from the schema preview session
         preview_data = session['schema_preview']
         
+        # Get profiles for the template
+        profiles = config_manager.get_profiles()
+        last_used_profile = None
+        last_used = config_manager.get_last_used_profile()
+        if last_used:
+            last_used_profile = last_used.get('name')
+            
         # Pass the parameters to the template
         return render_template(
             'convert_final.html',
             filename=preview_data['filename'],
             file_path=preview_data['file_path'],
             csv_params=preview_data['csv_params'],
-            schema_preview=True  # Flag to indicate we came from schema preview
+            schema_preview=True,  # Flag to indicate we came from schema preview
+            profiles=profiles,
+            last_used_profile=last_used_profile
         )
         
     except Exception as e:
