@@ -52,6 +52,8 @@ def run_conversion(job_id, file_path, params):
             cmd.extend(["--trino-user", params['trino_user']])
         if params.get('trino_password'):
             cmd.extend(["--trino-password", params['trino_password']])
+        if params.get('http_scheme'):
+            cmd.extend(["--http-scheme", params['http_scheme']])
         
         # Add optional parameters
         if params.get('delimiter'):
@@ -141,6 +143,7 @@ def convert():
                 'trino_port': request.form.get('trino_port'),
                 'trino_user': request.form.get('trino_user'),
                 'trino_password': request.form.get('trino_password'),
+                'http_scheme': request.form.get('http_scheme', 'http'),
                 'trino_catalog': request.form.get('trino_catalog'),
                 'trino_schema': request.form.get('trino_schema'),
                 'hive_metastore_uri': request.form.get('hive_metastore_uri'),

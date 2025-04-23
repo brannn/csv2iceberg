@@ -70,6 +70,15 @@
                     </div>
                     
                     <div class="mb-3">
+                        <label for="http_scheme" class="form-label">HTTP Scheme</label>
+                        <select class="form-select" id="http_scheme" name="http_scheme">
+                            <option value="http" selected>HTTP</option>
+                            <option value="https">HTTPS (Required for authentication)</option>
+                        </select>
+                        <div class="form-text">Use HTTPS if Trino authentication is enabled</div>
+                    </div>
+                    
+                    <div class="mb-3">
                         <label for="trino_catalog" class="form-label">Trino Catalog</label>
                         <input type="text" class="form-control" id="trino_catalog" name="trino_catalog" value="hive" required>
                     </div>
@@ -135,6 +144,22 @@ document.addEventListener('DOMContentLoaded', function() {
     // Add submit event listener to the form
     const form = document.querySelector('form');
     const submitBtn = document.getElementById('submitBtn');
+    const passwordField = document.getElementById('trino_password');
+    const httpSchemeSelect = document.getElementById('http_scheme');
+    
+    // Automatically switch to HTTPS when password is entered
+    passwordField.addEventListener('input', function() {
+        if (passwordField.value.trim().length > 0) {
+            httpSchemeSelect.value = 'https';
+        }
+    });
+    
+    // Warn when trying to use password with HTTP
+    httpSchemeSelect.addEventListener('change', function() {
+        if (httpSchemeSelect.value === 'http' && passwordField.value.trim().length > 0) {
+            alert('Warning: Password authentication requires HTTPS. Your password will be ignored when using HTTP.');
+        }
+    });
     
     form.addEventListener('submit', function(e) {
         console.log('Form submission initiated');
@@ -159,6 +184,16 @@ document.addEventListener('DOMContentLoaded', function() {
             console.log('Form validation failed, preventing submission');
             e.preventDefault();
             return false;
+        }
+        
+        // Check if using password with HTTP
+        if (passwordField.value.trim().length > 0 && httpSchemeSelect.value === 'http') {
+            const confirmHttp = confirm('Warning: You are trying to use password authentication with HTTP. This is insecure and the password will be ignored. \n\nDo you want to continue without authentication? \n\nClick "Cancel" to go back and select HTTPS instead.');
+            if (!confirmHttp) {
+                console.log('Form submission canceled due to HTTP with password');
+                e.preventDefault();
+                return false;
+            }
         }
         
         // Disable the submit button to prevent multiple submissions
