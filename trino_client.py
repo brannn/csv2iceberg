@@ -33,7 +33,8 @@ class TrinoClient:
         password: Optional[str] = None,
         catalog: str = 'hive',
         schema: str = 'default',
-        http_scheme: str = 'http'
+        http_scheme: str = 'http',
+        role: str = 'sysadmin'
     ):
         """
         Initialize Trino client.
@@ -46,6 +47,7 @@ class TrinoClient:
             catalog: Default catalog
             schema: Default schema
             http_scheme: HTTP scheme (http or https)
+            role: Trino role to use (e.g., 'sysadmin')
         """
         self.host = host
         self.port = port
@@ -54,6 +56,7 @@ class TrinoClient:
         self.catalog = catalog
         self.schema = schema
         self.http_scheme = http_scheme
+        self.role = role
         
         self.connection = self._create_connection()
         
@@ -79,6 +82,13 @@ class TrinoClient:
             
             # Create the real Trino connection
             auth = None
+            
+            # Set up HTTP headers with Trino role
+            http_headers = {
+                'x-trino-role': f'system=ROLE{{{self.role}}}'
+            }
+            logger.info(f"Using Trino role: {self.role}")
+            
             conn_args = {
                 'host': self.host,
                 'port': self.port,
@@ -86,6 +96,7 @@ class TrinoClient:
                 'catalog': self.catalog,
                 'schema': self.schema,
                 'http_scheme': self.http_scheme,
+                'http_headers': http_headers,
                 'verify': False  # For testing purposes, don't verify SSL
             }
             
