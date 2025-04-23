@@ -307,6 +307,7 @@ def convert():
             'trino_catalog': request.form.get('trino_catalog'),
             'trino_schema': request.form.get('trino_schema'),
             'hive_metastore_uri': request.form.get('hive_metastore_uri'),
+            'use_hive_metastore': request.form.get('use_hive_metastore', 'false') == 'true',
             'delimiter': csv_params.get('delimiter', ','),
             'has_header': 'true' if csv_params.get('has_header', True) else 'false',
             'quote_char': csv_params.get('quote_char', '"'),
