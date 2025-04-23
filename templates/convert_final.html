@@ -1,47 +1,35 @@
 {% extends 'base.html' %}
 
-{% block title %}CSV to Iceberg - Convert{% endblock %}
+{% block title %}CSV to Iceberg - Conversion Parameters{% endblock %}
 
 {% block content %}
 <div class="row">
     <div class="col-lg-12">
-        <h2 class="mb-4">Convert CSV to Iceberg</h2>
+        <h2 class="mb-4">Convert CSV to Iceberg with Custom Schema</h2>
+        <div class="alert alert-success">
+            <strong>Custom schema applied!</strong> Your schema customizations have been saved. Please complete the connection details below to convert the file.
+        </div>
         <div class="card">
             <div class="card-body">
                 <form action="{{ url_for('convert') }}" method="post" enctype="multipart/form-data">
-                    <div class="mb-3">
-                        <h5>CSV File</h5>
-                        <div class="alert alert-info">
-                            <strong>Note:</strong> Maximum file size is 50MB. For larger files, use the command-line interface.
-                        </div>
-                    </div>
+                    <!-- Hidden fields for the CSV parameters -->
+                    <input type="hidden" name="delimiter" value="{{ csv_params.delimiter }}">
+                    <input type="hidden" name="has_header" value="{{ 'true' if csv_params.has_header else 'false' }}">
+                    <input type="hidden" name="quote_char" value="{{ csv_params.quote_char }}">
+                    <input type="hidden" name="sample_size" value="{{ csv_params.sample_size }}">
+                    
+                    <!-- Hidden file field - we'll use the one already uploaded -->
+                    <input type="hidden" name="file_path" value="{{ file_path }}">
+                    
+                    <!-- Create a fake file input since the form expects it -->
+                    <input type="hidden" name="csv_file" value="placeholder">
                     
                     <div class="mb-3">
-                        <label for="csv_file" class="form-label">Select CSV File</label>
-                        <input type="file" class="form-control" id="csv_file" name="csv_file" required>
-                    </div>
-                    
-                    <div class="mb-3">
-                        <label for="delimiter" class="form-label">Delimiter</label>
-                        <input type="text" class="form-control" id="delimiter" name="delimiter" value="," maxlength="1">
-                        <div class="form-text">Default: comma (,)</div>
-                    </div>
-                    
-                    <div class="mb-3 form-check">
-                        <input type="checkbox" class="form-check-input" id="has_header" name="has_header" value="true" checked>
-                        <label class="form-check-label" for="has_header">CSV has header row</label>
-                    </div>
-                    
-                    <div class="mb-3">
-                        <label for="quote_char" class="form-label">Quote Character</label>
-                        <input type="text" class="form-control" id="quote_char" name="quote_char" value="&quot;" maxlength="1">
-                        <div class="form-text">Default: double quote (")</div>
-                    </div>
-                    
-                    <div class="mb-3">
-                        <label for="batch_size" class="form-label">Batch Size</label>
-                        <input type="number" class="form-control" id="batch_size" name="batch_size" value="10000" min="1">
-                        <div class="form-text">Number of rows to process in each batch.</div>
+                        <h5>Selected File</h5>
+                        <p class="form-control-static">
+                            <strong>{{ filename }}</strong>
+                            <small class="text-muted">(Already uploaded)</small>
+                        </p>
                     </div>
                     
                     <div class="mb-3">
@@ -127,9 +115,9 @@
                     </div>
                     
                     <div class="mb-3">
-                        <label for="sample_size" class="form-label">Schema Sample Size</label>
-                        <input type="number" class="form-control" id="sample_size" name="sample_size" value="1000" min="1">
-                        <div class="form-text">Number of rows to sample for schema inference.</div>
+                        <label for="batch_size" class="form-label">Batch Size</label>
+                        <input type="number" class="form-control" id="batch_size" name="batch_size" value="10000" min="1">
+                        <div class="form-text">Number of rows to process in each batch.</div>
                     </div>
                     
                     <div class="mb-3 form-check">
@@ -137,16 +125,7 @@
                         <label class="form-check-label" for="verbose">Verbose Logging</label>
                     </div>
                     
-                    <div class="mb-3 form-check">
-                        <input type="checkbox" class="form-check-input" id="preview_schema" name="preview_schema" value="true" checked>
-                        <label class="form-check-label" for="preview_schema">Preview and customize schema before conversion</label>
-                        <div class="form-text">Enable this to review and modify the inferred schema before creating the Iceberg table.</div>
-                    </div>
-                    
-                    <div class="d-flex">
-                        <button type="submit" class="btn btn-primary me-2" id="submitBtn">Convert</button>
-                        <button type="submit" class="btn btn-secondary" id="analyzeBtn" name="analyze_schema" value="true">Analyze Schema Only</button>
-                    </div>
+                    <button type="submit" class="btn btn-primary" id="submitBtn">Convert with Custom Schema</button>
                 </form>
             </div>
         </div>
@@ -239,32 +218,8 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
     
-    // Handle the analyze schema button
-    const analyzeBtn = document.getElementById('analyzeBtn');
-    
-    analyzeBtn.addEventListener('click', function() {
-        // For the analyze button, we only need the CSV file and parsing options
-        // We don't need to validate the other fields like trino connection details
-        
-        const csvFile = document.getElementById('csv_file');
-        if (!csvFile.value) {
-            csvFile.classList.add('is-invalid');
-            e.preventDefault();
-            return false;
-        }
-        
-        // Show loading indicator
-        analyzeBtn.disabled = true;
-        analyzeBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Analyzing...';
-    });
-    
     form.addEventListener('submit', function(e) {
         console.log('Form submission initiated');
-        
-        // Skip full validation if we're just analyzing the schema
-        if (e.submitter && e.submitter.id === 'analyzeBtn') {
-            return true;
-        }
         
         // Validate required fields
         const requiredFields = form.querySelectorAll('[required]');

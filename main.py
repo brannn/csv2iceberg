@@ -84,6 +84,33 @@ def run_conversion(job_id, file_path, params):
         server_port = os.environ.get('PORT', '5000')
         server_url = f"http://{server_host}:{server_port}"
         
+        # Handle schema customization if present
+        schema_temp_file = None
+        if 'schema_customization' in params:
+            try:
+                # Create a temporary file for the custom schema
+                import json
+                import tempfile
+                
+                schema_temp_file = tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.json')
+                json.dump(params['schema_customization'], schema_temp_file)
+                schema_temp_file.close()
+                
+                logger.info(f"Created temporary schema customization file: {schema_temp_file.name}")
+                
+                # This will be passed to the CLI tool
+                custom_schema_file = schema_temp_file.name
+            except Exception as schema_err:
+                logger.error(f"Error creating schema customization file: {str(schema_err)}", exc_info=True)
+                if schema_temp_file:
+                    try:
+                        os.unlink(schema_temp_file.name)
+                    except:
+                        pass
+                custom_schema_file = None
+        else:
+            custom_schema_file = None
+        
         # Build conversion command
         conversion_cmd = [
             "python", "csv_to_iceberg.py", "convert",
@@ -122,6 +149,10 @@ def run_conversion(job_id, file_path, params):
         if params.get('verbose') == 'true':
             conversion_cmd.append('--verbose')
             
+        # Add custom schema if available
+        if custom_schema_file:
+            conversion_cmd.extend(["--custom-schema", custom_schema_file])
+            
         # Build process monitor command (which will run the conversion command)
         cmd = [
             "python", "process_monitor.py",
@@ -147,12 +178,27 @@ def run_conversion(job_id, file_path, params):
         
         logger.info(f"Completed conversion job {job_id} with status: {conversion_jobs[job_id]['status']}")
         
+        # Clean up temporary files
+        if custom_schema_file:
+            try:
+                os.unlink(custom_schema_file)
+                logger.info(f"Removed temporary schema file: {custom_schema_file}")
+            except Exception as clean_err:
+                logger.warning(f"Failed to clean up schema file {custom_schema_file}: {str(clean_err)}")
+        
     except Exception as e:
         logger.error(f"Error in conversion job {job_id}: {str(e)}", exc_info=True)
         conversion_jobs[job_id]['status'] = 'failed'
         conversion_jobs[job_id]['error'] = str(e)
         # Add completion timestamp even for failed jobs
         conversion_jobs[job_id]['completed_at'] = datetime.datetime.now()
+        
+        # Clean up temporary files in case of error
+        if schema_temp_file:
+            try:
+                os.unlink(schema_temp_file.name)
+            except:
+                pass
 
 @app.route('/')
 def index():
@@ -175,6 +221,10 @@ def convert():
         logger.debug(f"POST request data: {request.form}")
         logger.debug(f"POST request files: {request.files.keys()}")
         
+        # Check if this is the analyze button (for schema preview)
+        if 'analyze_schema' in request.form:
+            return handle_schema_analyze()
+            
         # Check if a file was uploaded
         if 'csv_file' not in request.files:
             logger.error("No file part in the request")
@@ -198,6 +248,27 @@ def convert():
             logger.debug(f"Saving file to: {file_path}")
             file.save(file_path)
             
+            # Extract CSV parameters
+            csv_params = {
+                'delimiter': request.form.get('delimiter', ','),
+                'has_header': request.form.get('has_header', 'true') == 'true',
+                'quote_char': request.form.get('quote_char', '"'),
+                'sample_size': int(request.form.get('sample_size', '1000'))
+            }
+            
+            # Check if schema preview is requested
+            if 'preview_schema' in request.form and request.form['preview_schema'] == 'true':
+                # Create a session for schema preview
+                session['schema_preview'] = {
+                    'file_path': file_path, 
+                    'filename': filename,
+                    'csv_params': csv_params,
+                    'timestamp': datetime.datetime.now().isoformat()
+                }
+                logger.debug(f"Created schema preview session: {session['schema_preview']}")
+                return redirect(url_for('schema_preview'))
+            
+            # Regular conversion flow
             # Create job ID
             job_id = os.urandom(8).hex()
             logger.debug(f"Created job ID: {job_id}")
@@ -214,15 +285,23 @@ def convert():
                 'trino_catalog': request.form.get('trino_catalog'),
                 'trino_schema': request.form.get('trino_schema'),
                 'hive_metastore_uri': request.form.get('hive_metastore_uri'),
-                'delimiter': request.form.get('delimiter'),
-                'has_header': request.form.get('has_header', 'true'),
-                'quote_char': request.form.get('quote_char'),
+                'delimiter': csv_params['delimiter'],
+                'has_header': 'true' if csv_params['has_header'] else 'false',
+                'quote_char': csv_params['quote_char'],
                 'batch_size': request.form.get('batch_size'),
                 'mode': request.form.get('mode', 'append'),
-                'sample_size': request.form.get('sample_size'),
+                'sample_size': str(csv_params['sample_size']),
                 'verbose': request.form.get('verbose', 'false')
             }
             logger.debug(f"Collected parameters: {params}")
+            
+            # Apply schema customizations if they exist in the session
+            if 'schema_customization' in session:
+                logger.debug("Found schema customization in session")
+                # This will be implemented in the run_conversion function
+                params['schema_customization'] = session['schema_customization']
+                # Clean up the session
+                session.pop('schema_customization', None)
             
             # Create job
             conversion_jobs[job_id] = {
@@ -260,6 +339,180 @@ def convert():
     # GET request - show conversion form
     logger.debug("Rendering convert.html template")
     return render_template('convert.html')
+
+def handle_schema_analyze():
+    """Handle schema analysis when the analyze button is clicked."""
+    logger.debug("Handling schema analysis request")
+    
+    if 'csv_file' not in request.files:
+        flash('No file part', 'error')
+        return redirect(url_for('convert'))
+        
+    file = request.files['csv_file']
+    if file.filename == '':
+        flash('No selected file', 'error')
+        return redirect(url_for('convert'))
+        
+    if file and allowed_file(file.filename):
+        # Save the file
+        filename = secure_filename(file.filename)
+        file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        file.save(file_path)
+        
+        # Extract CSV parameters
+        csv_params = {
+            'delimiter': request.form.get('delimiter', ','),
+            'has_header': request.form.get('has_header', 'true') == 'true',
+            'quote_char': request.form.get('quote_char', '"'),
+            'sample_size': int(request.form.get('sample_size', '1000'))
+        }
+        
+        # Store in session for the schema preview page
+        session['schema_preview'] = {
+            'file_path': file_path,
+            'filename': filename,
+            'csv_params': csv_params,
+            'timestamp': datetime.datetime.now().isoformat()
+        }
+        
+        return redirect(url_for('schema_preview'))
+    else:
+        flash('File type not allowed', 'error')
+        return redirect(url_for('convert'))
+
+@app.route('/schema/preview', methods=['GET'])
+def schema_preview():
+    """Preview and edit the inferred schema from a CSV file."""
+    logger.debug("Schema preview route called")
+    
+    # Check if we have a schema preview session
+    if 'schema_preview' not in session:
+        flash('No CSV file analyzed. Please upload a file first.', 'error')
+        return redirect(url_for('convert'))
+    
+    preview_data = session['schema_preview']
+    file_path = preview_data['file_path']
+    filename = preview_data['filename']
+    csv_params = preview_data['csv_params']
+    
+    # Check if file still exists
+    if not os.path.exists(file_path):
+        flash('CSV file no longer available. Please upload again.', 'error')
+        session.pop('schema_preview', None)
+        return redirect(url_for('convert'))
+    
+    try:
+        # Infer schema from the CSV
+        from schema_inferrer import infer_schema_from_csv
+        schema = infer_schema_from_csv(
+            file_path,
+            delimiter=csv_params['delimiter'],
+            has_header=csv_params['has_header'],
+            quote_char=csv_params['quote_char'],
+            sample_size=csv_params['sample_size']
+        )
+        
+        # Get sample data for preview
+        import polars as pl
+        read_args = {
+            "separator": csv_params['delimiter'],
+            "has_header": csv_params['has_header'],
+            "quote_char": csv_params['quote_char'],
+            "infer_schema_length": 100,
+            "n_rows": 10  # Just get a few rows for preview
+        }
+        
+        try:
+            df = pl.read_csv(file_path, **read_args)
+            # Convert to dict for template rendering
+            sample_data = df.to_dicts()
+            column_names = df.columns
+        except Exception as e:
+            logger.warning(f"Error reading CSV sample data: {str(e)}")
+            sample_data = []
+            column_names = [field.name for field in schema.fields]
+        
+        # Extract schema information in a template-friendly format
+        schema_fields = []
+        for field in schema.fields:
+            type_info = {
+                'original_type': type(field.field_type).__name__.replace('Type', ''),
+                'options': ['Boolean', 'Integer', 'Long', 'Float', 'Double', 'Date', 'Timestamp', 'String', 'Decimal']
+            }
+            
+            schema_fields.append({
+                'id': field.field_id,
+                'name': field.name,
+                'type': type_info,
+                'required': field.required
+            })
+        
+        # Render the schema preview template
+        return render_template(
+            'schema_preview.html',
+            filename=filename,
+            schema_fields=schema_fields,
+            sample_data=sample_data,
+            column_names=column_names,
+            csv_params=csv_params
+        )
+        
+    except Exception as e:
+        logger.error(f"Error generating schema preview: {str(e)}", exc_info=True)
+        flash(f'Error analyzing CSV schema: {str(e)}', 'error')
+        return redirect(url_for('convert'))
+
+@app.route('/schema/apply', methods=['POST'])
+def schema_apply():
+    """Apply customized schema and proceed with conversion."""
+    logger.debug("Schema apply route called")
+    
+    # Check if we have a schema preview session
+    if 'schema_preview' not in session:
+        flash('Session expired. Please upload your file again.', 'error')
+        return redirect(url_for('convert'))
+    
+    try:
+        # Get the customized schema from the form
+        customized_schema = []
+        
+        # Format of field IDs in form: field_1, field_2, etc.
+        field_ids = [key.split('_')[1] for key in request.form.keys() if key.startswith('field_')]
+        
+        for field_id in field_ids:
+            name = request.form.get(f'name_{field_id}')
+            type_name = request.form.get(f'type_{field_id}')
+            required = request.form.get(f'required_{field_id}', 'false') == 'true'
+            
+            customized_schema.append({
+                'id': int(field_id),
+                'name': name,
+                'type': type_name,
+                'required': required
+            })
+        
+        # Store the customized schema in the session
+        session['schema_customization'] = customized_schema
+        
+        # Redirect to the final conversion step
+        flash('Schema customization applied. Proceed with conversion.', 'success')
+        
+        # Get parameters from the schema preview session
+        preview_data = session['schema_preview']
+        
+        # Pass the parameters to the template
+        return render_template(
+            'convert_final.html',
+            filename=preview_data['filename'],
+            file_path=preview_data['file_path'],
+            csv_params=preview_data['csv_params'],
+            schema_preview=True  # Flag to indicate we came from schema preview
+        )
+        
+    except Exception as e:
+        logger.error(f"Error applying schema customization: {str(e)}", exc_info=True)
+        flash(f'Error applying schema customization: {str(e)}', 'error')
+        return redirect(url_for('schema_preview'))
 
 @app.route('/job/<job_id>')
 def job_status(job_id):

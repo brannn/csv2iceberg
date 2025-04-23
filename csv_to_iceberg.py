@@ -53,11 +53,12 @@ def cli():
 @click.option('--mode', '-m', type=click.Choice(['append', 'overwrite']), default='append', 
               help='Write mode (append or overwrite, default: append)')
 @click.option('--sample-size', default=1000, help='Number of rows to sample for schema inference (default: 1000)')
+@click.option('--custom-schema', help='Path to a JSON file containing a custom schema definition')
 @click.option('--verbose', '-v', is_flag=True, help='Enable verbose logging')
 def convert(csv_file: str, delimiter: str, has_header: bool, quote_char: str, batch_size: int,
             table_name: str, trino_host: str, trino_port: int, trino_user: str, trino_password: Optional[str],
             http_scheme: str, trino_role: str, trino_catalog: str, trino_schema: str, hive_metastore_uri: str,
-            mode: str, sample_size: int, verbose: bool):
+            mode: str, sample_size: int, custom_schema: Optional[str], verbose: bool):
     """
     Convert a CSV file to an Iceberg table.
     
@@ -83,19 +84,75 @@ def convert(csv_file: str, delimiter: str, has_header: bool, quote_char: str, ba
         if not catalog or not schema or not table:
             console.print("[bold red]Error:[/bold red] Invalid table name format. Use: catalog.schema.table")
             sys.exit(1)
-            
-        # 1. Infer schema from CSV
-        with console.status("[bold blue]Inferring schema from CSV...[/bold blue]") as status:
-            logger.info(f"Inferring schema from CSV file: {csv_file}")
-            iceberg_schema = infer_schema_from_csv(
-                csv_file=csv_file,
-                delimiter=delimiter, 
-                has_header=has_header,
-                quote_char=quote_char,
-                sample_size=sample_size
-            )
-            logger.debug(f"Inferred schema: {iceberg_schema}")
-        console.print(f"[bold green]✓[/bold green] Schema inferred successfully")
+        
+        # Get schema (either from custom schema file or by inference)
+        if custom_schema:
+            with console.status("[bold blue]Loading custom schema...[/bold blue]") as status:
+                try:
+                    logger.info(f"Loading custom schema from file: {custom_schema}")
+                    import json
+                    from pyiceberg.schema import Schema
+                    from pyiceberg.types import (
+                        BooleanType, IntegerType, LongType, FloatType, DoubleType,
+                        DateType, TimestampType, StringType, DecimalType, NestedField
+                    )
+                    
+                    # Map string type names to actual PyIceberg types
+                    type_mapping = {
+                        'Boolean': BooleanType(),
+                        'Integer': IntegerType(),
+                        'Long': LongType(),
+                        'Float': FloatType(),
+                        'Double': DoubleType(),
+                        'Date': DateType(),
+                        'Timestamp': TimestampType(),
+                        'String': StringType(),
+                        'Decimal': DecimalType(38, 10)  # Default precision and scale
+                    }
+                    
+                    with open(custom_schema, 'r') as f:
+                        schema_data = json.load(f)
+                    
+                    # Create schema fields from the custom schema definition
+                    fields = []
+                    for field_def in schema_data:
+                        field_id = field_def.get('id', 0)
+                        field_name = field_def.get('name', '')
+                        field_type_name = field_def.get('type', 'String')
+                        field_required = field_def.get('required', False)
+                        
+                        # Get the actual PyIceberg type from the mapping
+                        field_type = type_mapping.get(field_type_name, StringType())
+                        
+                        # Add field to schema
+                        fields.append(NestedField(
+                            field_id=field_id, 
+                            name=field_name, 
+                            field_type=field_type, 
+                            required=field_required
+                        ))
+                    
+                    # Create the schema
+                    iceberg_schema = Schema(*fields)
+                    logger.debug(f"Loaded custom schema: {iceberg_schema}")
+                except Exception as e:
+                    logger.error(f"Error loading custom schema: {str(e)}", exc_info=True)
+                    console.print(f"[bold red]Error:[/bold red] Failed to load custom schema: {str(e)}")
+                    sys.exit(1)
+            console.print(f"[bold green]✓[/bold green] Custom schema loaded successfully")
+        else:
+            # 1. Infer schema from CSV
+            with console.status("[bold blue]Inferring schema from CSV...[/bold blue]") as status:
+                logger.info(f"Inferring schema from CSV file: {csv_file}")
+                iceberg_schema = infer_schema_from_csv(
+                    csv_file=csv_file,
+                    delimiter=delimiter, 
+                    has_header=has_header,
+                    quote_char=quote_char,
+                    sample_size=sample_size
+                )
+                logger.debug(f"Inferred schema: {iceberg_schema}")
+            console.print(f"[bold green]✓[/bold green] Schema inferred successfully")
         
         # 2. Connect to Trino
         with console.status("[bold blue]Connecting to Trino...[/bold blue]") as status:
