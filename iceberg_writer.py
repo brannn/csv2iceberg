@@ -1,5 +1,5 @@
 """
-Iceberg writer module for CSV to Iceberg conversion
+Iceberg writer module for CSV to Iceberg conversion using Polars
 """
 import os
 import logging
@@ -8,7 +8,10 @@ import csv
 from typing import Dict, List, Any, Optional, Callable, Tuple
 import tempfile
 import datetime
-import pandas as pd
+
+# Use Polars for data processing
+import polars as pl
+import pyarrow as pa
 
 # Import PyIceberg schema
 from pyiceberg.schema import Schema
@@ -56,7 +59,7 @@ class IcebergWriter:
         progress_callback: Optional[Callable[[int], None]] = None
     ) -> None:
         """
-        Write CSV data to an Iceberg table.
+        Write CSV data to an Iceberg table using Polars.
         
         Args:
             csv_file: Path to the CSV file
@@ -76,36 +79,49 @@ class IcebergWriter:
             logger.info(f"Processing CSV file in batch mode (batch size: {batch_size})")
             logger.info(f"Write mode: {mode}")
             
-            # Read the CSV in batches with error handling for inconsistent field counts
-            # Note: Empty fields are properly handled and converted to NULL values
-            chunk_iter = pd.read_csv(
-                csv_file, 
-                delimiter=delimiter, 
-                quotechar=quote_char,
-                header=0 if has_header else None,
-                chunksize=batch_size,
-                on_bad_lines='skip',   # Skip only lines with inconsistent number of fields
-                keep_default_na=True,  # Convert empty fields to NaN (which become NULL)
-                na_values=['', 'NULL', 'null', 'NA', 'N/A', 'na', 'n/a', 'None', 'none']  # Additional values to treat as NULL
+            # Use Polars lazy reader for better memory efficiency
+            lazy_reader = pl.scan_csv(
+                csv_file,
+                separator=delimiter,
+                has_header=has_header,
+                quote_char=quote_char,
+                null_values=["", "NULL", "null", "NA", "N/A", "na", "n/a", "None", "none"],
+                try_parse_dates=True,
+                low_memory=True,
+                ignore_errors=True
             )
+            
+            # Get column names
+            column_names = lazy_reader.collect(10).columns
             
             # Track progress
             processed_rows = 0
             last_progress = 0
             first_batch = True
             
-            # Process each batch
-            for chunk in chunk_iter:
+            # Process in batches using streaming approach
+            for batch_start in range(0, total_rows, batch_size):
+                # Define batch bounds
+                batch_end = min(batch_start + batch_size, total_rows)
+                batch_size_actual = batch_end - batch_start
+                
+                # Get the current batch
+                batch = lazy_reader.slice(batch_start, batch_size_actual).collect()
+                
+                # Convert Polars DataFrame to Pandas for compatibility with existing code
+                # We'll gradually move away from this as we refactor more code
+                batch_pd = batch.to_pandas()
+                
                 # For first batch in overwrite mode, we need to use a different approach
                 current_mode = mode if not first_batch or mode != 'overwrite' else 'overwrite'
                 if first_batch:
                     first_batch = False
                 
                 # Write the batch to the Iceberg table
-                self._write_batch_to_iceberg(chunk, current_mode)
+                self._write_batch_to_iceberg(batch_pd, current_mode)
                 
                 # Update progress
-                processed_rows += len(chunk)
+                processed_rows += len(batch)
                 current_progress = min(100, int(processed_rows / total_rows * 100))
                 
                 if current_progress > last_progress:
@@ -200,7 +216,7 @@ class IcebergWriter:
                         # Get type from our position-based mapping
                         target_type = column_types_by_position[idx] if idx < len(column_types_by_position) else "VARCHAR"
                         
-                        if pd.isna(val):
+                        if val is None:
                             row_values.append("NULL")
                         elif isinstance(val, (int, float)):
                             # Handle numeric values based on target type
@@ -283,7 +299,7 @@ def count_csv_rows(
     has_header: bool = True
 ) -> int:
     """
-    Count the number of rows in a CSV file.
+    Count the number of rows in a CSV file using Polars.
     
     Args:
         csv_file: Path to the CSV file
@@ -295,28 +311,22 @@ def count_csv_rows(
         Number of rows in the CSV file
     """
     try:
-        # For CSV files with inconsistent field counts, we need a more robust approach
-        # Rather than counting raw lines, we'll use pandas to determine valid rows
-        df_chunks = pd.read_csv(
+        # Use Polars scan_csv for efficient row counting without loading the entire file
+        row_count = pl.scan_csv(
             csv_file,
-            delimiter=delimiter,
-            quotechar=quote_char,
-            header=0 if has_header else None,
-            chunksize=10000,  # Use a reasonable chunk size
-            on_bad_lines='skip',   # Skip only lines with inconsistent number of fields
-            keep_default_na=True,  # Convert empty fields to NaN (which become NULL)
-            na_values=['', 'NULL', 'null', 'NA', 'N/A', 'na', 'n/a', 'None', 'none']  # Additional values to treat as NULL
-        )
+            separator=delimiter,
+            has_header=has_header,
+            quote_char=quote_char,
+            null_values=["", "NULL", "null", "NA", "N/A", "na", "n/a", "None", "none"],
+            low_memory=True,
+            ignore_errors=True
+        ).select(pl.count()).collect().item()
         
-        # Count rows across all chunks
-        total_rows = sum(len(chunk) for chunk in df_chunks)
-        
-        # If there are rows and we're not counting the header, return as is
-        # If counting with header, we already skipped it by using header=0
-        return total_rows
+        # Return the count (if has_header is True, the header row is already excluded)
+        return row_count
     except Exception as e:
-        # Fallback to simple line counting if pandas approach fails
-        logger.warning(f"Error using pandas to count CSV rows: {str(e)}")
+        # Fallback to simple line counting if Polars approach fails
+        logger.warning(f"Error using Polars to count CSV rows: {str(e)}")
         try:
             with open(csv_file, 'r') as f:
                 line_count = sum(1 for _ in f)
