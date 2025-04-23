@@ -4,7 +4,8 @@ Trino client module for CSV to Iceberg conversion
 import logging
 import socket
 import time
-import pandas as pd
+import polars as pl
+import pyarrow as pa
 from typing import Dict, List, Any, Optional, Tuple
 from urllib.parse import quote_plus
 
