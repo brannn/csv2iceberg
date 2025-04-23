@@ -17,6 +17,7 @@ class TrinoClient:
         host: str,
         port: int = 8080,
         user: str = 'admin',
+        password: Optional[str] = None,
         catalog: str = 'hive',
         schema: str = 'default',
         http_scheme: str = 'http'
@@ -28,6 +29,7 @@ class TrinoClient:
             host: Trino host
             port: Trino port
             user: Trino user
+            password: Trino password (if authentication is enabled)
             catalog: Default catalog
             schema: Default schema
             http_scheme: HTTP scheme (http or https)
@@ -35,6 +37,7 @@ class TrinoClient:
         self.host = host
         self.port = port
         self.user = user
+        self.password = password
         self.catalog = catalog
         self.schema = schema
         self.http_scheme = http_scheme
@@ -46,7 +49,8 @@ class TrinoClient:
         try:
             # For CLI demo purposes, just log the connection info
             # In a real environment, this would establish the actual connection
-            logger.info(f"Would connect to Trino at {self.host}:{self.port}")
+            auth_msg = "with authentication" if self.password else "without authentication"
+            logger.info(f"Would connect to Trino at {self.host}:{self.port} as user '{self.user}' {auth_msg}")
             return None
         except Exception as e:
             logger.error(f"Failed to connect to Trino: {str(e)}", exc_info=True)

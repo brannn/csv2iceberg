@@ -54,6 +54,14 @@
                             <span class="badge bg-primary rounded-pill">{{ job.params.trino_port }}</span>
                         </li>
                         <li class="list-group-item d-flex justify-content-between align-items-center">
+                            Trino User
+                            <span class="badge bg-primary rounded-pill">{{ job.params.trino_user }}</span>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            Trino Authentication
+                            <span class="badge bg-primary rounded-pill">{% if job.params.trino_password %}Enabled{% else %}Disabled{% endif %}</span>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
                             Trino Catalog
                             <span class="badge bg-primary rounded-pill">{{ job.params.trino_catalog }}</span>
                         </li>

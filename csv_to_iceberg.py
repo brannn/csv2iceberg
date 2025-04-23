@@ -43,6 +43,7 @@ def cli():
 @click.option('--trino-host', required=True, help='Trino host')
 @click.option('--trino-port', default=8080, help='Trino port (default: 8080)')
 @click.option('--trino-user', default=os.getenv('USER', 'admin'), help='Trino user')
+@click.option('--trino-password', help='Trino password (if authentication is enabled)')
 @click.option('--trino-catalog', required=True, help='Trino catalog')
 @click.option('--trino-schema', required=True, help='Trino schema')
 @click.option('--hive-metastore-uri', required=True, help='Hive metastore Thrift URI')
@@ -51,7 +52,7 @@ def cli():
 @click.option('--sample-size', default=1000, help='Number of rows to sample for schema inference (default: 1000)')
 @click.option('--verbose', '-v', is_flag=True, help='Enable verbose logging')
 def convert(csv_file: str, delimiter: str, has_header: bool, quote_char: str, batch_size: int,
-            table_name: str, trino_host: str, trino_port: int, trino_user: str,
+            table_name: str, trino_host: str, trino_port: int, trino_user: str, trino_password: Optional[str],
             trino_catalog: str, trino_schema: str, hive_metastore_uri: str,
             mode: str, sample_size: int, verbose: bool):
     """
@@ -100,6 +101,7 @@ def convert(csv_file: str, delimiter: str, has_header: bool, quote_char: str, ba
                 host=trino_host,
                 port=trino_port,
                 user=trino_user,
+                password=trino_password,
                 catalog=trino_catalog,
                 schema=trino_schema
             )
