@@ -1,0 +1,56 @@
+WARNING: CSV has inconsistent field counts: 24 fields: 1 rows, 33 fields: 19 rows, 35 fields: 1 rows
+INFO: Most common field count is 33 (found in 19 rows)
+INFO: The application will handle this by skipping problematic rows
+INFO: Inferring schema from CSV file: /var/folders/kv/jvn7c01n6vn6r32rdsw6yc7c0000gp/T/tmpkpxf_g9f/Pipe_Detail_Static_Clean.csv
+✓ Schema inferred successfully
+INFO: Connecting to Trino at sep.sdp-dev.pd.switchnet.nv:443
+✓ Connected to Trino
+INFO: Connecting to Hive metastore at localhost:9083
+✓ Connected to Hive metastore
+INFO: Creating table iceberg.ingestor2.pipeline_detail_101
+✓ Iceberg table ready
+INFO: Writing data from /var/folders/kv/jvn7c01n6vn6r32rdsw6yc7c0000gp/T/tmpkpxf_g9f/Pipe_Detail_Static_Clean.csv to iceberg.ingestor2.pipeline_detail_101 in append mode
+ERROR: Error during conversion: Failed to write CSV to Iceberg: Failed to write batch to Iceberg: Failed to execute query: TrinoUserError(type=USER_ERROR, name=TYPE_MISMATCH, message="Insert query has mismatched column types: Table: [varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, bigint, bigint, varchar, varchar, varchar, varchar, bigint, bigint, varchar, varchar, varchar, varchar, bigint, varchar, varchar, varchar], Query: [varchar(16), varchar(8), varchar(8), varchar(28), varchar(69), varchar(15), varchar(7), varchar(8), varchar, varchar, varchar(8), varchar(8), varchar(134), varchar(255), varchar, varchar, varchar(20), varchar(17), varchar(10), varchar(7), varchar, varchar(14), varchar(16), varchar(15)]", query_id=20250423_070153_44404_uvvzu)
+Traceback (most recent call last):
+  File "/Users/bhuey/Work/csv2iceberg/trino_client.py", line 150, in execute_query
+    cursor.execute(query)
+  File "/Users/bhuey/Work/csv2iceberg/lib/python3.9/site-packages/trino/dbapi.py", line 614, in execute
+    self._iterator = iter(self._query.execute())
+  File "/Users/bhuey/Work/csv2iceberg/lib/python3.9/site-packages/trino/client.py", line 900, in execute
+    self._result.rows += self.fetch()
+  File "/Users/bhuey/Work/csv2iceberg/lib/python3.9/site-packages/trino/client.py", line 920, in fetch
+    status = self._request.process(response)
+  File "/Users/bhuey/Work/csv2iceberg/lib/python3.9/site-packages/trino/client.py", line 689, in process
+    raise self._process_error(response["error"], response.get("id"))
+trino.exceptions.TrinoUserError: TrinoUserError(type=USER_ERROR, name=TYPE_MISMATCH, message="Insert query has mismatched column types: Table: [varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, bigint, bigint, varchar, varchar, varchar, varchar, bigint, bigint, varchar, varchar, varchar, varchar, bigint, varchar, varchar, varchar], Query: [varchar(16), varchar(8), varchar(8), varchar(28), varchar(69), varchar(15), varchar(7), varchar(8), varchar, varchar, varchar(8), varchar(8), varchar(134), varchar(255), varchar, varchar, varchar(20), varchar(17), varchar(10), varchar(7), varchar, varchar(14), varchar(16), varchar(15)]", query_id=20250423_070153_44404_uvvzu)
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/bhuey/Work/csv2iceberg/iceberg_writer.py", line 370, in _write_batch_to_iceberg
+    self.trino_client.execute_query(direct_insert_sql)
+  File "/Users/bhuey/Work/csv2iceberg/trino_client.py", line 164, in execute_query
+    raise RuntimeError(f"Failed to execute query: {str(e)}")
+RuntimeError: Failed to execute query: TrinoUserError(type=USER_ERROR, name=TYPE_MISMATCH, message="Insert query has mismatched column types: Table: [varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, bigint, bigint, varchar, varchar, varchar, varchar, bigint, bigint, varchar, varchar, varchar, varchar, bigint, varchar, varchar, varchar], Query: [varchar(16), varchar(8), varchar(8), varchar(28), varchar(69), varchar(15), varchar(7), varchar(8), varchar, varchar, varchar(8), varchar(8), varchar(134), varchar(255), varchar, varchar, varchar(20), varchar(17), varchar(10), varchar(7), varchar, varchar(14), varchar(16), varchar(15)]", query_id=20250423_070153_44404_uvvzu)
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/bhuey/Work/csv2iceberg/iceberg_writer.py", line 117, in write_csv_to_iceberg
+    self._write_batch_to_iceberg(batch, current_mode)
+  File "/Users/bhuey/Work/csv2iceberg/iceberg_writer.py", line 377, in _write_batch_to_iceberg
+    raise RuntimeError(f"Failed to write batch to Iceberg: {str(e)}")
+RuntimeError: Failed to write batch to Iceberg: Failed to execute query: TrinoUserError(type=USER_ERROR, name=TYPE_MISMATCH, message="Insert query has mismatched column types: Table: [varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, bigint, bigint, varchar, varchar, varchar, varchar, bigint, bigint, varchar, varchar, varchar, varchar, bigint, varchar, varchar, varchar], Query: [varchar(16), varchar(8), varchar(8), varchar(28), varchar(69), varchar(15), varchar(7), varchar(8), varchar, varchar, varchar(8), varchar(8), varchar(134), varchar(255), varchar, varchar, varchar(20), varchar(17), varchar(10), varchar(7), varchar, varchar(14), varchar(16), varchar(15)]", query_id=20250423_070153_44404_uvvzu)
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/bhuey/Work/csv2iceberg/csv_to_iceberg.py", line 154, in convert
+    writer.write_csv_to_iceberg(
+  File "/Users/bhuey/Work/csv2iceberg/iceberg_writer.py", line 138, in write_csv_to_iceberg
+    raise RuntimeError(f"Failed to write CSV to Iceberg: {str(e)}")
+RuntimeError: Failed to write CSV to Iceberg: Failed to write batch to Iceberg: Failed to execute query: TrinoUserError(type=USER_ERROR, name=TYPE_MISMATCH, message="Insert query has mismatched column types: Table: [varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar, bigint, bigint, varchar, varchar, varchar, varchar, bigint, bigint, varchar, varchar, varchar, varchar, bigint, varchar, varchar, varchar], Query: [varchar(16), varchar(8), varchar(8), varchar(28), varchar(69), varchar(15), varchar(7), varchar(8), varchar, varchar, varchar(8), varchar(8), varchar(134), varchar(255), varchar, varchar, varchar(20), varchar(17), varchar(10), varchar(7), varchar, varchar(14), varchar(16), varchar(15)]", query_id=20250423_070153_44404_uvvzu)
+Error: Failed to write CSV to Iceberg: Failed to write batch to Iceberg: Failed 
+to execute query: TrinoUserError(type=USER_ERROR, name=TYPE_MISMATCH, 
+message="Insert query has mismatched column types: Table: , Query: ", 
+query_id=20250423_070153_44404_uvvzu)

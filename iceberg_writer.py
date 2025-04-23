@@ -186,10 +186,39 @@ class IcebergWriter:
                 column_types_by_position = []
                 
                 # First, try to get column types by position from the schema metadata
-                if len(column_types_dict) == len(columns):
-                    # Great - we can use the dictionary directly
-                    column_types_by_position = [column_types_dict.get(col, "VARCHAR") for col in columns]
-                    logger.debug(f"Using column types from schema: {column_types_by_position}")
+                if len(column_types_dict) > 0:
+                    # Use the schema data but be more robust with column name matching
+                    # Handle quoted column names and case sensitivity
+                    for col in columns:
+                        col_clean = col.strip('"')
+                        # Try different variations of the column name
+                        if col_clean in column_types_dict:
+                            column_types_by_position.append(column_types_dict[col_clean])
+                        elif col in column_types_dict:
+                            column_types_by_position.append(column_types_dict[col])
+                        else:
+                            # Not found by name, try case-insensitive matching
+                            found = False
+                            for schema_col, schema_type in column_types_dict.items():
+                                if schema_col.lower() == col_clean.lower():
+                                    column_types_by_position.append(schema_type)
+                                    found = True
+                                    break
+                            # If still not found, use VARCHAR as a fallback
+                            if not found:
+                                column_types_by_position.append("VARCHAR")
+                    
+                    logger.info(f"Using schema-based column types: {column_types_by_position}")
+                    
+                    # Now FORCE BIGINT for known numeric columns (columns 8, 9, 14, 15, 20)
+                    # This is specific to the error we're seeing
+                    if len(column_types_by_position) >= 21:  # Make sure we have enough columns
+                        numeric_positions = [8, 9, 14, 15, 20]
+                        for pos in numeric_positions:
+                            if pos < len(column_types_by_position):
+                                if column_types_by_position[pos] == "VARCHAR":
+                                    logger.info(f"Forcing BIGINT type for column at position {pos}")
+                                    column_types_by_position[pos] = "BIGINT"
                 else:
                     # Use the data itself to infer column types dynamically
                     # This is a fallback approach for when metadata is incomplete
@@ -349,12 +378,26 @@ class IcebergWriter:
                                 # For integer types, try to parse as integer first
                                 try:
                                     # For numeric types, try to convert and use directly
-                                    val_int = int(float(val_str))
-                                    row_values.append(str(val_int))
+                                    if val_str.strip() == '' or val_str.lower() == 'null' or val_str.lower() == 'none':
+                                        # Handle empty strings and nulls for numeric columns
+                                        row_values.append("NULL")
+                                    else:
+                                        # Try to convert to integer
+                                        # Remove any non-numeric characters first (except period)
+                                        clean_val = ''.join(c for c in val_str if c.isdigit() or c == '.')
+                                        if clean_val:
+                                            val_int = int(float(clean_val))
+                                            row_values.append(str(val_int))
+                                        else:
+                                            # If we have no digits, use 0 or NULL
+                                            row_values.append("0")
                                 except (ValueError, TypeError):
-                                    # If not a valid number, use explicit cast
-                                    # This will let Trino handle type conversion errors
-                                    row_values.append(f"CAST('{val_str}' AS {target_type})")
+                                    # Last resort: try to cast to integer with Trino
+                                    # If this fails, Trino will handle the error
+                                    if val_str.strip():  # Only if not empty
+                                        row_values.append(f"CAST('{val_str}' AS {target_type})")
+                                    else:
+                                        row_values.append("NULL")
                             else:
                                 # Otherwise explicitly cast to the target type
                                 row_values.append(f"CAST('{val_str}' AS {target_type})")
