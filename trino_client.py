@@ -93,17 +93,17 @@ class TrinoClient:
         schema: str, 
         table: str, 
         iceberg_schema: Schema,
-        partition_spec: Optional[List[str]] = None
+        partition_spec: Optional[List[str]] = None  # Kept for backward compatibility but not used
     ) -> None:
         """
-        Create an Iceberg table using the provided schema and optional partitioning.
+        Create an Iceberg table using the provided schema.
         
         Args:
             catalog: Catalog name
             schema: Schema name
             table: Table name
             iceberg_schema: PyIceberg Schema object
-            partition_spec: Optional list of partition specifications
+            partition_spec: Parameter kept for backward compatibility but not used
         """
         try:
             # Convert PyIceberg schema to Trino DDL
@@ -121,11 +121,6 @@ class TrinoClient:
                 {columns_clause}
             )"""
             
-            # Add partition clause if specified
-            if partition_spec and len(partition_spec) > 0:
-                partition_clause = "PARTITIONED BY (" + ", ".join(partition_spec) + ")"
-                create_table_sql += f"\n{partition_clause}"
-            
             # Add Iceberg table format
             create_table_sql += """
             WITH (
@@ -134,8 +129,6 @@ class TrinoClient:
             """
             
             logger.info(f"Creating Iceberg table: {catalog}.{schema}.{table}")
-            if partition_spec and len(partition_spec) > 0:
-                logger.info(f"With partitioning: {', '.join(partition_spec)}")
             logger.debug(f"Create table SQL: {create_table_sql}")
             
             self.execute_query(create_table_sql)
