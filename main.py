@@ -206,7 +206,8 @@ def convert():
                 'stderr': '',
                 'error': None,
                 'returncode': None,
-                'started_at': datetime.datetime.now()
+                'started_at': datetime.datetime.now(),
+                'progress': 0  # Initialize progress to 0
             }
             logger.debug(f"Created job entry: {conversion_jobs[job_id]}")
             
@@ -254,6 +255,28 @@ def jobs():
                           jobs=conversion_jobs, 
                           now=now, 
                           format_duration=format_duration)
+
+@app.route('/job/<job_id>/progress/<int:percent>', methods=['POST'])
+def update_job_progress(job_id, percent):
+    """Update the progress of a conversion job."""
+    logger.debug(f"Progress update for job {job_id}: {percent}%")
+    if job_id in conversion_jobs:
+        conversion_jobs[job_id]['progress'] = percent
+        return jsonify({"status": "ok"})
+    else:
+        return jsonify({"status": "error", "message": "Job not found"}), 404
+
+@app.route('/job/<job_id>/progress', methods=['GET'])
+def get_job_progress(job_id):
+    """Get the current progress of a conversion job."""
+    if job_id in conversion_jobs:
+        return jsonify({
+            "job_id": job_id, 
+            "progress": conversion_jobs[job_id].get('progress', 0),
+            "status": conversion_jobs[job_id]['status']
+        })
+    else:
+        return jsonify({"status": "error", "message": "Job not found"}), 404
 
 @app.route('/diagnostics')
 def diagnostics():
@@ -309,7 +332,8 @@ def add_test_job():
         'error': None,
         'returncode': 0,
         'started_at': ten_minutes_ago,
-        'completed_at': now
+        'completed_at': now,
+        'progress': 100  # Completed jobs have 100% progress
     }
     
     flash(f'Test job created with ID: {job_id}', 'success')

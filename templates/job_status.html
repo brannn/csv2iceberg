@@ -25,8 +25,9 @@
                             {% endif %}
                         </div>
                         <div class="progress mb-3">
-                            <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" aria-valuenow="100" aria-valuemin="0" aria-valuemax="100" style="width: 100%"></div>
+                            <div id="progress-bar" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" aria-valuenow="{{ job.progress|default(0) }}" aria-valuemin="0" aria-valuemax="100" style="width: {{ job.progress|default(0) }}%"></div>
                         </div>
+                        <p id="progress-text" class="text-center">Progress: <span id="progress-percent">{{ job.progress|default(0) }}%</span></p>
                     {% elif job.status == 'completed' %}
                         <div class="alert alert-success">
                             <strong>Completed</strong> - Conversion completed successfully.
@@ -180,10 +181,38 @@
 {% block scripts %}
 {% if job.status == 'running' %}
 <script>
-    // Auto-refresh the page every 3 seconds if the job is still running
-    setTimeout(function() {
-        window.location.reload();
-    }, 3000);
+    // Function to update progress bar and text
+    function updateProgress() {
+        fetch('/job/{{ job_id }}/progress')
+            .then(response => response.json())
+            .then(data => {
+                // Update progress bar width and text
+                const progressBar = document.getElementById('progress-bar');
+                const progressPercent = document.getElementById('progress-percent');
+                
+                progressBar.style.width = data.progress + '%';
+                progressBar.setAttribute('aria-valuenow', data.progress);
+                progressPercent.textContent = data.progress + '%';
+                
+                // If job is still running, poll again after 1 second
+                if (data.status === 'running' && data.progress < 100) {
+                    setTimeout(updateProgress, 1000);
+                } else {
+                    // Otherwise, reload the page to show completion
+                    window.location.reload();
+                }
+            })
+            .catch(error => {
+                console.error('Error fetching progress:', error);
+                // Try again after 2 seconds
+                setTimeout(updateProgress, 2000);
+            });
+    }
+    
+    // Start progress updates when page loads
+    document.addEventListener('DOMContentLoaded', function() {
+        updateProgress();
+    });
 </script>
 {% endif %}
 {% endblock %}
