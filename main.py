@@ -406,30 +406,64 @@ def add_running_test_job():
         'progress': 0  # Start with 0% progress
     }
     
-    # Start a thread to simulate progress updates
+    # Start a thread to simulate progress updates with improved reliability
     def simulate_progress():
         try:
             # Log initial state
             logger.info(f"Starting progress simulation for job {job_id}")
             logger.info(f"Initial job state: {conversion_jobs[job_id]}")
             
-            # Update progress with delays to simulate processing
-            for progress in range(0, 101, 5):
-                # Update the progress in the job dictionary
+            # Progress simulation phases
+            phases = [
+                (0, "Initializing..."),
+                (5, "Connecting to Trino..."),
+                (10, "Connected to Trino."),
+                (15, "Connecting to Hive Metastore..."),
+                (20, "Connected to Hive Metastore."),
+                (25, "Analyzing CSV file..."),
+                (30, "Inferring schema..."),
+                (40, "Schema inferred."),
+                (45, "Creating table..."),
+                (50, "Table created."),
+                (55, "Starting data transfer..."),
+                (60, "Processing batch 1..."),
+                (70, "Processing batch 2..."),
+                (80, "Processing batch 3..."),
+                (90, "Finalizing..."),
+                (95, "Validation checks..."),
+                (100, "Completed.")
+            ]
+            
+            # Simulate each phase of the progress
+            for progress, message in phases:
+                if job_id not in conversion_jobs:
+                    logger.warning(f"Job {job_id} no longer exists, stopping simulation")
+                    return
+                    
+                # Update the progress and add a message to stdout
                 conversion_jobs[job_id]['progress'] = progress
+                conversion_jobs[job_id]['stdout'] += f"\n{message} ({progress}%)"
+                
                 # Log progress update (use info level for better visibility)
-                logger.info(f"Updated progress for job {job_id} to {progress}%")
-                # Sleep for a bit to simulate processing time
-                time.sleep(1)
+                logger.info(f"Updated progress for job {job_id} to {progress}% - {message}")
+                
+                # Sleep for a bit to simulate processing time (more realistic timing)
+                time.sleep(1.5)  # Slow down a bit for better visibility
             
             # Mark as completed when done
-            conversion_jobs[job_id]['status'] = 'completed'
-            conversion_jobs[job_id]['completed_at'] = datetime.datetime.now()
-            conversion_jobs[job_id]['progress'] = 100
-            logger.info(f"Completed job {job_id}, final state: {conversion_jobs[job_id]}")
+            if job_id in conversion_jobs:
+                conversion_jobs[job_id]['status'] = 'completed'
+                conversion_jobs[job_id]['completed_at'] = datetime.datetime.now()
+                conversion_jobs[job_id]['progress'] = 100
+                conversion_jobs[job_id]['stdout'] += "\nCSV to Iceberg conversion completed successfully."
+                logger.info(f"Completed job {job_id}, final state: {conversion_jobs[job_id]}")
             
         except Exception as e:
             logger.error(f"Error in progress simulation: {str(e)}", exc_info=True)
+            if job_id in conversion_jobs:
+                conversion_jobs[job_id]['status'] = 'failed'
+                conversion_jobs[job_id]['error'] = str(e)
+                conversion_jobs[job_id]['completed_at'] = datetime.datetime.now()
     
     # Start the simulation thread
     thread = threading.Thread(target=simulate_progress, daemon=True)
