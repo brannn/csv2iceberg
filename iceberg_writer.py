@@ -76,14 +76,17 @@ class IcebergWriter:
             logger.info(f"Write mode: {mode}")
             
             # Read the CSV in batches with error handling for inconsistent field counts
+            # Note: Empty fields are properly handled and converted to NULL values
             chunk_iter = pd.read_csv(
                 csv_file, 
                 delimiter=delimiter, 
                 quotechar=quote_char,
                 header=0 if has_header else None,
                 chunksize=batch_size,
-                on_bad_lines='skip',  # Skip lines with inconsistent number of fields
-                warn_bad_lines=True   # Warn about skipped lines
+                on_bad_lines='skip',   # Skip only lines with inconsistent number of fields
+                warn_bad_lines=True,   # Warn about skipped lines
+                keep_default_na=True,  # Convert empty fields to NaN (which become NULL)
+                na_values=['', 'NULL', 'null', 'NA', 'N/A', 'na', 'n/a', 'None', 'none']  # Additional values to treat as NULL
             )
             
             # Track progress
@@ -230,7 +233,9 @@ def count_csv_rows(
             quotechar=quote_char,
             header=0 if has_header else None,
             chunksize=10000,  # Use a reasonable chunk size
-            on_bad_lines='skip'  # Skip problematic lines
+            on_bad_lines='skip',   # Skip only lines with inconsistent number of fields
+            keep_default_na=True,  # Convert empty fields to NaN (which become NULL)
+            na_values=['', 'NULL', 'null', 'NA', 'N/A', 'na', 'n/a', 'None', 'none']  # Additional values to treat as NULL
         )
         
         # Count rows across all chunks

@@ -89,11 +89,15 @@ def validate_csv_file(file_path: str, delimiter: str, quote_char: str) -> bool:
                     f"File might not be using the specified delimiter."
                 )
             
-            # Read a few more lines to check consistency
+            # Read more lines to check consistency (extend to 20 lines for better detection)
             line_count = 1
             field_count = first_line.count(delimiter) + 1
             
-            for _ in range(5):  # Check up to 5 more lines
+            # Track field counts to identify the most common one
+            field_counts = {field_count: 1}  # Start with first line's count
+            inconsistent_lines = []
+            
+            for _ in range(20):  # Check up to 20 more lines
                 line = file.readline().strip()
                 if not line:
                     break
@@ -101,11 +105,30 @@ def validate_csv_file(file_path: str, delimiter: str, quote_char: str) -> bool:
                 line_count += 1
                 current_field_count = line.count(delimiter) + 1
                 
+                # Track this field count
+                if current_field_count not in field_counts:
+                    field_counts[current_field_count] = 0
+                field_counts[current_field_count] += 1
+                
                 if current_field_count != field_count:
+                    inconsistent_lines.append(line_count)
                     logger.warning(
                         f"Inconsistent field count: line 1 has {field_count} fields, "
                         f"line {line_count} has {current_field_count} fields"
                     )
+            
+            # If we found inconsistent field counts, log a summary
+            if len(field_counts) > 1:
+                # Find the most common field count
+                most_common_count = max(field_counts.items(), key=lambda x: x[1])[0]
+                
+                field_count_summary = ", ".join(
+                    [f"{count} fields: {occurrences} rows" for count, occurrences in field_counts.items()]
+                )
+                
+                logger.warning(f"CSV has inconsistent field counts: {field_count_summary}")
+                logger.info(f"Most common field count is {most_common_count} (found in {field_counts[most_common_count]} rows)")
+                logger.info("The application will handle this by skipping problematic rows")
         
         return True
     except Exception as e:
