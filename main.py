@@ -670,12 +670,19 @@ def get_job_progress(job_id):
         # Mark this job as being actively viewed during progress polling
         mark_job_as_active(job_id)
         
+        # Get current progress value and log it
+        current_progress = conversion_jobs[job_id].get('progress', 0)
+        current_status = conversion_jobs[job_id]['status']
+        current_phase = _get_progress_phase(current_progress)
+        
+        logger.debug(f"Progress for job {job_id}: {current_progress}%, status: {current_status}, phase: {current_phase}")
+        
         return jsonify({
             "job_id": job_id, 
-            "progress": conversion_jobs[job_id].get('progress', 0),
-            "status": conversion_jobs[job_id]['status'],
+            "progress": current_progress,
+            "status": current_status,
             # Include extra info for UI improvements
-            "phase": _get_progress_phase(conversion_jobs[job_id].get('progress', 0)),
+            "phase": current_phase,
             "test_job": job_id.startswith('test_') or job_id.startswith('running_test_')
         })
     else:
@@ -789,6 +796,75 @@ def add_test_job():
     
     flash(f'Test job created with ID: {job_id}', 'success')
     return redirect(url_for('jobs'))
+
+@app.route('/api_test')
+def api_test():
+    """Simple API testing page to verify progress updates."""
+    test_job_id = "test_api_" + os.urandom(4).hex()
+    
+    # Create a simple test job
+    conversion_jobs[test_job_id] = {
+        'status': 'running',
+        'progress': 50,  # Set to 50% for testing
+        'started_at': datetime.datetime.now(),
+        'params': {'table_name': 'test_table'},
+        'filename': 'test.csv'
+    }
+    
+    # Create HTML using normal string formatting instead of f-string
+    html = '''
+    <html>
+    <head><title>API Test</title></head>
+    <body>
+        <h1>API Test Page</h1>
+        <p>Testing job ID: {job_id}</p>
+        <p>Progress: 50%</p>
+        
+        <button onclick="testProgressAPI()">Test Progress API</button>
+        <button onclick="testProgressUpdate()">Test Progress Update</button>
+        
+        <pre id="result">Click a button to test...</pre>
+        
+        <script>
+        async function testProgressAPI() {
+            try {
+                const response = await fetch('/job/{job_id}/progress');
+                const data = await response.json();
+                document.getElementById('result').textContent = 
+                    'Progress API Response:\n' + JSON.stringify(data, null, 2);
+            } catch (error) {
+                document.getElementById('result').textContent = 
+                    'Error: ' + error.message;
+            }
+        }
+        
+        async function testProgressUpdate() {
+            try {
+                const newProgress = 75;
+                const response = await fetch('/job/{job_id}/progress/' + newProgress, {
+                    method: 'POST'
+                });
+                const data = await response.json();
+                document.getElementById('result').textContent = 
+                    'Update API Response:\n' + JSON.stringify(data, null, 2) + 
+                    '\n\nNow checking current progress...';
+                    
+                // Now check if it was updated
+                const checkResponse = await fetch('/job/{job_id}/progress');
+                const checkData = await checkResponse.json();
+                document.getElementById('result').textContent += 
+                    '\n\nCurrent Progress:\n' + JSON.stringify(checkData, null, 2);
+            } catch (error) {
+                document.getElementById('result').textContent = 
+                    'Error: ' + error.message;
+            }
+        }
+        </script>
+    </body>
+    </html>
+    '''.format(job_id=test_job_id)
+    
+    return html
 
 @app.route('/add_running_test_job')
 def add_running_test_job():
