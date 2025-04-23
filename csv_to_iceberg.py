@@ -46,6 +46,7 @@ def cli():
 @click.option('--trino-password', help='Trino password (if authentication is enabled)')
 @click.option('--http-scheme', type=click.Choice(['http', 'https']), default='http', 
               help='HTTP scheme for Trino connection (http or https, default: http)')
+@click.option('--trino-role', default='sysadmin', help='Trino role for authorization (default: sysadmin)')
 @click.option('--trino-catalog', required=True, help='Trino catalog')
 @click.option('--trino-schema', required=True, help='Trino schema')
 @click.option('--hive-metastore-uri', required=True, help='Hive metastore Thrift URI')
@@ -55,7 +56,7 @@ def cli():
 @click.option('--verbose', '-v', is_flag=True, help='Enable verbose logging')
 def convert(csv_file: str, delimiter: str, has_header: bool, quote_char: str, batch_size: int,
             table_name: str, trino_host: str, trino_port: int, trino_user: str, trino_password: Optional[str],
-            http_scheme: str, trino_catalog: str, trino_schema: str, hive_metastore_uri: str,
+            http_scheme: str, trino_role: str, trino_catalog: str, trino_schema: str, hive_metastore_uri: str,
             mode: str, sample_size: int, verbose: bool):
     """
     Convert a CSV file to an Iceberg table.
@@ -106,7 +107,8 @@ def convert(csv_file: str, delimiter: str, has_header: bool, quote_char: str, ba
                 password=trino_password,
                 catalog=trino_catalog,
                 schema=trino_schema,
-                http_scheme=http_scheme
+                http_scheme=http_scheme,
+                role=trino_role
             )
         console.print(f"[bold green]✓[/bold green] Connected to Trino")
         
