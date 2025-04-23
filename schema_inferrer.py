@@ -31,7 +31,9 @@ def infer_schema_from_csv(
     delimiter: str = ',', 
     has_header: bool = True, 
     quote_char: str = '"',
-    sample_size: Optional[int] = 1000
+    sample_size: Optional[int] = 1000,
+    include_columns: Optional[List[str]] = None,
+    exclude_columns: Optional[List[str]] = None
 ) -> Schema:
     """
     Infer an Iceberg schema from a CSV file using Polars.
@@ -42,6 +44,8 @@ def infer_schema_from_csv(
         has_header: Whether the CSV has a header row
         quote_char: CSV quote character
         sample_size: Number of rows to sample for schema inference
+        include_columns: List of column names to include (if None, include all except excluded)
+        exclude_columns: List of column names to exclude (if None, no exclusions)
         
     Returns:
         PyIceberg Schema object
@@ -53,13 +57,27 @@ def infer_schema_from_csv(
         if not os.path.exists(csv_file):
             raise FileNotFoundError(f"CSV file not found: {csv_file}")
         
+        # Log column filtering parameters if provided
+        if include_columns:
+            logger.info(f"Including only these columns: {include_columns}")
+        if exclude_columns:
+            logger.info(f"Excluding these columns: {exclude_columns}")
+        
         # For large CSV files, use sampling to avoid loading the entire file
         file_size = os.path.getsize(csv_file)
         if file_size > 10 * 1024 * 1024:  # 10 MB
             logger.info(f"CSV file size is {file_size/1024/1024:.2f} MB, using efficient sampling")
             # Use default sample size (1000) if none provided
             actual_sample_size = sample_size if sample_size is not None else 1000
-            return _infer_schema_from_large_csv(csv_file, delimiter, has_header, quote_char, actual_sample_size)
+            return _infer_schema_from_large_csv(
+                csv_file, 
+                delimiter, 
+                has_header, 
+                quote_char, 
+                actual_sample_size,
+                include_columns,
+                exclude_columns
+            )
         
         try:
             # Read the CSV file with Polars
@@ -112,17 +130,28 @@ def infer_schema_from_csv(
         
         # Create a schema fields list for PyIceberg
         fields = []
+        field_id = 1
         
         for i, field in enumerate(arrow_schema):
             col_name = field.name
             # Clean column name - remove special characters, spaces, etc.
             clean_col_name = str(col_name).strip()
             
+            # Apply column filtering
+            if include_columns is not None and clean_col_name not in include_columns:
+                logger.debug(f"Skipping column '{clean_col_name}' (not in include list)")
+                continue
+                
+            if exclude_columns is not None and clean_col_name in exclude_columns:
+                logger.debug(f"Skipping column '{clean_col_name}' (in exclude list)")
+                continue
+            
             # Convert PyArrow type to Iceberg type
             iceberg_type = _pyarrow_type_to_iceberg_type(field.type)
             
             # Add field to schema with explicit boolean for required parameter
-            fields.append(NestedField(field_id=i+1, name=clean_col_name, field_type=iceberg_type, required=False))
+            fields.append(NestedField(field_id=field_id, name=clean_col_name, field_type=iceberg_type, required=False))
+            field_id += 1
         
         # Create the PyIceberg Schema
         schema = Schema(*fields)
@@ -196,7 +225,9 @@ def _infer_schema_from_large_csv(
     delimiter: str,
     has_header: bool,
     quote_char: str,
-    sample_size: Optional[int]
+    sample_size: Optional[int],
+    include_columns: Optional[List[str]] = None,
+    exclude_columns: Optional[List[str]] = None
 ) -> Schema:
     """
     Infer schema from a large CSV file by sampling rows using Polars.
@@ -207,6 +238,8 @@ def _infer_schema_from_large_csv(
         has_header: Whether the CSV has a header row
         quote_char: CSV quote character
         sample_size: Number of rows to sample
+        include_columns: List of column names to include (if None, include all except excluded)
+        exclude_columns: List of column names to exclude (if None, no exclusions)
         
     Returns:
         PyIceberg Schema object
@@ -228,7 +261,7 @@ def _infer_schema_from_large_csv(
         
         if sample_size is None or row_count <= sample_size:
             # For small files or when no sample size is specified, use all rows for schema inference
-            return infer_schema_from_csv(csv_file, delimiter, has_header, quote_char, None)
+            return infer_schema_from_csv(csv_file, delimiter, has_header, quote_char, None, include_columns, exclude_columns)
         
         # First read the header to get column names
         df_header = pl.read_csv(
@@ -273,15 +306,27 @@ def _infer_schema_from_large_csv(
         
         # Create schema fields
         fields = []
+        field_id = 1
+        
         for i, field in enumerate(arrow_schema):
             col_name = field.name if i < len(column_names) else f"col_{i}"
             clean_col_name = str(col_name).strip()
+            
+            # Apply column filtering
+            if include_columns is not None and clean_col_name not in include_columns:
+                logger.debug(f"Skipping column '{clean_col_name}' (not in include list)")
+                continue
+                
+            if exclude_columns is not None and clean_col_name in exclude_columns:
+                logger.debug(f"Skipping column '{clean_col_name}' (in exclude list)")
+                continue
             
             # Convert PyArrow type to Iceberg type
             iceberg_type = _pyarrow_type_to_iceberg_type(field.type)
             
             # Add field to schema with explicit boolean for required parameter
-            fields.append(NestedField(field_id=i+1, name=clean_col_name, field_type=iceberg_type, required=False))
+            fields.append(NestedField(field_id=field_id, name=clean_col_name, field_type=iceberg_type, required=False))
+            field_id += 1
         
         # Create the PyIceberg Schema
         schema = Schema(*fields)
