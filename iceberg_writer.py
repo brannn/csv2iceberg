@@ -348,11 +348,14 @@ class IcebergWriter:
                 
                 # Prepare target column list with explicit CASTs if needed
                 cast_clauses = []
+                # Generate column references like v.column1, v.column2, etc.
+                column_refs = [f'column{i+1}' for i in range(len(columns))]
+                
                 for i, col in enumerate(columns):
                     if col in column_types_dict:
-                        cast_clauses.append(f'CAST(v.column{i+1} AS {column_types_dict[col]})')
+                        cast_clauses.append(f'CAST(v.{column_refs[i]} AS {column_types_dict[col]})')
                     else:
-                        cast_clauses.append(f'v.column{i+1}')
+                        cast_clauses.append(f'v.{column_refs[i]}')
                 
                 # Generate VALUES clause from PyArrow table or fallback to pandas
                 values = []
@@ -403,10 +406,14 @@ class IcebergWriter:
                 for i in range(0, len(values), MAX_VALUES_PER_QUERY):
                     chunk_values = values[i:i + MAX_VALUES_PER_QUERY]
                     
-                    # Create a query that uses VALUES clause with explicit column references
+                    # Create a query that uses VALUES clause with unique column references
+                    # Generate column names like column1, column2, column3, etc. to avoid duplicates
+                    column_refs = [f'column{i+1}' for i in range(len(columns))]
+                    column_refs_str = ', '.join(column_refs)
+                    
                     insert_sql = f"""
                     INSERT INTO {self.catalog}.{self.schema}.{self.table} ({column_names_str})
-                    WITH value_table(column1{', column2' * (len(columns)-1)}) AS (
+                    WITH value_table({column_refs_str}) AS (
                       VALUES {', '.join(chunk_values)}
                     )
                     SELECT {', '.join(cast_clauses)}
