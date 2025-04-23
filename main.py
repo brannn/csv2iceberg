@@ -162,6 +162,22 @@ def run_conversion(job_id, file_path, params):
         if params.get('verbose') == 'true':
             conversion_cmd.append('--verbose')
             
+        # Add column filtering parameters if provided
+        if params.get('include_columns'):
+            # Sanitize and format: split, strip, and join with commas
+            include_cols = ','.join([col.strip() for col in params['include_columns'].split(',') if col.strip()])
+            if include_cols:
+                conversion_cmd.extend(["--include-columns", include_cols])
+                logger.info(f"Adding include columns filter: {include_cols}")
+                
+        # Exclude columns are only processed if include columns are not specified
+        elif params.get('exclude_columns'):
+            # Sanitize and format: split, strip, and join with commas
+            exclude_cols = ','.join([col.strip() for col in params['exclude_columns'].split(',') if col.strip()])
+            if exclude_cols:
+                conversion_cmd.extend(["--exclude-columns", exclude_cols])
+                logger.info(f"Adding exclude columns filter: {exclude_cols}")
+                
         # Add custom schema if available
         if custom_schema_file:
             conversion_cmd.extend(["--custom-schema", custom_schema_file])
@@ -296,7 +312,9 @@ def convert():
                     'file_path': file_path, 
                     'filename': filename,
                     'csv_params': csv_params,
-                    'timestamp': datetime.datetime.now().isoformat()
+                    'timestamp': datetime.datetime.now().isoformat(),
+                    'include_columns': request.form.get('include_columns', ''),
+                    'exclude_columns': request.form.get('exclude_columns', '')
                 }
                 logger.debug(f"Created schema preview session: {session['schema_preview']}")
                 return redirect(url_for('schema_preview'))
@@ -356,7 +374,9 @@ def convert():
             'batch_size': request.form.get('batch_size'),
             'mode': request.form.get('mode', 'append'),
             'sample_size': str(csv_params.get('sample_size', 1000)),
-            'verbose': request.form.get('verbose', 'false')
+            'verbose': request.form.get('verbose', 'false'),
+            'include_columns': request.form.get('include_columns', ''),
+            'exclude_columns': request.form.get('exclude_columns', '')
         }
         logger.debug(f"Collected parameters: {params}")
         
@@ -438,12 +458,27 @@ def schema_preview():
     try:
         # Infer schema from the CSV
         from schema_inferrer import infer_schema_from_csv
+        
+        # Process column filtering parameters if they exist in the session
+        include_cols = None
+        exclude_cols = None
+        
+        if 'include_columns' in session.get('schema_preview', {}) and session['schema_preview']['include_columns']:
+            include_cols = [col.strip() for col in session['schema_preview']['include_columns'].split(',') if col.strip()]
+            logger.info(f"Using include columns filter from session: {include_cols}")
+            
+        if not include_cols and 'exclude_columns' in session.get('schema_preview', {}) and session['schema_preview']['exclude_columns']:
+            exclude_cols = [col.strip() for col in session['schema_preview']['exclude_columns'].split(',') if col.strip()]
+            logger.info(f"Using exclude columns filter from session: {exclude_cols}")
+        
         schema = infer_schema_from_csv(
             file_path,
             delimiter=csv_params['delimiter'],
             has_header=csv_params['has_header'],
             quote_char=csv_params['quote_char'],
-            sample_size=csv_params['sample_size']
+            sample_size=csv_params['sample_size'],
+            include_columns=include_cols,
+            exclude_columns=exclude_cols
         )
         
         # Get sample data for preview

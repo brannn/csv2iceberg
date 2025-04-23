@@ -135,6 +135,22 @@
                     </div>
                     
                     <div class="mb-3">
+                        <h6>Column Filtering</h6>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <label for="include_columns" class="form-label">Include Columns</label>
+                                <input type="text" class="form-control" id="include_columns" name="include_columns" value="{{ session.get('schema_preview', {}).get('include_columns', '') }}">
+                                <div class="form-text">Comma-separated list of columns to include. Takes precedence over exclude.</div>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="exclude_columns" class="form-label">Exclude Columns</label>
+                                <input type="text" class="form-control" id="exclude_columns" name="exclude_columns" value="{{ session.get('schema_preview', {}).get('exclude_columns', '') }}">
+                                <div class="form-text">Comma-separated list of columns to exclude. Only used if include is empty.</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
                         <label for="batch_size" class="form-label">Batch Size</label>
                         <input type="number" class="form-control" id="batch_size" name="batch_size" value="10000" min="1">
                         <div class="form-text">Number of rows to process in each batch.</div>
@@ -170,6 +186,8 @@ document.addEventListener('DOMContentLoaded', function() {
     const trinoRoleField = document.getElementById('trino_role');
     const hiveMetastoreUriField = document.getElementById('hive_metastore_uri');
     const useHiveMetastoreCheckbox = document.getElementById('use_hive_metastore');
+    const includeColumnsField = document.getElementById('include_columns');
+    const excludeColumnsField = document.getElementById('exclude_columns');
     
     // Profile data from server
     const profiles = {
@@ -251,6 +269,43 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Toggle on checkbox change
     useHiveMetastoreCheckbox.addEventListener('change', toggleHiveMetastoreField);
+    
+    // Column filtering validation
+    // Disable exclude columns when include columns are specified
+    includeColumnsField.addEventListener('input', function() {
+        if (includeColumnsField.value.trim().length > 0) {
+            excludeColumnsField.disabled = true;
+            excludeColumnsField.placeholder = 'Include columns override exclude columns';
+        } else {
+            excludeColumnsField.disabled = false;
+            excludeColumnsField.placeholder = '';
+        }
+    });
+    
+    // Format column lists on blur
+    function formatColumnList(inputField) {
+        inputField.addEventListener('blur', function() {
+            if (inputField.value.trim()) {
+                // Split, trim, and rejoin with consistent comma spacing
+                const columns = inputField.value.split(',')
+                    .map(col => col.trim())
+                    .filter(col => col.length > 0);
+                
+                if (columns.length > 0) {
+                    inputField.value = columns.join(', ');
+                }
+            }
+        });
+    }
+    
+    formatColumnList(includeColumnsField);
+    formatColumnList(excludeColumnsField);
+    
+    // Initial state for column filtering fields
+    if (includeColumnsField.value.trim().length > 0) {
+        excludeColumnsField.disabled = true;
+        excludeColumnsField.placeholder = 'Include columns override exclude columns';
+    }
 
     // Function to update the table name field based on catalog and schema
     function updateTableName() {
