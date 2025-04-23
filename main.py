@@ -1,6 +1,7 @@
 import os
 import logging
-from flask import Flask, render_template, request, redirect, url_for, flash, session
+import datetime
+from flask import Flask, render_template, request, redirect, url_for, flash, session, jsonify
 import tempfile
 import subprocess
 import threading
@@ -201,6 +202,23 @@ def job_status(job_id):
 def jobs():
     """List all conversion jobs."""
     return render_template('jobs.html', jobs=conversion_jobs)
+
+@app.route('/diagnostics')
+def diagnostics():
+    """Diagnostic endpoint to verify server operation."""
+    logger.info("Diagnostics endpoint called")
+    try:
+        data = {
+            "status": "ok",
+            "jobs_count": len(conversion_jobs),
+            "timestamp": datetime.datetime.now().isoformat(),
+            "upload_folder": UPLOAD_FOLDER,
+            "template_folder": app.template_folder
+        }
+        return jsonify(data)
+    except Exception as e:
+        logger.error(f"Error in diagnostics: {str(e)}", exc_info=True)
+        return jsonify({"status": "error", "message": str(e)})
 
 if __name__ == '__main__':
     # Create templates directory if it doesn't exist

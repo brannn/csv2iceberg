@@ -122,10 +122,53 @@
                         <label class="form-check-label" for="verbose">Verbose Logging</label>
                     </div>
                     
-                    <button type="submit" class="btn btn-primary">Convert</button>
+                    <button type="submit" class="btn btn-primary" id="submitBtn">Convert</button>
                 </form>
             </div>
         </div>
     </div>
 </div>
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Add submit event listener to the form
+    const form = document.querySelector('form');
+    const submitBtn = document.getElementById('submitBtn');
+    
+    form.addEventListener('submit', function(e) {
+        console.log('Form submission initiated');
+        
+        // Validate required fields
+        const requiredFields = form.querySelectorAll('[required]');
+        let isValid = true;
+        
+        requiredFields.forEach(function(field) {
+            if (!field.value.trim()) {
+                console.log('Validation failed for', field.name);
+                isValid = false;
+                
+                // Highlight the field
+                field.classList.add('is-invalid');
+            } else {
+                field.classList.remove('is-invalid');
+            }
+        });
+        
+        if (!isValid) {
+            console.log('Form validation failed, preventing submission');
+            e.preventDefault();
+            return false;
+        }
+        
+        // Disable the submit button to prevent multiple submissions
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Processing...';
+        
+        console.log('Form valid, proceeding with submission');
+        // Form will submit normally
+    });
+});
+</script>
+{% endblock %}
 {% endblock %}
