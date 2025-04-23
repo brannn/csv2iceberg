@@ -62,6 +62,13 @@ class ConfigManager:
                 "profiles": [DEFAULT_PROFILE],
                 "last_used_profile": "Default"
             }
+            
+        # Ensure _config_data is always a dictionary
+        if self._config_data is None:
+            self._config_data = {
+                "profiles": [DEFAULT_PROFILE],
+                "last_used_profile": "Default"
+            }
     
     def _save_config(self) -> None:
         """Save configuration to file."""

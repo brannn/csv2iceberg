@@ -11,6 +11,7 @@ from collections import OrderedDict
 
 # Import helper modules
 from utils import setup_logging
+from config_manager import ConfigManager
 
 # Set up logging
 logger = setup_logging()
@@ -20,6 +21,9 @@ logging.basicConfig(level=logging.DEBUG)
 # Initialize Flask app
 app = Flask(__name__)
 app.secret_key = os.environ.get("SESSION_SECRET", "development-secret-key")
+
+# Initialize config manager
+config_manager = ConfigManager()
 
 # Configure upload folder
 UPLOAD_FOLDER = tempfile.mkdtemp()
@@ -1009,6 +1013,96 @@ def demo_schema_preview():
     
     # Redirect to schema preview
     return redirect(url_for('schema_preview'))
+
+# Connection Profiles Management Routes
+@app.route('/profiles')
+def profiles():
+    """List all connection profiles."""
+    profiles_list = config_manager.get_profiles()
+    last_used = config_manager.get_last_used_profile()
+    last_used_name = last_used.get('name') if last_used else None
+    
+    return render_template('profiles.html', profiles=profiles_list, last_used=last_used_name)
+
+@app.route('/profiles/add', methods=['GET', 'POST'])
+def profile_add():
+    """Add a new connection profile."""
+    if request.method == 'POST':
+        profile = {
+            "name": request.form.get('name'),
+            "description": request.form.get('description', ''),
+            "trino_host": request.form.get('trino_host'),
+            "trino_port": int(request.form.get('trino_port', 8080)),
+            "trino_user": request.form.get('trino_user', ''),
+            "trino_password": request.form.get('trino_password', ''),
+            "http_scheme": request.form.get('http_scheme', 'http'),
+            "trino_role": request.form.get('trino_role', 'sysadmin'),
+            "trino_catalog": request.form.get('trino_catalog'),
+            "trino_schema": request.form.get('trino_schema'),
+            "use_hive_metastore": request.form.get('use_hive_metastore') == 'true',
+            "hive_metastore_uri": request.form.get('hive_metastore_uri', '')
+        }
+        
+        if config_manager.add_profile(profile):
+            flash(f"Profile '{profile['name']}' created successfully.", 'success')
+            return redirect(url_for('profiles'))
+        else:
+            flash(f"Failed to create profile '{profile['name']}'.", 'error')
+    
+    return render_template('profile_form.html', profile=None)
+
+@app.route('/profiles/edit/<name>', methods=['GET', 'POST'])
+def profile_edit(name):
+    """Edit an existing connection profile."""
+    profile = config_manager.get_profile(name)
+    
+    if not profile:
+        flash(f"Profile '{name}' not found.", 'error')
+        return redirect(url_for('profiles'))
+    
+    if request.method == 'POST':
+        updated_profile = {
+            "name": name,  # Keep the original name
+            "description": request.form.get('description', ''),
+            "trino_host": request.form.get('trino_host'),
+            "trino_port": int(request.form.get('trino_port', 8080)),
+            "trino_user": request.form.get('trino_user', ''),
+            "trino_password": request.form.get('trino_password') or profile.get('trino_password', ''),  # Keep existing password if not provided
+            "http_scheme": request.form.get('http_scheme', 'http'),
+            "trino_role": request.form.get('trino_role', 'sysadmin'),
+            "trino_catalog": request.form.get('trino_catalog'),
+            "trino_schema": request.form.get('trino_schema'),
+            "use_hive_metastore": request.form.get('use_hive_metastore') == 'true',
+            "hive_metastore_uri": request.form.get('hive_metastore_uri', '')
+        }
+        
+        if config_manager.update_profile(name, updated_profile):
+            flash(f"Profile '{name}' updated successfully.", 'success')
+            return redirect(url_for('profiles'))
+        else:
+            flash(f"Failed to update profile '{name}'.", 'error')
+    
+    return render_template('profile_form.html', profile=profile)
+
+@app.route('/profiles/delete/<name>')
+def profile_delete(name):
+    """Delete a connection profile."""
+    if config_manager.delete_profile(name):
+        flash(f"Profile '{name}' deleted successfully.", 'success')
+    else:
+        flash(f"Failed to delete profile '{name}'.", 'error')
+    
+    return redirect(url_for('profiles'))
+
+@app.route('/profiles/use/<name>')
+def profile_use(name):
+    """Set a profile as the active profile."""
+    if config_manager.set_last_used_profile(name):
+        flash(f"Profile '{name}' is now the active profile.", 'success')
+    else:
+        flash(f"Failed to set profile '{name}' as active.", 'error')
+    
+    return redirect(url_for('profiles'))
 
 if __name__ == '__main__':
     # Create templates directory if it doesn't exist
