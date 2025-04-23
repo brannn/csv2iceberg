@@ -369,7 +369,19 @@ def convert():
             
     # GET request - show conversion form
     logger.debug("Rendering convert.html template")
-    return render_template('convert.html')
+    
+    # Get available profiles and last used profile
+    profiles = config_manager.get_profiles()
+    last_used_profile = None
+    last_used = config_manager.get_last_used_profile()
+    if last_used:
+        last_used_profile = last_used.get('name')
+    
+    return render_template(
+        'convert.html',
+        profiles=profiles,
+        last_used_profile=last_used_profile
+    )
 
 # The handle_schema_analyze function has been removed as it's no longer needed
 

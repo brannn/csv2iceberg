@@ -43,6 +43,9 @@
                     <li class="nav-item">
                         <a class="nav-link {% if request.path == '/jobs' %}active{% endif %}" href="{{ url_for('jobs') }}">Jobs</a>
                     </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.path.startswith('/profiles') %}active{% endif %}" href="{{ url_for('profiles') }}">Profiles</a>
+                    </li>
                 </ul>
             </div>
         </div>

@@ -10,6 +10,20 @@
             <div class="card-body">
                 <form action="{{ url_for('convert') }}" method="post" enctype="multipart/form-data">
                     <div class="mb-3">
+                        <h5>Connection Profile</h5>
+                        <div class="d-flex gap-2 align-items-center">
+                            <select class="form-select" id="connection_profile" name="connection_profile">
+                                <option value="">-- Select a profile --</option>
+                                {% for profile in profiles %}
+                                <option value="{{ profile.name }}" {% if profile.name == last_used_profile %}selected{% endif %}>{{ profile.name }} - {{ profile.description }}</option>
+                                {% endfor %}
+                            </select>
+                            <a href="{{ url_for('profiles') }}" class="btn btn-outline-secondary btn-sm">Manage Profiles</a>
+                        </div>
+                        <div class="form-text">Select a connection profile or configure the connection settings below.</div>
+                    </div>
+                    
+                    <div class="mb-3">
                         <h5>CSV File</h5>
                         <div class="alert alert-info">
                             <strong>Note:</strong> Maximum file size is 50MB. For larger files, use the command-line interface.
@@ -164,15 +178,83 @@ document.addEventListener('DOMContentLoaded', function() {
     // Add submit event listener to the form
     const form = document.querySelector('form');
     const submitBtn = document.getElementById('submitBtn');
+    const profileSelect = document.getElementById('connection_profile');
     const passwordField = document.getElementById('trino_password');
     const httpSchemeSelect = document.getElementById('http_scheme');
     const trinoCatalog = document.getElementById('trino_catalog');
     const trinoSchema = document.getElementById('trino_schema');
     const tableNameField = document.getElementById('table_name');
+    const trinoHostField = document.getElementById('trino_host');
+    const trinoPortField = document.getElementById('trino_port');
+    const trinoUserField = document.getElementById('trino_user');
+    const trinoRoleField = document.getElementById('trino_role');
+    const hiveMetastoreUriField = document.getElementById('hive_metastore_uri');
+    const useHiveMetastoreCheckbox = document.getElementById('use_hive_metastore');
+    
+    // Profile data from server
+    const profiles = {
+        {% for profile in profiles %}
+        "{{ profile.name }}": {
+            name: "{{ profile.name }}",
+            description: "{{ profile.description }}",
+            trino_host: "{{ profile.trino_host }}",
+            trino_port: {{ profile.trino_port }},
+            trino_user: "{{ profile.trino_user }}",
+            trino_password: "{{ profile.trino_password }}",
+            http_scheme: "{{ profile.http_scheme }}",
+            trino_role: "{{ profile.trino_role }}",
+            trino_catalog: "{{ profile.trino_catalog }}",
+            trino_schema: "{{ profile.trino_schema }}",
+            use_hive_metastore: {{ 'true' if profile.use_hive_metastore else 'false' }},
+            hive_metastore_uri: "{{ profile.hive_metastore_uri }}"
+        },
+        {% endfor %}
+    };
+    
+    // Function to apply profile settings to form fields
+    function applyProfile(profileName) {
+        if (!profileName || !profiles[profileName]) {
+            return;
+        }
+        
+        const profile = profiles[profileName];
+        
+        // Apply profile values to form fields
+        trinoHostField.value = profile.trino_host;
+        trinoPortField.value = profile.trino_port;
+        trinoUserField.value = profile.trino_user;
+        // We don't set the password field directly for security reasons
+        // But we can check if there is a password and hint to the user
+        if (profile.trino_password) {
+            passwordField.placeholder = '••••••••';
+        } else {
+            passwordField.placeholder = '';
+        }
+        httpSchemeSelect.value = profile.http_scheme;
+        trinoRoleField.value = profile.trino_role;
+        trinoCatalog.value = profile.trino_catalog;
+        trinoSchema.value = profile.trino_schema;
+        
+        // Handle boolean checkbox state
+        useHiveMetastoreCheckbox.checked = profile.use_hive_metastore === true;
+        hiveMetastoreUriField.value = profile.hive_metastore_uri;
+        
+        // Update dependent fields
+        toggleHiveMetastoreField();
+        updateTableName();
+    }
+    
+    // Set up profile selection handler
+    profileSelect.addEventListener('change', function() {
+        applyProfile(profileSelect.value);
+    });
+    
+    // Apply the selected profile on page load
+    if (profileSelect.value) {
+        applyProfile(profileSelect.value);
+    }
     
     // Function to toggle Hive Metastore URI field based on checkbox
-    const useHiveMetastoreCheckbox = document.getElementById('use_hive_metastore');
-    const hiveMetastoreUriField = document.getElementById('hive_metastore_uri');
     
     function toggleHiveMetastoreField() {
         if (useHiveMetastoreCheckbox.checked) {
