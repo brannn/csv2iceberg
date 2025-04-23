@@ -197,7 +197,7 @@ class IcebergWriter:
                         if j >= 0 and j <= 7:
                             column_types_by_position.append("VARCHAR")
                         elif j == 8 or j == 9 or j == 14 or j == 15 or j == 20:
-                            column_types_by_position.append("DOUBLE")
+                            column_types_by_position.append("BIGINT")
                         elif j == 10 or j == 11:
                             column_types_by_position.append("TIMESTAMP(6)")
                         else:
@@ -284,6 +284,16 @@ class IcebergWriter:
                             if "VARCHAR" in target_type or target_type == "":
                                 # For VARCHAR, just use string literal
                                 row_values.append(f"'{val_str}'")
+                            elif "BIGINT" in target_type or "INTEGER" in target_type:
+                                # For integer types, try to parse as integer first
+                                try:
+                                    # For numeric types, try to convert and use directly
+                                    val_int = int(float(val_str))
+                                    row_values.append(str(val_int))
+                                except (ValueError, TypeError):
+                                    # If not a valid number, use explicit cast
+                                    # This will let Trino handle type conversion errors
+                                    row_values.append(f"CAST('{val_str}' AS {target_type})")
                             else:
                                 # Otherwise explicitly cast to the target type
                                 row_values.append(f"CAST('{val_str}' AS {target_type})")
