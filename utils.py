@@ -135,14 +135,15 @@ def validate_csv_file(file_path: str, delimiter: str, quote_char: str) -> bool:
         logger.error(f"Error validating CSV file: {str(e)}")
         return False
 
-def validate_connection_params(host: str, port: int, uri: str) -> bool:
+def validate_connection_params(host: str, port: int, uri: Optional[str] = "", use_hive: bool = True) -> bool:
     """
     Validate connection parameters.
     
     Args:
         host: Host name or IP address
         port: Port number
-        uri: URI string
+        uri: Hive metastore URI string (can be None if use_hive is False)
+        use_hive: Whether Hive metastore is being used
         
     Returns:
         True if parameters are valid
@@ -159,14 +160,15 @@ def validate_connection_params(host: str, port: int, uri: str) -> bool:
         logger.error(f"Invalid port number: {port}")
         return False
     
-    # Validate URI
-    if not uri:
-        logger.error("URI cannot be empty")
-        return False
-    
-    if ':' not in uri and not uri.isalpha():
-        logger.error(f"Invalid URI format: {uri}")
-        return False
+    # Validate URI if Hive metastore is being used
+    if use_hive:
+        if not uri:
+            logger.error("Hive metastore URI cannot be empty when using Hive metastore")
+            return False
+        
+        if ':' not in uri and not uri.isalpha():
+            logger.error(f"Invalid Hive metastore URI format: {uri}")
+            return False
     
     return True
 

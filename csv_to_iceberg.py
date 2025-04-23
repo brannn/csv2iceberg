@@ -76,7 +76,7 @@ def convert(csv_file: str, delimiter: str, has_header: bool, quote_char: str, ba
             sys.exit(1)
         
         # Validate connection parameters
-        if not validate_connection_params(trino_host, trino_port, hive_metastore_uri):
+        if not validate_connection_params(trino_host, trino_port, hive_metastore_uri, use_hive_metastore):
             console.print("[bold red]Error:[/bold red] Invalid connection parameters")
             sys.exit(1)
             
@@ -170,11 +170,21 @@ def convert(csv_file: str, delimiter: str, has_header: bool, quote_char: str, ba
             )
         console.print(f"[bold green]✓[/bold green] Connected to Trino")
         
-        # 3. Connect to Hive metastore
-        with console.status("[bold blue]Connecting to Hive metastore...[/bold blue]") as status:
-            logger.info(f"Connecting to Hive metastore at {hive_metastore_uri}")
-            hive_client = HiveMetastoreClient(hive_metastore_uri)
-        console.print(f"[bold green]✓[/bold green] Connected to Hive metastore")
+        # 3. Connect to Hive metastore (if enabled)
+        hive_client = None
+        if use_hive_metastore:
+            with console.status("[bold blue]Connecting to Hive metastore...[/bold blue]") as status:
+                logger.info(f"Connecting to Hive metastore at {hive_metastore_uri}")
+                try:
+                    hive_client = HiveMetastoreClient(hive_metastore_uri)
+                    console.print(f"[bold green]✓[/bold green] Connected to Hive metastore")
+                except Exception as e:
+                    logger.warning(f"Failed to connect to Hive metastore: {str(e)}")
+                    console.print(f"[bold yellow]![/bold yellow] Could not connect to Hive metastore: {str(e)}")
+                    console.print(f"[bold yellow]![/bold yellow] Continuing without direct Hive metastore connection")
+        else:
+            logger.info("Hive metastore connection disabled via --no-hive-metastore flag")
+            console.print("[bold blue]i[/bold blue] Hive metastore connection disabled, using Trino for all operations")
         
         # 4. Create Iceberg table or verify it exists
         with console.status(f"[bold blue]Creating/verifying Iceberg table {table_name}...[/bold blue]") as status:
