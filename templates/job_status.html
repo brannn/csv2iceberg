@@ -17,6 +17,12 @@
                     {% if job.status == 'running' %}
                         <div class="alert alert-info">
                             <strong>Running</strong> - Conversion is in progress...
+                            {% if job.started_at %}
+                                <br>
+                                <small>Started at: {{ job.started_at.strftime('%Y-%m-%d %H:%M:%S') }}</small>
+                                <br>
+                                <small>Running for: {{ format_duration(job.started_at, now) }}</small>
+                            {% endif %}
                         </div>
                         <div class="progress mb-3">
                             <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" aria-valuenow="100" aria-valuemin="0" aria-valuemax="100" style="width: 100%"></div>
@@ -24,7 +30,14 @@
                     {% elif job.status == 'completed' %}
                         <div class="alert alert-success">
                             <strong>Completed</strong> - Conversion completed successfully.
-                            {% if job.completed_at %}
+                            {% if job.started_at and job.completed_at %}
+                                <br>
+                                <small>Started at: {{ job.started_at.strftime('%Y-%m-%d %H:%M:%S') }}</small>
+                                <br>
+                                <small>Completed at: {{ job.completed_at.strftime('%Y-%m-%d %H:%M:%S') }}</small>
+                                <br>
+                                <small>Duration: {{ format_duration(job.started_at, job.completed_at) }}</small>
+                            {% elif job.completed_at %}
                                 <br>
                                 <small>Completed at: {{ job.completed_at.strftime('%Y-%m-%d %H:%M:%S') }}</small>
                             {% endif %}
@@ -32,7 +45,14 @@
                     {% else %}
                         <div class="alert alert-danger">
                             <strong>Failed</strong> - Conversion failed.
-                            {% if job.completed_at %}
+                            {% if job.started_at and job.completed_at %}
+                                <br>
+                                <small>Started at: {{ job.started_at.strftime('%Y-%m-%d %H:%M:%S') }}</small>
+                                <br>
+                                <small>Failed at: {{ job.completed_at.strftime('%Y-%m-%d %H:%M:%S') }}</small>
+                                <br>
+                                <small>Duration: {{ format_duration(job.started_at, job.completed_at) }}</small>
+                            {% elif job.completed_at %}
                                 <br>
                                 <small>Failed at: {{ job.completed_at.strftime('%Y-%m-%d %H:%M:%S') }}</small>
                             {% endif %}

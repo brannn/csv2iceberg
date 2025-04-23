@@ -20,6 +20,7 @@
                             <th>Table</th>
                             <th>Status</th>
                             <th>Mode</th>
+                            <th>Duration</th>
                             <th>Completed at</th>
                             <th>Actions</th>
                         </tr>
@@ -40,6 +41,19 @@
                                     {% endif %}
                                 </td>
                                 <td>{{ job.params.mode }}</td>
+                                <td>
+                                    {% if job.started_at and job.status != 'running' %}
+                                        {% if job.completed_at %}
+                                            {{ format_duration(job.started_at, job.completed_at) }}
+                                        {% else %}
+                                            {{ format_duration(job.started_at, now) }}
+                                        {% endif %}
+                                    {% elif job.status == 'running' and job.started_at %}
+                                        In progress...
+                                    {% else %}
+                                        N/A
+                                    {% endif %}
+                                </td>
                                 <td>
                                     {% if job.completed_at %}
                                         {{ job.completed_at.strftime('%Y-%m-%d %H:%M:%S') }}

@@ -238,13 +238,22 @@ def job_status(job_id):
     if job_id not in conversion_jobs:
         flash('Job not found', 'error')
         return redirect(url_for('index'))
-        
-    return render_template('job_status.html', job=conversion_jobs[job_id], job_id=job_id)
+    
+    now = datetime.datetime.now()
+    return render_template('job_status.html', 
+                          job=conversion_jobs[job_id], 
+                          job_id=job_id,
+                          now=now,
+                          format_duration=format_duration)
 
 @app.route('/jobs')
 def jobs():
     """List all conversion jobs."""
-    return render_template('jobs.html', jobs=conversion_jobs)
+    now = datetime.datetime.now()
+    return render_template('jobs.html', 
+                          jobs=conversion_jobs, 
+                          now=now, 
+                          format_duration=format_duration)
 
 @app.route('/diagnostics')
 def diagnostics():
