@@ -239,30 +239,29 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
     
-    // Handle the analyze schema button
-    const analyzeBtn = document.getElementById('analyzeBtn');
-    
-    analyzeBtn.addEventListener('click', function(e) {
-        // For the analyze button, we only need the CSV file and parsing options
-        // We don't need to validate the other fields like trino connection details
-        
-        const csvFile = document.getElementById('csv_file');
-        if (!csvFile.value) {
-            csvFile.classList.add('is-invalid');
-            e.preventDefault();
-            return false;
-        }
-        
-        // Show loading indicator
-        analyzeBtn.disabled = true;
-        analyzeBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Analyzing...';
-    });
-    
+    // Set up a single form submission handler that handles both normal submit and analyze schema
     form.addEventListener('submit', function(e) {
         console.log('Form submission initiated');
         
-        // Skip full validation if we're just analyzing the schema
-        if (e.submitter && e.submitter.id === 'analyzeBtn') {
+        // Check if this is the analyze schema button
+        const isAnalyzeSchema = e.submitter && e.submitter.id === 'analyzeBtn';
+        
+        if (isAnalyzeSchema) {
+            console.log('Analyze schema button clicked');
+            // For the analyze button, we only need to validate the CSV file
+            const csvFile = document.getElementById('csv_file');
+            if (!csvFile.value) {
+                csvFile.classList.add('is-invalid');
+                e.preventDefault();
+                return false;
+            }
+            
+            // Show loading indicator
+            const analyzeBtn = e.submitter;
+            analyzeBtn.disabled = true;
+            analyzeBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Analyzing...';
+            
+            // Allow form submission
             return true;
         }
         
