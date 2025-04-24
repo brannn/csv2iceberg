@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+
+{% block title %}Storage Status{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="card">
+        <div class="card-header">
+            <h2 class="mb-0">Storage System Status</h2>
+        </div>
+        <div class="card-body">
+            <div class="alert alert-info mb-4">
+                This page shows the current state of the storage system, including both JSON and LMDB backends.
+            </div>
+
+            <div class="row mb-4">
+                <div class="col-md-6">
+                    <div class="card h-100">
+                        <div class="card-header bg-primary text-white">
+                            <h3 class="h5 mb-0">Current Storage</h3>
+                        </div>
+                        <div class="card-body">
+                            <table class="table">
+                                <tr>
+                                    <th>Storage Type:</th>
+                                    <td>
+                                        {% if status.storage_type == 'LMDB' %}
+                                            <span class="badge bg-info">LMDB</span>
+                                        {% else %}
+                                            <span class="badge bg-secondary">JSON</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <th>Session Storage:</th>
+                                    <td>
+                                        {% if status.session_storage_type == 'LMDB' %}
+                                            <span class="badge bg-info">LMDB</span>
+                                        {% else %}
+                                            <span class="badge bg-secondary">JSON</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <th>Environment Variable:</th>
+                                    <td>{{ status.environment_variable }}</td>
+                                </tr>
+                                <tr>
+                                    <th>LMDB Available:</th>
+                                    <td>
+                                        {% if status.lmdb_available %}
+                                            <span class="badge bg-success">Yes</span>
+                                        {% else %}
+                                            <span class="badge bg-danger">No</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <th>Profile Count:</th>
+                                    <td>{{ status.current_profiles_count }}</td>
+                                </tr>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="col-md-6">
+                    <div class="card h-100">
+                        <div class="card-header bg-info text-white">
+                            <h3 class="h5 mb-0">System Paths</h3>
+                        </div>
+                        <div class="card-body">
+                            <table class="table">
+                                <tr>
+                                    <th>Temp Directory:</th>
+                                    <td>{{ status.temp_directory }}</td>
+                                </tr>
+                                <tr>
+                                    <th>Home Directory:</th>
+                                    <td>{{ status.home_directory }}</td>
+                                </tr>
+                                <tr>
+                                    <th>JSON Config Path:</th>
+                                    <td>{{ status.json_config_path }}</td>
+                                </tr>
+                                <tr>
+                                    <th>LMDB Config Path:</th>
+                                    <td>{{ status.lmdb_config_path }}</td>
+                                </tr>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="row mb-4">
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-header bg-success text-white">
+                            <h3 class="h5 mb-0">Current Profiles</h3>
+                        </div>
+                        <div class="card-body">
+                            {% if status.current_profiles %}
+                                <ul class="list-group">
+                                    {% for profile in status.current_profiles %}
+                                        <li class="list-group-item">{{ profile }}</li>
+                                    {% endfor %}
+                                </ul>
+                            {% else %}
+                                <div class="alert alert-warning">No profiles found in current storage.</div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-header bg-warning text-dark">
+                            <h3 class="h5 mb-0">Other Storage Profiles</h3>
+                        </div>
+                        <div class="card-body">
+                            {% if status.other_storage_profiles %}
+                                <ul class="list-group">
+                                    {% for profile in status.other_storage_profiles %}
+                                        <li class="list-group-item">{{ profile }}</li>
+                                    {% endfor %}
+                                </ul>
+                            {% else %}
+                                <div class="alert alert-warning">No profiles found in other storage.</div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="d-flex gap-2">
+                <a href="{{ url_for('profiles') }}" class="btn btn-outline-secondary">Back to Profiles</a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
