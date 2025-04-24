@@ -33,54 +33,6 @@ def cli():
     """
     pass
 
-
-    try:
-        # Parse table name
-        catalog, schema, table = parse_table_name(table_name)
-        if not catalog:
-            catalog = "iceberg"  # Default catalog
-        if not schema:
-            schema = "default"  # Default schema
-        
-        # Create a Trino client
-        trino_client = TrinoClient(
-            host=trino_host,
-            port=trino_port,
-            user=trino_user,
-            password=trino_password,
-            catalog=catalog,
-            schema=schema,
-            http_scheme=http_scheme,
-            role=trino_role
-        )
-        
-        console.print(f"\n[bold green]Describing columns for table:[/] [bold cyan]{catalog}.{schema}.{table}[/]")
-        
-        # Get table schema
-        schema_info = trino_client.get_table_schema(catalog, schema, table)
-        
-        # Get column comments
-        comments = trino_client.get_column_comments(catalog, schema, table)
-        
-        # Create a rich table for display
-        from rich.table import Table
-        table_display = Table(show_header=True, header_style="bold magenta")
-        table_display.add_column("Column Name")
-        table_display.add_column("Data Type")
-        table_display.add_column("Comment")
-        
-        for column_name, data_type in schema_info:
-            comment = comments.get(column_name, "")
-            table_display.add_row(column_name, data_type, comment)
-        
-        console.print(table_display)
-        console.print(f"\n[bold green]Total columns:[/] {len(schema_info)}")
-        console.print(f"[bold green]Columns with comments:[/] {len(comments)}")
-        
-    except Exception as e:
-        console.print(f"[bold red]Error:[/] {str(e)}")
-        sys.exit(1)
-
 @cli.command()
 @click.option('--csv-file', '-f', required=True, help='Path to the CSV file')
 @click.option('--delimiter', '-d', default=',', help='CSV delimiter (default: comma)')
@@ -323,9 +275,37 @@ def convert(csv_file: str, delimiter: str, has_header: bool, quote_char: str, ba
 def parse_table_name(table_name: str) -> Tuple[Optional[str], Optional[str], Optional[str]]:
     """Parse a table name in the format catalog.schema.table."""
     parts = table_name.split('.')
-    if len(parts) != 3:
+    
+    if len(parts) == 3:
+        # Full format: catalog.schema.table
+        return parts[0], parts[1], parts[2]
+    elif len(parts) == 2:
+        # Partial format: schema.table (use default catalog)
+        return None, parts[0], parts[1]
+    elif len(parts) == 1:
+        # Minimal format: table (use default catalog and schema)
+        return None, None, parts[0]
+    else:
+        # Invalid format
         return None, None, None
-    return parts[0], parts[1], parts[2]
+
+def validate_csv_file(csv_file: str, delimiter: str, quote_char: str) -> bool:
+    """Validate that the CSV file exists and is readable."""
+    if not os.path.exists(csv_file):
+        logger.error(f"CSV file not found: {csv_file}")
+        return False
+    
+    if not os.path.isfile(csv_file):
+        logger.error(f"Not a file: {csv_file}")
+        return False
+    
+    try:
+        with open(csv_file, 'r', encoding='utf-8') as f:
+            sample = f.read(1024)  # Read a sample to check if it's text
+        return True
+    except Exception as e:
+        logger.error(f"Error opening CSV file: {str(e)}")
+        return False
 
 if __name__ == '__main__':
     cli()
