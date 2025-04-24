@@ -33,21 +33,7 @@ def cli():
     """
     pass
 
-@cli.command()
-@click.option('--table-name', '-t', required=True, help='Target table name (format: catalog.schema.table)')
-@click.option('--trino-host', required=True, help='Trino host')
-@click.option('--trino-port', default=443, type=int, help='Trino port (default: 443)')
-@click.option('--trino-user', default=os.getenv('USER', 'admin'), help='Trino user')
-@click.option('--trino-password', help='Trino password (if authentication is enabled)')
-@click.option('--http-scheme', type=click.Choice(['http', 'https']), default='https', 
-              help='HTTP scheme for Trino connection (http or https, default: https)')
-@click.option('--trino-role', default='sysadmin', help='Trino role for authorization (default: sysadmin)')
-def describe_columns(table_name, trino_host, trino_port, trino_user, trino_password, http_scheme, trino_role):
-    """
-    Describe columns and their comments for a table.
-    
-    This command connects to Trino and retrieves all column information including comments.
-    """
+
     try:
         # Parse table name
         catalog, schema, table = parse_table_name(table_name)
