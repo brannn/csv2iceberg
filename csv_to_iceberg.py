@@ -11,11 +11,13 @@ import click
 from rich.console import Console
 from rich.progress import Progress, TextColumn, BarColumn, TimeElapsedColumn, TimeRemainingColumn
 
-from csv_to_iceberg.core.schema_inferrer import infer_schema_from_csv
-from csv_to_iceberg.connectors.trino_client import TrinoClient
-from csv_to_iceberg.connectors.hive_client import HiveMetastoreClient
-from csv_to_iceberg.core.iceberg_writer import IcebergWriter
-from csv_to_iceberg.utils import setup_logging, validate_csv_file, validate_connection_params
+from csv_to_iceberg.core.conversion_service import (
+    convert_csv_to_iceberg, 
+    validate_csv_file, 
+    validate_connection_params,
+    parse_table_name
+)
+from csv_to_iceberg.utils import setup_logging
 
 # Initialize console for rich output
 console = Console()
@@ -73,6 +75,32 @@ def convert(csv_file: str, delimiter: str, has_header: bool, quote_char: str, ba
         logging.getLogger().setLevel(logging.DEBUG)
     
     try:
+        # Process include/exclude columns
+        include_cols = None
+        exclude_cols = None
+        
+        if include_columns:
+            include_cols = [col.strip() for col in include_columns.split(',')]
+            logger.info(f"Including only these columns: {include_cols}")
+            
+        if exclude_columns and not include_cols:  # Include columns takes precedence
+            exclude_cols = [col.strip() for col in exclude_columns.split(',')]
+            logger.info(f"Excluding these columns: {exclude_cols}")
+            
+        # Convert custom schema file to JSON string if provided
+        custom_schema_content = None
+        if custom_schema:
+            with console.status("[bold blue]Loading custom schema...[/bold blue]"):
+                try:
+                    logger.info(f"Loading custom schema from file: {custom_schema}")
+                    with open(custom_schema, 'r') as f:
+                        custom_schema_content = f.read()
+                    console.print(f"[bold green]✓[/bold green] Custom schema loaded successfully")
+                except Exception as e:
+                    logger.error(f"Error loading custom schema: {str(e)}", exc_info=True)
+                    console.print(f"[bold red]Error:[/bold red] Failed to load custom schema: {str(e)}")
+                    sys.exit(1)
+                
         # Validate CSV file
         if not validate_csv_file(csv_file, delimiter, quote_char):
             console.print(f"[bold red]Error:[/bold red] Invalid CSV file: {csv_file}")
@@ -88,179 +116,76 @@ def convert(csv_file: str, delimiter: str, has_header: bool, quote_char: str, ba
         if not catalog or not schema or not table:
             console.print("[bold red]Error:[/bold red] Invalid table name format. Use: catalog.schema.table")
             sys.exit(1)
-        
-        # Get schema (either from custom schema file or by inference)
-        if custom_schema:
-            with console.status("[bold blue]Loading custom schema...[/bold blue]") as status:
-                try:
-                    logger.info(f"Loading custom schema from file: {custom_schema}")
-                    import json
-                    from pyiceberg.schema import Schema
-                    from pyiceberg.types import (
-                        BooleanType, IntegerType, LongType, FloatType, DoubleType,
-                        DateType, TimestampType, StringType, DecimalType, NestedField
-                    )
-                    
-                    # Map string type names to actual PyIceberg types
-                    type_mapping = {
-                        'Boolean': BooleanType(),
-                        'Integer': IntegerType(),
-                        'Long': LongType(),
-                        'Float': FloatType(),
-                        'Double': DoubleType(),
-                        'Date': DateType(),
-                        'Timestamp': TimestampType(),
-                        'String': StringType(),
-                        'Decimal': DecimalType(38, 10)  # Default precision and scale
-                    }
-                    
-                    with open(custom_schema, 'r') as f:
-                        schema_data = json.load(f)
-                    
-                    # Create schema fields from the custom schema definition
-                    fields = []
-                    for field_def in schema_data:
-                        field_id = field_def.get('id', 0)
-                        field_name = field_def.get('name', '')
-                        field_type_name = field_def.get('type', 'String')
-                        field_required = field_def.get('required', False)
-                        
-                        # Get the actual PyIceberg type from the mapping
-                        field_type = type_mapping.get(field_type_name, StringType())
-                        
-                        # Add field to schema
-                        fields.append(NestedField(
-                            field_id=field_id, 
-                            name=field_name, 
-                            field_type=field_type, 
-                            required=field_required
-                        ))
-                    
-                    # Create the schema
-                    iceberg_schema = Schema(*fields)
-                    logger.debug(f"Loaded custom schema: {iceberg_schema}")
-                except Exception as e:
-                    logger.error(f"Error loading custom schema: {str(e)}", exc_info=True)
-                    console.print(f"[bold red]Error:[/bold red] Failed to load custom schema: {str(e)}")
-                    sys.exit(1)
-            console.print(f"[bold green]✓[/bold green] Custom schema loaded successfully")
-        else:
-            # 1. Infer schema from CSV
-            # Parse include/exclude columns lists if provided
-            include_cols = None
-            exclude_cols = None
             
-            if include_columns:
-                include_cols = [col.strip() for col in include_columns.split(',')]
-                logger.info(f"Including only these columns: {include_cols}")
-                
-            if exclude_columns and not include_cols:  # Include columns takes precedence
-                exclude_cols = [col.strip() for col in exclude_columns.split(',')]
-                logger.info(f"Excluding these columns: {exclude_cols}")
-                
-            with console.status("[bold blue]Inferring schema from CSV...[/bold blue]") as status:
-                logger.info(f"Inferring schema from CSV file: {csv_file}")
-                iceberg_schema = infer_schema_from_csv(
-                    csv_file=csv_file,
-                    delimiter=delimiter, 
-                    has_header=has_header,
-                    quote_char=quote_char,
-                    sample_size=sample_size,
-                    include_columns=include_cols,
-                    exclude_columns=exclude_cols
-                )
-                logger.debug(f"Inferred schema: {iceberg_schema}")
-            console.print(f"[bold green]✓[/bold green] Schema inferred successfully")
-        
-        # 2. Connect to Trino
-        with console.status("[bold blue]Connecting to Trino...[/bold blue]") as status:
-            logger.info(f"Connecting to Trino at {trino_host}:{trino_port}")
-            trino_client = TrinoClient(
-                host=trino_host,
-                port=trino_port,
-                user=trino_user,
-                password=trino_password,
-                catalog=trino_catalog,
-                schema=trino_schema,
-                http_scheme=http_scheme,
-                role=trino_role
-            )
-        console.print(f"[bold green]✓[/bold green] Connected to Trino")
-        
-        # 3. Connect to Hive metastore (if enabled)
-        hive_client = None
-        if use_hive_metastore:
-            with console.status("[bold blue]Connecting to Hive metastore...[/bold blue]") as status:
-                logger.info(f"Connecting to Hive metastore at {hive_metastore_uri}")
-                try:
-                    hive_client = HiveMetastoreClient(hive_metastore_uri)
-                    console.print(f"[bold green]✓[/bold green] Connected to Hive metastore")
-                except Exception as e:
-                    logger.warning(f"Failed to connect to Hive metastore: {str(e)}")
-                    console.print(f"[bold yellow]![/bold yellow] Could not connect to Hive metastore: {str(e)}")
-                    console.print(f"[bold yellow]![/bold yellow] Continuing without direct Hive metastore connection")
-        else:
-            logger.info("Hive metastore connection disabled via --no-hive-metastore flag")
-            console.print("[bold blue]i[/bold blue] Hive metastore connection disabled, using Trino for all operations")
-        
-        # 4. Create Iceberg table or verify it exists
-        with console.status(f"[bold blue]Creating/verifying Iceberg table {table_name}...[/bold blue]") as status:
-            table_exists = trino_client.table_exists(catalog, schema, table)
-            
-            if table_exists and mode == 'overwrite':
-                logger.info(f"Table {table_name} exists and mode is overwrite, dropping table")
-                trino_client.drop_table(catalog, schema, table)
-                table_exists = False
-            
-            if not table_exists:
-                logger.info(f"Creating table {table_name}")
-                trino_client.create_iceberg_table(catalog, schema, table, iceberg_schema)
-            else:
-                logger.info(f"Table {table_name} already exists, verifying schema compatibility")
-                if not trino_client.validate_table_schema(catalog, schema, table, iceberg_schema):
-                    console.print("[bold red]Error:[/bold red] Existing table schema is incompatible with inferred schema")
-                    sys.exit(1)
-        console.print(f"[bold green]✓[/bold green] Iceberg table ready")
-        
-        # 5. Write data to Iceberg table
-        logger.info(f"Writing data from {csv_file} to {table_name} in {mode} mode")
-        writer = IcebergWriter(
-            trino_client=trino_client,
-            hive_client=hive_client,
-            catalog=catalog,
-            schema=schema,
-            table=table
+        # Create progress bar
+        progress = Progress(
+            "[progress.description]{task.description}",
+            BarColumn(),
+            "[progress.percentage]{task.percentage:>3.0f}%",
+            TimeRemainingColumn(),
+            console=console
         )
         
-        # Simple progress tracking without Rich Progress
+        # Progress callback function
         def progress_update(percent):
-            console.print(f"[bold blue]Writing data: {percent}% complete[/bold blue]")
+            nonlocal task_id
+            progress.update(task_id, completed=percent)
+        
+        # Run the conversion with progress tracking
+        with progress:
+            task_id = progress.add_task("[green]Converting CSV to Iceberg...", total=100)
             
-        writer.write_csv_to_iceberg(
-            csv_file=csv_file,
-            mode=mode,
-            delimiter=delimiter,
-            has_header=has_header,
-            quote_char=quote_char,
-            batch_size=batch_size,
-            include_columns=include_cols,
-            exclude_columns=exclude_cols,
-            progress_callback=progress_update
-        )
+            console.print(f"[bold blue]Converting CSV to Iceberg in {mode} mode...[/bold blue]")
+            result = convert_csv_to_iceberg(
+                # File parameters
+                csv_file=csv_file,
+                table_name=table_name,
+                
+                # Connection parameters
+                trino_host=trino_host,
+                trino_port=trino_port,
+                trino_user=trino_user,
+                trino_password=trino_password,
+                http_scheme=http_scheme,
+                trino_role=trino_role,
+                trino_catalog=trino_catalog,
+                trino_schema=trino_schema,
+                use_hive_metastore=use_hive_metastore,
+                hive_metastore_uri=hive_metastore_uri,
+                
+                # CSV handling parameters
+                delimiter=delimiter,
+                quote_char=quote_char,
+                has_header=has_header,
+                batch_size=batch_size,
+                
+                # Schema/data parameters
+                mode=mode,
+                sample_size=sample_size,
+                include_columns=include_cols,
+                exclude_columns=exclude_cols,
+                custom_schema=custom_schema_content,
+                
+                # Progress callback
+                progress_callback=progress_update
+            )
         
-        console.print(f"[bold green]✓[/bold green] Data written successfully to {table_name}")
-        
+        # Handle the result
+        if result['success']:
+            console.print(f"[bold green]✓[/bold green] Successfully converted CSV to Iceberg table {table_name}")
+            console.print(f"[bold green]✓[/bold green] Processed {result['rows_processed']} rows in {result['duration']:.2f} seconds")
+        else:
+            console.print(f"[bold red]Error during conversion:[/bold red] {result['error']}")
+            if verbose and 'traceback' in result:
+                console.print(result['traceback'])
+            sys.exit(1)
+            
     except Exception as e:
         logger.error(f"Error during conversion: {str(e)}", exc_info=True)
         console.print(f"[bold red]Error:[/bold red] {str(e)}")
         sys.exit(1)
 
-def parse_table_name(table_name: str) -> Tuple[Optional[str], Optional[str], Optional[str]]:
-    """Parse a table name in the format catalog.schema.table."""
-    parts = table_name.split('.')
-    if len(parts) != 3:
-        return None, None, None
-    return parts[0], parts[1], parts[2]
+# parse_table_name is now imported from conversion_service.py
 
 if __name__ == '__main__':
     cli()
