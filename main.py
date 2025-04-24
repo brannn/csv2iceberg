@@ -182,6 +182,24 @@ def run_conversion(job_id, file_path, params):
         if custom_schema_file:
             conversion_cmd.extend(["--custom-schema", custom_schema_file])
             
+        # Add table properties if available
+        if params.get('table_properties'):
+            try:
+                # Validate JSON format
+                import json
+                table_props = json.loads(params['table_properties'])
+                # Create a temporary file for table properties
+                import tempfile
+                table_props_file = tempfile.NamedTemporaryFile(suffix='.json', delete=False)
+                with open(table_props_file.name, 'w') as f:
+                    json.dump(table_props, f)
+                conversion_cmd.extend(["--table-properties", table_props_file.name])
+                logger.info(f"Added table properties from JSON: {table_props}")
+            except json.JSONDecodeError as e:
+                logger.warning(f"Invalid table properties JSON: {e}. Skipping table properties.")
+            except Exception as e:
+                logger.warning(f"Error processing table properties: {e}. Skipping table properties.")
+            
         # Build process monitor command (which will run the conversion command)
         cmd = [
             "python", "process_monitor.py",
@@ -214,6 +232,14 @@ def run_conversion(job_id, file_path, params):
                 logger.info(f"Removed temporary schema file: {custom_schema_file}")
             except Exception as clean_err:
                 logger.warning(f"Failed to clean up schema file {custom_schema_file}: {str(clean_err)}")
+                
+        # Clean up table properties file if created
+        if params.get('table_properties') and 'table_props_file' in locals():
+            try:
+                os.unlink(table_props_file.name)
+                logger.info(f"Removed temporary table properties file: {table_props_file.name}")
+            except Exception as clean_err:
+                logger.warning(f"Failed to clean up table properties file {table_props_file.name}: {str(clean_err)}")
         
     except Exception as e:
         logger.error(f"Error in conversion job {job_id}: {str(e)}", exc_info=True)
@@ -376,7 +402,8 @@ def convert():
             'sample_size': str(csv_params.get('sample_size', 1000)),
             'verbose': request.form.get('verbose', 'false'),
             'include_columns': request.form.get('include_columns', ''),
-            'exclude_columns': request.form.get('exclude_columns', '')
+            'exclude_columns': request.form.get('exclude_columns', ''),
+            'table_properties': request.form.get('table_properties', '')
         }
         logger.debug(f"Collected parameters: {params}")
         
@@ -552,12 +579,14 @@ def schema_apply():
             name = request.form.get(f'name_{field_id}')
             type_name = request.form.get(f'type_{field_id}')
             required = request.form.get(f'required_{field_id}', 'false') == 'true'
+            comment = request.form.get(f'comment_{field_id}', '')
             
             customized_schema.append({
                 'id': int(field_id),
                 'name': name,
                 'type': type_name,
-                'required': required
+                'required': required,
+                'comment': comment
             })
         
         # Store the customized schema in the session
