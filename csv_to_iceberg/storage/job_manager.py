@@ -257,10 +257,18 @@ class JobManager:
         # Preserve important values from the job data
         rows_processed = job_data.get('rows_processed')
             
+        # Get timestamps
+        now = datetime.datetime.now()
+        started_at = job_data.get('started_at')
+        
         updates = {
             'status': 'completed' if success else 'failed',
-            'completed_at': datetime.datetime.now()
+            'completed_at': now
         }
+        
+        # Calculate duration if started_at exists
+        if started_at:
+            updates['duration'] = (now - started_at).total_seconds()
         
         # Set progress to 100% when completed successfully
         if success:

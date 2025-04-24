@@ -647,8 +647,18 @@ def job_detail(job_id):
     job_manager.mark_job_as_active(job_id)
     
     # Format job data for display
-    # Format duration
+    # Calculate and format duration
     duration = job.get('duration')
+    started_at = job.get('started_at')
+    completed_at = job.get('completed_at')
+    
+    # Try to calculate duration if not already set
+    if not duration and started_at and completed_at:
+        # Calculate duration in seconds
+        duration = (completed_at - started_at).total_seconds()
+        # Store calculated duration
+        job['duration'] = duration
+    
     job['duration_formatted'] = format_duration(duration) if duration else 'N/A'
     
     # Format timestamps
