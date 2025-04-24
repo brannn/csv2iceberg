@@ -4,47 +4,43 @@
 
 {% block content %}
 <div class="container mt-4">
-    <div class="card">
+    <div class="card mb-4">
         <div class="card-header">
             <h2 class="mb-0">Storage System Status</h2>
         </div>
         <div class="card-body">
             <div class="alert alert-info mb-4">
-                This page shows the current state of the storage system, including both JSON and LMDB backends.
+                This page shows detailed information about the LMDB storage system used by the application.
             </div>
 
+            <!-- General System Info -->
             <div class="row mb-4">
                 <div class="col-md-6">
                     <div class="card h-100">
-                        <div class="card-header bg-primary text-white">
-                            <h3 class="h5 mb-0">Current Storage</h3>
+                        <div class="card-header bg-dark text-white">
+                            <h3 class="h5 mb-0">System Paths</h3>
                         </div>
                         <div class="card-body">
-                            <table class="table">
+                            <table class="table table-striped">
                                 <tr>
-                                    <th>Storage Type:</th>
-                                    <td>
-                                        {% if status.storage_type == 'LMDB' %}
-                                            <span class="badge bg-info">LMDB</span>
-                                        {% else %}
-                                            <span class="badge bg-secondary">JSON</span>
-                                        {% endif %}
-                                    </td>
+                                    <th>Temp Directory:</th>
+                                    <td><code>{{ status.system.temp_directory }}</code></td>
                                 </tr>
                                 <tr>
-                                    <th>Session Storage:</th>
-                                    <td>
-                                        {% if status.session_storage_type == 'LMDB' %}
-                                            <span class="badge bg-info">LMDB</span>
-                                        {% else %}
-                                            <span class="badge bg-secondary">JSON</span>
-                                        {% endif %}
-                                    </td>
+                                    <th>Home Directory:</th>
+                                    <td><code>{{ status.system.home_directory }}</code></td>
                                 </tr>
-                                <tr>
-                                    <th>Environment Variable:</th>
-                                    <td>{{ status.environment_variable }}</td>
-                                </tr>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="card h-100">
+                        <div class="card-header bg-primary text-white">
+                            <h3 class="h5 mb-0">LMDB Status</h3>
+                        </div>
+                        <div class="card-body">
+                            <table class="table table-striped">
                                 <tr>
                                     <th>LMDB Available:</th>
                                     <td>
@@ -55,86 +51,198 @@
                                         {% endif %}
                                     </td>
                                 </tr>
-                                <tr>
-                                    <th>Profile Count:</th>
-                                    <td>{{ status.current_profiles_count }}</td>
-                                </tr>
-                            </table>
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="col-md-6">
-                    <div class="card h-100">
-                        <div class="card-header bg-info text-white">
-                            <h3 class="h5 mb-0">System Paths</h3>
-                        </div>
-                        <div class="card-body">
-                            <table class="table">
-                                <tr>
-                                    <th>Temp Directory:</th>
-                                    <td>{{ status.temp_directory }}</td>
-                                </tr>
-                                <tr>
-                                    <th>Home Directory:</th>
-                                    <td>{{ status.home_directory }}</td>
-                                </tr>
-                                <tr>
-                                    <th>JSON Config Path:</th>
-                                    <td>{{ status.json_config_path }}</td>
-                                </tr>
-                                <tr>
-                                    <th>LMDB Config Path:</th>
-                                    <td>{{ status.lmdb_config_path }}</td>
-                                </tr>
                             </table>
                         </div>
                     </div>
                 </div>
             </div>
             
+            <!-- Job Store -->
             <div class="row mb-4">
-                <div class="col-md-6">
+                <div class="col-12">
                     <div class="card">
-                        <div class="card-header bg-success text-white">
-                            <h3 class="h5 mb-0">Current Profiles</h3>
+                        <div class="card-header bg-info text-white">
+                            <h3 class="h5 mb-0">Job Storage (LMDB)</h3>
                         </div>
                         <div class="card-body">
-                            {% if status.current_profiles %}
-                                <ul class="list-group">
-                                    {% for profile in status.current_profiles %}
-                                        <li class="list-group-item">{{ profile }}</li>
-                                    {% endfor %}
-                                </ul>
-                            {% else %}
-                                <div class="alert alert-warning">No profiles found in current storage.</div>
-                            {% endif %}
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="col-md-6">
-                    <div class="card">
-                        <div class="card-header bg-warning text-dark">
-                            <h3 class="h5 mb-0">Other Storage Profiles</h3>
-                        </div>
-                        <div class="card-body">
-                            {% if status.other_storage_profiles %}
-                                <ul class="list-group">
-                                    {% for profile in status.other_storage_profiles %}
-                                        <li class="list-group-item">{{ profile }}</li>
-                                    {% endfor %}
-                                </ul>
-                            {% else %}
-                                <div class="alert alert-warning">No profiles found in other storage.</div>
-                            {% endif %}
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <h4 class="h6">Storage Information</h4>
+                                    <table class="table table-striped">
+                                        <tr>
+                                            <th>Database Path:</th>
+                                            <td><code>{{ status.job_store.path }}</code></td>
+                                        </tr>
+                                        <tr>
+                                            <th>Database Exists:</th>
+                                            <td>
+                                                {% if status.job_store.exists %}
+                                                    <span class="badge bg-success">Yes</span>
+                                                {% else %}
+                                                    <span class="badge bg-warning">No</span>
+                                                {% endif %}
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <th>Job Entries:</th>
+                                            <td>{{ status.job_store.entries }}</td>
+                                        </tr>
+                                        <tr>
+                                            <th>Database Size:</th>
+                                            <td>{{ status.job_store.size_formatted }}</td>
+                                        </tr>
+                                    </table>
+                                </div>
+                                <div class="col-md-6">
+                                    <h4 class="h6">LMDB Parameters</h4>
+                                    <table class="table table-striped">
+                                        <tr>
+                                            <th>Maximum Size:</th>
+                                            <td>{{ status.job_store.max_size_formatted }}</td>
+                                        </tr>
+                                        <tr>
+                                            <th>Page Size:</th>
+                                            <td>{{ status.job_store.page_size }} bytes</td>
+                                        </tr>
+                                        <tr>
+                                            <th>Max Readers:</th>
+                                            <td>{{ status.job_store.max_readers }}</td>
+                                        </tr>
+                                        <tr>
+                                            <th>Current Readers:</th>
+                                            <td>{{ status.job_store.num_readers }}</td>
+                                        </tr>
+                                    </table>
+                                </div>
+                            </div>
+                            
+                            <div class="row mt-3">
+                                <div class="col-md-12">
+                                    <h4 class="h6">Disk Usage</h4>
+                                    <div class="progress mb-2" style="height: 25px;">
+                                        {% if status.job_store.disk_total and status.job_store.disk_used %}
+                                            {% set usage_percent = (status.job_store.disk_used / status.job_store.disk_total * 100) | round %}
+                                            <div class="progress-bar" role="progressbar" 
+                                                style="width: {{ usage_percent }}%;" 
+                                                aria-valuenow="{{ usage_percent }}" 
+                                                aria-valuemin="0" aria-valuemax="100">
+                                                {{ usage_percent }}%
+                                            </div>
+                                        {% else %}
+                                            <div class="progress-bar" role="progressbar" style="width: 0%;">
+                                                N/A
+                                            </div>
+                                        {% endif %}
+                                    </div>
+                                    <table class="table table-striped">
+                                        <tr>
+                                            <th>Total Disk Space:</th>
+                                            <td>{{ status.job_store.disk_total_formatted }}</td>
+                                            <th>Used Disk Space:</th>
+                                            <td>{{ status.job_store.disk_used_formatted }}</td>
+                                            <th>Free Disk Space:</th>
+                                            <td>{{ status.job_store.disk_free_formatted }}</td>
+                                        </tr>
+                                    </table>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
-
-            <div class="d-flex gap-2">
-                <a href="{{ url_for('profiles') }}" class="btn btn-outline-secondary">Back to Profiles</a>
+            
+            <!-- Config Store -->
+            <div class="row mb-4">
+                <div class="col-12">
+                    <div class="card">
+                        <div class="card-header bg-success text-white">
+                            <h3 class="h5 mb-0">Configuration Storage (LMDB)</h3>
+                        </div>
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <h4 class="h6">Storage Information</h4>
+                                    <table class="table table-striped">
+                                        <tr>
+                                            <th>Database Path:</th>
+                                            <td><code>{{ status.config_store.path }}</code></td>
+                                        </tr>
+                                        <tr>
+                                            <th>Database Exists:</th>
+                                            <td>
+                                                {% if status.config_store.exists %}
+                                                    <span class="badge bg-success">Yes</span>
+                                                {% else %}
+                                                    <span class="badge bg-warning">No</span>
+                                                {% endif %}
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <th>Config Entries:</th>
+                                            <td>{{ status.config_store.entries }}</td>
+                                        </tr>
+                                        <tr>
+                                            <th>Database Size:</th>
+                                            <td>{{ status.config_store.size_formatted }}</td>
+                                        </tr>
+                                    </table>
+                                </div>
+                                <div class="col-md-6">
+                                    <h4 class="h6">LMDB Parameters</h4>
+                                    <table class="table table-striped">
+                                        <tr>
+                                            <th>Maximum Size:</th>
+                                            <td>{{ status.config_store.max_size_formatted }}</td>
+                                        </tr>
+                                        <tr>
+                                            <th>Page Size:</th>
+                                            <td>{{ status.config_store.page_size }} bytes</td>
+                                        </tr>
+                                        <tr>
+                                            <th>Max Readers:</th>
+                                            <td>{{ status.config_store.max_readers }}</td>
+                                        </tr>
+                                        <tr>
+                                            <th>Current Readers:</th>
+                                            <td>{{ status.config_store.num_readers }}</td>
+                                        </tr>
+                                    </table>
+                                </div>
+                            </div>
+                            
+                            <div class="row mt-3">
+                                <div class="col-md-12">
+                                    <h4 class="h6">Disk Usage</h4>
+                                    <div class="progress mb-2" style="height: 25px;">
+                                        {% if status.config_store.disk_total and status.config_store.disk_used %}
+                                            {% set usage_percent = (status.config_store.disk_used / status.config_store.disk_total * 100) | round %}
+                                            <div class="progress-bar" role="progressbar" 
+                                                style="width: {{ usage_percent }}%;" 
+                                                aria-valuenow="{{ usage_percent }}" 
+                                                aria-valuemin="0" aria-valuemax="100">
+                                                {{ usage_percent }}%
+                                            </div>
+                                        {% else %}
+                                            <div class="progress-bar" role="progressbar" style="width: 0%;">
+                                                N/A
+                                            </div>
+                                        {% endif %}
+                                    </div>
+                                    <table class="table table-striped">
+                                        <tr>
+                                            <th>Total Disk Space:</th>
+                                            <td>{{ status.config_store.disk_total_formatted }}</td>
+                                            <th>Used Disk Space:</th>
+                                            <td>{{ status.config_store.disk_used_formatted }}</td>
+                                            <th>Free Disk Space:</th>
+                                            <td>{{ status.config_store.disk_free_formatted }}</td>
+                                        </tr>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>

@@ -155,6 +155,21 @@ def index():
     except Exception as e:
         logger.error(f"Error rendering index.html: {str(e)}", exc_info=True)
         return "Error rendering template. Check logs."
+        
+@routes.route('/storage-status')
+def storage_status():
+    """Display storage system status."""
+    logger.debug("Storage status route called")
+    try:
+        from csv_to_iceberg.storage.lmdb_stats import get_all_storage_stats
+        
+        # Get comprehensive storage stats
+        stats = get_all_storage_stats()
+        
+        return render_template('storage_status.html', status=stats)
+    except Exception as e:
+        logger.error(f"Error rendering storage status: {str(e)}", exc_info=True)
+        return f"Error displaying storage status: {str(e)}"
     
 @routes.route('/analyze-csv', methods=['POST'])
 def analyze_csv():
