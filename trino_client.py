@@ -72,6 +72,9 @@ class TrinoClient:
         # Table existence cache dict: {(catalog, schema, table): bool}
         self._table_existence_cache = {}
         
+        # Column comments cache dict: {(catalog, schema, table): {column_name: comment, ...}}
+        self._column_comments_cache = {}
+        
         self.connection = self._create_connection()
         
     def _create_connection(self):
@@ -239,6 +242,11 @@ class TrinoClient:
         if cache_key in self._table_existence_cache:
             logger.debug(f"Clearing table existence cache for {catalog}.{schema}.{table}")
             del self._table_existence_cache[cache_key]
+            
+        # Clear column comments cache
+        if cache_key in self._column_comments_cache:
+            logger.debug(f"Clearing column comments cache for {catalog}.{schema}.{table}")
+            del self._column_comments_cache[cache_key]
     
     def create_iceberg_table(
         self, 
@@ -291,7 +299,8 @@ class TrinoClient:
                 {columns_clause}
             )
             WITH (
-                format = 'PARQUET'"""
+                format = 'PARQUET',
+                comment_storage = 'PROPERTY'"""
             
             # Add table properties if provided
             if table_properties and len(table_properties) > 0:
@@ -386,6 +395,88 @@ class TrinoClient:
         except Exception as e:
             logger.error(f"Error getting table schema: {str(e)}", exc_info=True)
             raise RuntimeError(f"Failed to get table schema: {str(e)}")
+    
+    def get_column_comments(self, catalog: str, schema: str, table: str) -> Dict[str, str]:
+        """
+        Get comments for all columns in a table.
+        
+        Args:
+            catalog: Catalog name
+            schema: Schema name
+            table: Table name
+            
+        Returns:
+            Dictionary mapping column names to their comments
+        """
+        try:
+            # Use the cache key format
+            cache_key = (catalog, schema, table)
+            
+            # Check cache first
+            if cache_key in self._column_comments_cache:
+                cached_comments = self._column_comments_cache[cache_key]
+                logger.debug(f"Using cached column comments for {catalog}.{schema}.{table}: {len(cached_comments)} comments")
+                return cached_comments
+                
+            logger.info(f"Fetching column comments for {catalog}.{schema}.{table}")
+            
+            # First try the standard information_schema.columns approach
+            query = f"""
+            SELECT column_name, comment 
+            FROM {catalog}.information_schema.columns 
+            WHERE table_catalog = '{catalog}' 
+              AND table_schema = '{schema}' 
+              AND table_name = '{table}'
+              AND comment IS NOT NULL
+            """
+            
+            result = {}
+            try:
+                rows = self.execute_query(query)
+                if rows:
+                    for column_name, comment in rows:
+                        result[column_name] = comment
+                    logger.info(f"Found {len(result)} column comments via information_schema")
+                    
+                    # Cache the results
+                    self._column_comments_cache[cache_key] = result
+                    return result
+            except Exception as e:
+                logger.warning(f"Could not get column comments from information_schema: {str(e)}")
+            
+            # Try alternate sources of metadata using custom metadata queries
+            # For example, try to get comments from table properties (used by formats like Iceberg)
+            try:
+                # This is an example query for hive/iceberg catalogs
+                query = f"""
+                DESCRIBE {catalog}.{schema}.{table}
+                """
+                rows = self.execute_query(query)
+                
+                if rows:
+                    # Parse DESCRIBE output which might include comments
+                    # Format is typically: column_name, type, comment
+                    for row in rows:
+                        if len(row) >= 3 and row[2]:  # If there's a comment
+                            column_name = row[0]
+                            comment = row[2]
+                            result[column_name] = comment
+                    
+                    logger.info(f"Found {len(result)} column comments via DESCRIBE")
+                    
+                    # Cache the results
+                    self._column_comments_cache[cache_key] = result
+                    return result
+            except Exception as e:
+                logger.warning(f"Could not get column comments from DESCRIBE: {str(e)}")
+            
+            # Cache the empty result too to avoid repeated queries
+            self._column_comments_cache[cache_key] = result
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error getting column comments: {str(e)}", exc_info=True)
+            return {}
     
     def validate_table_schema(
         self, 

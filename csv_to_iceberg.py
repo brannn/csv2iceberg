@@ -34,6 +34,68 @@ def cli():
     pass
 
 @cli.command()
+@click.option('--table-name', '-t', required=True, help='Target table name (format: catalog.schema.table)')
+@click.option('--trino-host', required=True, help='Trino host')
+@click.option('--trino-port', default=443, type=int, help='Trino port (default: 443)')
+@click.option('--trino-user', default=os.getenv('USER', 'admin'), help='Trino user')
+@click.option('--trino-password', help='Trino password (if authentication is enabled)')
+@click.option('--http-scheme', type=click.Choice(['http', 'https']), default='https', 
+              help='HTTP scheme for Trino connection (http or https, default: https)')
+@click.option('--trino-role', default='sysadmin', help='Trino role for authorization (default: sysadmin)')
+def describe_columns(table_name, trino_host, trino_port, trino_user, trino_password, http_scheme, trino_role):
+    """
+    Describe columns and their comments for a table.
+    
+    This command connects to Trino and retrieves all column information including comments.
+    """
+    try:
+        # Parse table name
+        catalog, schema, table = parse_table_name(table_name)
+        if not catalog:
+            catalog = "iceberg"  # Default catalog
+        if not schema:
+            schema = "default"  # Default schema
+        
+        # Create a Trino client
+        trino_client = TrinoClient(
+            host=trino_host,
+            port=trino_port,
+            user=trino_user,
+            password=trino_password,
+            catalog=catalog,
+            schema=schema,
+            http_scheme=http_scheme,
+            role=trino_role
+        )
+        
+        console.print(f"\n[bold green]Describing columns for table:[/] [bold cyan]{catalog}.{schema}.{table}[/]")
+        
+        # Get table schema
+        schema_info = trino_client.get_table_schema(catalog, schema, table)
+        
+        # Get column comments
+        comments = trino_client.get_column_comments(catalog, schema, table)
+        
+        # Create a rich table for display
+        from rich.table import Table
+        table_display = Table(show_header=True, header_style="bold magenta")
+        table_display.add_column("Column Name")
+        table_display.add_column("Data Type")
+        table_display.add_column("Comment")
+        
+        for column_name, data_type in schema_info:
+            comment = comments.get(column_name, "")
+            table_display.add_row(column_name, data_type, comment)
+        
+        console.print(table_display)
+        console.print(f"\n[bold green]Total columns:[/] {len(schema_info)}")
+        console.print(f"[bold green]Columns with comments:[/] {len(comments)}")
+        
+    except Exception as e:
+        console.print(f"[bold red]Error:[/] {str(e)}")
+        sys.exit(1)
+
+@cli.command()
 @click.option('--csv-file', '-f', required=True, help='Path to the CSV file')
 @click.option('--delimiter', '-d', default=',', help='CSV delimiter (default: comma)')
 @click.option('--has-header', '-h', is_flag=True, default=True, help='CSV has header row (default: True)')
