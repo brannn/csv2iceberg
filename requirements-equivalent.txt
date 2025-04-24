@@ -11,5 +11,4 @@ pyhive==0.7.0
 pyiceberg==0.9.0
 rich==13.9.4
 thrift==0.21.0
-thriftpy2==0.5.2
 trino==0.333.0

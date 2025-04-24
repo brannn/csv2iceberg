@@ -17,10 +17,9 @@
             <h2>Features</h2>
             <ul>
                 <li>Automatic schema inference from CSV files</li>
-                <li>Support for both append and overwrite modes</li>
-                <li>Batch processing for large CSV files</li>
+                <li>Append and overwrite modes</li>
                 <li>Schema validation and compatibility checks</li>
-                <li>Configurable CSV parsing options (delimiter, quote character, headers)</li>
+                <li>Configurable CSV parsing (delimiter, quote character, headers)</li>
                 <li>Companion CLI tool for automation needs</li>
             </ul>
         </div>
@@ -30,10 +29,9 @@
             <h2>Requirements</h2>
             <p>To convert CSV files to Iceberg tables, you'll need:</p>
             <ul>
-                <li>Trino server</li>
-                <li>Hive metastore</li>
+                <li>Credentialed access to a Trino cluster</li>
                 <li>CSV file with properly formatted data</li>
-                <li>Starburst Enterprise credentials (non-SSO)</li>
+                <li>Pre-existing Iceberg schema for target tables</li>
             </ul>
         </div>
     </div>
