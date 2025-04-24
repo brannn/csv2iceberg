@@ -404,20 +404,21 @@ def convert():
             # Clean up the session
             session.pop('schema_customization', None)
         
-        # Create job
-        conversion_jobs[job_id] = {
+        # Create job using job manager
+        job_data = job_manager.create_job(job_id, {
             'file_path': file_path,
             'filename': filename,
             'params': params,
+            'is_test': False  # This is a real job, not a test one
+        })
+        
+        # Update the job to mark it as running
+        job_manager.update_job(job_id, {
             'status': 'running',
-            'stdout': '',
-            'stderr': '',
-            'error': None,
-            'returncode': None,
             'started_at': datetime.datetime.now(),
-            'progress': 0  # Initialize progress to 0
-        }
-        logger.debug(f"Created job entry: {conversion_jobs[job_id]}")
+        })
+        
+        logger.debug(f"Created job entry: {job_data}")
         
         # Start conversion thread
         thread = threading.Thread(
@@ -611,23 +612,24 @@ def schema_apply():
 @app.route('/job/<job_id>')
 def job_status(job_id):
     """Show the status of a conversion job."""
-    # Clean up old jobs first
-    cleanup_old_jobs()
+    # Clean up old jobs from memory
+    job_manager.cleanup_old_jobs()
     
-    if job_id not in conversion_jobs:
+    # Get job from job manager
+    job = job_manager.get_job(job_id)
+    if not job:
         flash('Job not found or has been archived', 'info')
         return redirect(url_for('jobs'))
     
     # Mark this job as being actively viewed (to prevent premature cleanup)
-    mark_job_as_active(job_id)
+    job_manager.mark_job_as_active(job_id)
     
     now = datetime.datetime.now()
     return render_template('job_status.html', 
-                          job=conversion_jobs[job_id], 
+                          job=job, 
                           job_id=job_id,
                           now=now,
-                          format_duration=format_duration,
-                          job_ttl=COMPLETED_JOB_TTL if not (job_id.startswith('test_') or job_id.startswith('running_test_')) else TEST_JOB_TTL)
+                          format_duration=format_duration)
 
 @app.route('/test/progress/<job_id>')
 def test_progress(job_id):
@@ -673,8 +675,7 @@ def jobs():
 def update_job_progress(job_id, percent):
     """Update the progress of a conversion job."""
     logger.debug(f"Progress update for job {job_id}: {percent}%")
-    if job_id in conversion_jobs:
-        conversion_jobs[job_id]['progress'] = percent
+    if job_manager.update_job_progress(job_id, percent):
         return jsonify({"status": "ok"})
     else:
         return jsonify({"status": "error", "message": "Job not found"}), 404
