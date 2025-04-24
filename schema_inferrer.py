@@ -251,7 +251,12 @@ def create_schema_from_custom_definition(schema_def: List[Dict[str, Any]]) -> Sc
         
         # Create the PyIceberg Schema
         schema = Schema(*fields)
+        
+        # Debug information about the schema and its fields
         logger.debug(f"Created custom schema: {schema}")
+        for field in schema.fields:
+            logger.debug(f"Schema field: name={field.name}, type={field.field_type}, doc={field.doc!r}")
+        
         return schema
         
     except Exception as e:

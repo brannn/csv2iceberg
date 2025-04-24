@@ -274,10 +274,12 @@ class TrinoClient:
                 column_def = f"{column_name} {column_type}"
                 
                 # Add comment if present
+                logger.debug(f"Field {field.name} has doc attribute: {field.doc!r}")
                 if field.doc:
                     # Escape single quotes in comments
                     escaped_comment = field.doc.replace("'", "''")
                     column_def += f" COMMENT '{escaped_comment}'"
+                    logger.debug(f"Added comment to column {field.name}: '{escaped_comment}'")
                 
                 columns_ddl.append(column_def)
             
