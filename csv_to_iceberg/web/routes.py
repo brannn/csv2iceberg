@@ -356,24 +356,41 @@ def convert():
                     
                     # Handle the result
                     if result['success']:
-                        # Update job with row count
-                        job_manager.update_job(job_id, {'rows_processed': result['rows_processed']})
-                        # Mark job as completed
-                        job_manager.mark_job_completed(job_id, success=True)
+                        # Update job with row count and stdout
+                        updates = {
+                            'rows_processed': result['rows_processed'],
+                            'stdout': result.get('stdout', '')
+                        }
+                        job_manager.update_job(job_id, updates)
+                        
+                        # Mark job as completed with success and stdout
+                        job_manager.mark_job_completed(
+                            job_id, 
+                            success=True,
+                            stdout=result.get('stdout', '')
+                        )
                     else:
                         # Mark job as failed with error and traceback if available
                         error = result['error']
                         traceback_info = result.get('traceback', '')
+                        stdout = result.get('stdout', '')
+                        
                         # Create a detailed error message with traceback
                         stderr_info = f"Error: {error}\n\n"
                         if traceback_info:
                             stderr_info += f"Traceback:\n{traceback_info}"
                             
+                        # First update the job with any collected stdout/logs
+                        if stdout:
+                            job_manager.update_job(job_id, {'stdout': stdout})
+                            
+                        # Then mark the job as failed with complete error details    
                         job_manager.mark_job_completed(
                             job_id, 
                             success=False, 
                             error=error,
-                            stderr=stderr_info
+                            stderr=stderr_info,
+                            stdout=stdout
                         )
                     
                     # Clean up temporary file in either case

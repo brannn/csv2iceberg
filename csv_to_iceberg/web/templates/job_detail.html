@@ -158,40 +158,40 @@
                         <tbody>
                             <tr>
                                 <th scope="row">Trino Host</th>
-                                <td>{{ job.trino_host }}</td>
+                                <td>{{ job.params.trino_host }}</td>
                             </tr>
                             <tr>
                                 <th scope="row">Trino Port</th>
-                                <td>{{ job.trino_port }}</td>
+                                <td>{{ job.params.trino_port }}</td>
                             </tr>
                             <tr>
                                 <th scope="row">Trino User</th>
-                                <td>{{ job.trino_user }}</td>
+                                <td>{{ job.params.trino_user }}</td>
                             </tr>
                             <tr>
                                 <th scope="row">HTTP Scheme</th>
-                                <td>{{ job.http_scheme }}</td>
+                                <td>{{ job.params.http_scheme }}</td>
                             </tr>
                             <tr>
                                 <th scope="row">Trino Role</th>
-                                <td>{{ job.trino_role }}</td>
+                                <td>{{ job.params.trino_role }}</td>
                             </tr>
                             <tr>
                                 <th scope="row">Catalog</th>
-                                <td>{{ job.trino_catalog }}</td>
+                                <td>{{ job.params.trino_catalog }}</td>
                             </tr>
                             <tr>
                                 <th scope="row">Schema</th>
-                                <td>{{ job.trino_schema }}</td>
+                                <td>{{ job.params.trino_schema }}</td>
                             </tr>
                             <tr>
                                 <th scope="row">Use Hive Metastore</th>
-                                <td>{{ "Yes" if job.use_hive_metastore else "No" }}</td>
+                                <td>{{ "Yes" if job.params.use_hive_metastore else "No" }}</td>
                             </tr>
-                            {% if job.use_hive_metastore %}
+                            {% if job.params.use_hive_metastore %}
                             <tr>
                                 <th scope="row">Hive Metastore URI</th>
-                                <td>{{ job.hive_metastore_uri }}</td>
+                                <td>{{ job.params.hive_metastore_uri }}</td>
                             </tr>
                             {% endif %}
                         </tbody>

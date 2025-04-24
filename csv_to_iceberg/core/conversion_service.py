@@ -90,11 +90,24 @@ def convert_csv_to_iceberg(
         'table_name': table_name,
         'rows_processed': 0,
         'error': None,
+        'stdout': '',
+        'stderr': '',
         'duration': 0
     }
     
+    # Create a string buffer for stdout logging
+    stdout_buffer = []
+    
+    # Helper function to add log messages
+    def add_log(message):
+        logger.info(message)
+        stdout_buffer.append(message)
+        result['stdout'] = '\n'.join(stdout_buffer)
+    
     try:
         # Create Trino client
+        add_log(f"Connecting to Trino server at {http_scheme}://{trino_host}:{trino_port}")
+        add_log(f"Using Trino user: {trino_user} with role: {trino_role}")
         trino_client = TrinoClient(
             host=trino_host,
             port=trino_port,
@@ -103,11 +116,16 @@ def convert_csv_to_iceberg(
             http_scheme=http_scheme,
             role=trino_role
         )
+        add_log("Trino client created successfully")
         
         # Create Hive client if needed
         hive_client = None
         if use_hive_metastore:
+            add_log(f"Connecting to Hive metastore at {hive_metastore_uri}")
             hive_client = HiveMetastoreClient(hive_metastore_uri)
+            add_log("Hive metastore client created successfully")
+        else:
+            add_log("Direct Hive metastore connection disabled, using Trino metadata APIs only")
         
         # Parse table name parts
         catalog_part, schema_part, table_part = parse_table_name(table_name)
@@ -116,6 +134,9 @@ def convert_csv_to_iceberg(
         catalog = catalog_part or trino_catalog
         schema = schema_part or trino_schema
         table = table_part or table_name  # Fallback to full table_name if parsing failed
+        
+        add_log(f"Target Iceberg table: {catalog}.{schema}.{table}")
+        add_log(f"Using write mode: {mode}")
         
         # Create Iceberg writer
         writer = IcebergWriter(
@@ -126,7 +147,18 @@ def convert_csv_to_iceberg(
             hive_client=hive_client
         )
         
+        # Add information about CSV file
+        add_log(f"Processing CSV file: {csv_file}")
+        add_log(f"CSV delimiter: '{delimiter}', quote character: '{quote_char}', has header: {has_header}")
+        add_log(f"Using batch size: {batch_size}")
+        
+        if include_columns:
+            add_log(f"Including only these columns: {include_columns}")
+        if exclude_columns:
+            add_log(f"Excluding these columns: {exclude_columns}")
+            
         # Write CSV to Iceberg
+        add_log("Starting CSV to Iceberg conversion...")
         rows_written = writer.write_csv_to_iceberg(
             csv_file=csv_file,
             mode=mode,
@@ -138,6 +170,7 @@ def convert_csv_to_iceberg(
             exclude_columns=exclude_columns,
             progress_callback=progress_callback
         )
+        add_log(f"Conversion completed successfully! Processed {rows_written} rows.")
         
         # Record success
         result['success'] = True
