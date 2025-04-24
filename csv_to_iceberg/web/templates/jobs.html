@@ -39,8 +39,24 @@
                         {% for job in jobs %}
                             <tr>
                                 <td>{{ job.id }}</td>
-                                <td>{{ job.original_filename or job.params.original_filename }}</td>
-                                <td>{{ job.table_name or job.params.table_name }}</td>
+                                <td>
+                                    {% if job.original_filename is defined and job.original_filename %}
+                                        {{ job.original_filename }}
+                                    {% elif job.params is defined and job.params and job.params.original_filename is defined %}
+                                        {{ job.params.original_filename }}
+                                    {% else %}
+                                        Unknown
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if job.table_name is defined and job.table_name %}
+                                        {{ job.table_name }}
+                                    {% elif job.params is defined and job.params and job.params.table_name is defined %}
+                                        {{ job.params.table_name }}
+                                    {% else %}
+                                        Unknown
+                                    {% endif %}
+                                </td>
                                 <td>
                                     {% if job.status == 'running' %}
                                         <span class="badge bg-info">Running</span>
@@ -50,7 +66,15 @@
                                         <span class="badge bg-danger">Failed</span>
                                     {% endif %}
                                 </td>
-                                <td>{{ job.mode or job.params.mode }}</td>
+                                <td>
+                                    {% if job.mode is defined and job.mode %}
+                                        {{ job.mode }}
+                                    {% elif job.params is defined and job.params and job.params.mode is defined %}
+                                        {{ job.params.mode }}
+                                    {% else %}
+                                        Unknown
+                                    {% endif %}
+                                </td>
                                 <td>
                                     {% if job.rows_processed is not none %}
                                         {{ job.rows_processed }}
@@ -60,7 +84,7 @@
                                 </td>
                                 <td>
                                     {% if job.completed_at %}
-                                        {{ job.completed_at.strftime('%Y-%m-%d %H:%M:%S') }}
+                                        {{ format_datetime(job.completed_at) }}
                                     {% else %}
                                         -
                                     {% endif %}

@@ -513,6 +513,20 @@ def jobs():
     
     # Format job data for display
     for job in jobs_sorted:
+        # Ensure required fields are present
+        if 'params' not in job:
+            job['params'] = {}
+        
+        # Ensure core job fields are present from params
+        if not job.get('table_name') and 'table_name' in job.get('params', {}):
+            job['table_name'] = job['params']['table_name']
+            
+        if not job.get('original_filename') and 'original_filename' in job.get('params', {}):
+            job['original_filename'] = job['params']['original_filename']
+            
+        if not job.get('mode') and 'mode' in job.get('params', {}):
+            job['mode'] = job['params']['mode']
+        
         # Format duration
         duration = job.get('duration')
         job['duration_formatted'] = format_duration(duration) if duration else 'N/A'
@@ -530,6 +544,9 @@ def jobs():
         # Format file size
         file_size = job.get('file_size', 0)
         job['file_size_formatted'] = format_size(file_size) if file_size else 'N/A'
+        
+        # Log the job structure for debugging
+        logger.info(f"Prepared job for template: {job.get('id')}, Keys: {list(job.keys())}")
     
     # Pass utility functions to the template
     return render_template(
