@@ -329,370 +329,67 @@ class IcebergWriter:
                 column_types_dict = {}
                 logger.warning(f"Will use dynamic schema inference due to schema retrieval error")
             
-            # Dynamically adjust the batch size based on the column count and data complexity
+            # Define maximum rows per batch to avoid memory issues
+            # The maximum batch size depends on the column count
             column_count = len(columns)
+            max_rows_per_batch = 10000  # Default batch size
             
-            # Base max rows per query on column count - fewer rows for wide tables
+            # Adjust batch size for wide tables
             if column_count > 50:
-                # Very wide tables - use small batches
-                max_rows_per_insert = 25
+                max_rows_per_batch = 2500
             elif column_count > 30:
-                # Wide tables
-                max_rows_per_insert = 50
-            elif column_count > 15:
-                # Medium width tables
-                max_rows_per_insert = 100
-            else:
-                # Narrow tables
-                max_rows_per_insert = 200
-                
-            logger.info(f"Dynamically adjusted max rows per INSERT: {max_rows_per_insert} (for {column_count} columns)")
+                max_rows_per_batch = 5000
             
-            # Process in smaller batches
-            for i in range(0, len(batch_data), max_rows_per_insert):
-                # Handle both Pandas and Polars dataframes
-                if hasattr(batch_data, 'iloc'):
-                    # Pandas DataFrame
-                    batch_slice = batch_data.iloc[i:i+max_rows_per_insert]
-                else:
-                    # Polars DataFrame
-                    batch_slice = batch_data.slice(i, min(max_rows_per_insert, len(batch_data) - i))
+            logger.info(f"Using batch size of {max_rows_per_batch} rows for table with {column_count} columns")
+            
+            # Process data in batches to optimize memory usage
+            total_rows = len(batch_data)
+            for i in range(0, total_rows, max_rows_per_batch):
+                # Create batch slice
+                batch_slice = batch_data.slice(i, min(max_rows_per_batch, total_rows - i))
                 
-                # Determine column types by position
-                column_types_by_position = []
-                
-                # First, try to get column types by position from the schema metadata
-                if column_types_dict and len(column_types_dict) > 0:
-                    # Use the schema data but be more robust with column name matching
-                    # Handle quoted column names and case sensitivity
-                    for col in columns:
-                        col_clean = col.strip('"')
-                        # Try different variations of the column name
-                        if col_clean in column_types_dict:
-                            column_types_by_position.append(column_types_dict[col_clean])
-                        elif col in column_types_dict:
-                            column_types_by_position.append(column_types_dict[col])
-                        else:
-                            # Not found by name, try case-insensitive matching
-                            found = False
-                            for schema_col, schema_type in column_types_dict.items():
-                                if schema_col.lower() == col_clean.lower():
-                                    column_types_by_position.append(schema_type)
-                                    found = True
-                                    break
-                            # If still not found, use VARCHAR as a fallback
-                            if not found:
-                                column_types_by_position.append("VARCHAR")
-                    
-                    logger.info(f"Using schema-based column types: {column_types_by_position}")
-                    
-                    # Now FORCE BIGINT for known numeric columns (columns 8, 9, 14, 15, 20)
-                    # This is specific to the error we're seeing
-                    if len(column_types_by_position) >= 21:  # Make sure we have enough columns
-                        numeric_positions = [8, 9, 14, 15, 20]
-                        for pos in numeric_positions:
-                            if pos < len(column_types_by_position):
-                                if column_types_by_position[pos] == "VARCHAR":
-                                    logger.info(f"Forcing BIGINT type for column at position {pos}")
-                                    column_types_by_position[pos] = "BIGINT"
-                else:
-                    # Use the data itself to infer column types dynamically
-                    # This is a fallback approach for when metadata is incomplete
-                    logger.info("Target schema metadata unavailable - inferring types from data")
-                    
-                    # Sample first row to dynamically infer types
-                    sample_row = None
-                    
-                    # Handle getting first row from different DataFrame types
-                    if len(batch_slice) > 0:
-                        if hasattr(batch_slice, 'iloc'):
-                            # Pandas DataFrame
-                            sample_row = batch_slice.iloc[0]
-                        elif hasattr(batch_slice, 'row'):
-                            # Polars DataFrame
-                            sample_row = batch_slice.row(0)
-                        elif hasattr(batch_slice, 'to_dicts'):
-                            # Polars DataFrame - get first row as dict
-                            sample_row = batch_slice.to_dicts()[0] if len(batch_slice.to_dicts()) > 0 else None
-                    
-                    for j, col in enumerate(columns):
-                        # Get the value from the sample row for this column
-                        try:
-                            if sample_row is not None:
-                                if isinstance(sample_row, dict):
-                                    # Dictionary-like row (Polars to_dicts)
-                                    sample_val = sample_row[col]
-                                elif isinstance(sample_row, tuple) and isinstance(j, int):
-                                    # Polars row as tuple
-                                    sample_val = sample_row[j] if j < len(sample_row) else None
-                                elif hasattr(sample_row, '__getitem__'):
-                                    # Pandas Series or other indexed object
-                                    try:
-                                        sample_val = sample_row[col]
-                                    except TypeError:
-                                        # If column name indexing fails, try positional
-                                        if isinstance(j, int) and j < len(sample_row):
-                                            sample_val = sample_row[j]
-                                        else:
-                                            sample_val = None
-                                else:
-                                    # Unsupported row type
-                                    logger.warning(f"Unsupported row type: {type(sample_row)}")
-                                    sample_val = None
-                            else:
-                                sample_val = None
-                        except (KeyError, IndexError, TypeError) as e:
-                            logger.warning(f"Error accessing sample value for column {col}: {str(e)}")
-                            sample_val = None
+                # Create a temporary file for the batch data
+                with tempfile.NamedTemporaryFile(suffix='.parquet', delete=False) as temp_file:
+                    temp_path = temp_file.name
+                    try:
+                        # Convert Polars DataFrame to PyArrow table and write to Parquet
+                        logger.info(f"Converting batch of {len(batch_slice)} rows to PyArrow table")
+                        arrow_table = batch_slice.to_arrow()
                         
-                        # Try to infer type from the value
-                        if sample_val is None:
-                            # Default to VARCHAR for null values
-                            column_types_by_position.append("VARCHAR")
-                        elif isinstance(sample_val, bool):
-                            column_types_by_position.append("BOOLEAN")
-                        elif isinstance(sample_val, int):
-                            column_types_by_position.append("BIGINT")
-                        elif isinstance(sample_val, float):
-                            column_types_by_position.append("DOUBLE")
-                        elif isinstance(sample_val, datetime.datetime):
-                            column_types_by_position.append("TIMESTAMP(6)")
-                        elif isinstance(sample_val, datetime.date):
-                            column_types_by_position.append("DATE")
-                        else:
-                            # Try to infer type from string data
-                            val_str = str(sample_val)
-                            
-                            # Check if it's a number
-                            try:
-                                if '.' in val_str:
-                                    float(val_str)
-                                    column_types_by_position.append("DOUBLE")
-                                else:
-                                    int(val_str)
-                                    column_types_by_position.append("BIGINT")
-                            except ValueError:
-                                # Check for date formats
-                                try:
-                                    datetime.datetime.strptime(val_str, "%Y-%m-%d")
-                                    column_types_by_position.append("DATE")
-                                except ValueError:
-                                    try:
-                                        datetime.datetime.strptime(val_str, "%Y-%m-%d %H:%M:%S")
-                                        column_types_by_position.append("TIMESTAMP(6)")
-                                    except ValueError:
-                                        # Default to VARCHAR
-                                        column_types_by_position.append("VARCHAR")
-                                        
-                    logger.debug(f"Dynamically inferred column types: {column_types_by_position}")
-                
-                values_list = []
-                
-                # Handle iterating over rows based on DataFrame type
-                if hasattr(batch_slice, 'iterrows'):
-                    # Pandas DataFrame
-                    row_iterator = batch_slice.iterrows()
-                else:
-                    # Polars DataFrame - convert to dictionary records
-                    row_iterator = [(i, row) for i, row in enumerate(batch_slice.to_dicts())]
-                
-                for _, row in row_iterator:
-                    row_values = []
-                    for idx, col in enumerate(columns):
-                        # Get value based on DataFrame type
-                        try:
-                            if isinstance(row, dict):
-                                # Dictionary-like row (Polars to_dicts)
-                                val = row[col]
-                            elif isinstance(row, tuple) and idx < len(row):
-                                # Polars row as tuple
-                                val = row[idx]
-                            elif hasattr(row, '__getitem__'):
-                                # Pandas Series or other indexed object
-                                try:
-                                    val = row[col]
-                                except TypeError:
-                                    # If column name indexing fails, try positional
-                                    if isinstance(idx, int) and idx < len(row):
-                                        val = row[idx]
-                                    else:
-                                        val = None
-                            else:
-                                # Unsupported row type
-                                logger.warning(f"Unsupported row type in VALUES generation: {type(row)}")
-                                val = None
-                        except (KeyError, IndexError, TypeError) as e:
-                            logger.warning(f"Error accessing value for column {col}: {str(e)}")
-                            val = None
-                            
-                        # Get type from our position-based mapping
-                        target_type = column_types_by_position[idx] if idx < len(column_types_by_position) else "VARCHAR"
+                        # Write the Arrow table to a Parquet file
+                        pa.parquet.write_table(arrow_table, temp_path)
+                        logger.debug(f"Wrote {len(batch_slice)} rows to temporary Parquet file: {temp_path}")
                         
-                        if val is None:
-                            row_values.append("NULL")
-                        elif isinstance(val, (int, float)):
-                            # Handle numeric values based on target type
-                            if "DOUBLE" in target_type or "REAL" in target_type or "FLOAT" in target_type:
-                                # For double columns, directly output the number without quotes
-                                row_values.append(str(val))
-                            elif "TIMESTAMP" in target_type:
-                                # Special handling for timestamp columns
-                                try:
-                                    # Try to interpret number as timestamp
-                                    ts = datetime.datetime.fromtimestamp(int(val))
-                                    row_values.append(f"TIMESTAMP '{ts}'")
-                                except (ValueError, OverflowError):
-                                    # Fallback to casting as string
-                                    row_values.append(f"CAST('{val}' AS {target_type})")
-                            elif "INTEGER" in target_type or "BIGINT" in target_type or "INT" in target_type:
-                                # For integer columns, convert to int and output directly
-                                row_values.append(str(int(val)))
-                            else:
-                                # For VARCHAR columns, wrap in quotes and cast
-                                # Escape any single quotes in the value
-                                str_val = str(val).replace("'", "''")
-                                row_values.append(f"CAST('{str_val}' AS {target_type})")
-                        elif isinstance(val, bool):
-                            # Handle boolean values
-                            bool_val = 'TRUE' if val else 'FALSE'
-                            if target_type.startswith("VARCHAR"):
-                                row_values.append(f"CAST('{bool_val}' AS {target_type})")
-                            else:
-                                row_values.append(f"CAST({bool_val} AS {target_type})")
-                        elif isinstance(val, datetime.date) and not isinstance(val, datetime.datetime):
-                            # Handle date values
-                            val_str = str(val).replace("'", "''")
-                            if "TIMESTAMP" in target_type:
-                                # Convert date to timestamp for timestamp columns
-                                row_values.append(f"TIMESTAMP '{val_str} 00:00:00'")
-                            elif "DATE" in target_type:
-                                row_values.append(f"DATE '{val_str}'")
-                            else:
-                                # Default to casting as string for other types
-                                row_values.append(f"CAST('{val_str}' AS {target_type})")
-                        elif isinstance(val, datetime.datetime):
-                            # Handle datetime values
-                            val_str = str(val).replace("'", "''")
-                            if "TIMESTAMP" in target_type:
-                                # Directly use TIMESTAMP literals for timestamp columns
-                                row_values.append(f"TIMESTAMP '{val_str}'")
-                            else:
-                                # Cast to target type for other columns
-                                row_values.append(f"CAST('{val_str}' AS {target_type})")
-                        else:
-                            # Handle string and other values
-                            val_str = str(val).replace("'", "''")
-                            
-                            # Handle numeric types based on target column type
-                            if "INTEGER" in target_type or "BIGINT" in target_type or "INT" in target_type:
-                                # For integer types, try to parse as integer first
-                                try:
-                                    # For numeric types, try to convert and use directly
-                                    if val_str.strip() == '' or val_str.lower() in ('null', 'none', 'na', 'n/a'):
-                                        # Handle empty strings and nulls for numeric columns
-                                        row_values.append("NULL")
-                                    else:
-                                        # Try to convert to integer
-                                        # Remove any non-numeric characters first (except period and negative sign)
-                                        clean_val = val_str.strip()
-                                        # For pure numeric values, just convert directly
-                                        if clean_val.replace('-', '', 1).replace('.', '', 1).isdigit():
-                                            # Convert safely to int (with float intermediate for decimals)
-                                            val_int = int(float(clean_val))
-                                            row_values.append(str(val_int))
-                                        else:
-                                            # Extract numeric parts if possible
-                                            numeric_only = ''.join(c for c in clean_val if c.isdigit() or c in '.-')
-                                            if numeric_only:
-                                                try:
-                                                    val_int = int(float(numeric_only))
-                                                    row_values.append(str(val_int))
-                                                except (ValueError, OverflowError):
-                                                    # If conversion fails, use 0
-                                                    row_values.append("0")
-                                            else:
-                                                # No digits at all, use 0
-                                                row_values.append("0")
-                                except (ValueError, TypeError):
-                                    # Last resort: use 0 for integer columns
-                                    row_values.append("0")
-                            
-                            # Handle VARCHAR type (most common type)
-                            elif "VARCHAR" in target_type or target_type == "":
-                                # For VARCHAR, just use string literal with proper quoting
-                                row_values.append(f"'{val_str}'")
-                            
-                            # Handle floating point types
-                            elif "DOUBLE" in target_type or "FLOAT" in target_type or "REAL" in target_type:
-                                try:
-                                    if val_str.strip() == '' or val_str.lower() in ('null', 'none', 'na', 'n/a'):
-                                        row_values.append("NULL")
-                                    else:
-                                        # Try to convert to float directly if possible
-                                        clean_val = val_str.strip()
-                                        if clean_val.replace('-', '', 1).replace('.', '', 1).isdigit():
-                                            val_float = float(clean_val)
-                                            row_values.append(str(val_float))
-                                        else:
-                                            # Extract numeric parts if possible
-                                            numeric_only = ''.join(c for c in clean_val if c.isdigit() or c in '.-')
-                                            if numeric_only:
-                                                try:
-                                                    val_float = float(numeric_only)
-                                                    row_values.append(str(val_float))
-                                                except (ValueError, OverflowError):
-                                                    row_values.append("0.0")
-                                            else:
-                                                row_values.append("0.0")
-                                except (ValueError, TypeError):
-                                    row_values.append("0.0")
-                            
-                            # For all other types, use explicit casting
-                            else:
-                                # Otherwise explicitly cast to the target type
-                                row_values.append(f"CAST('{val_str}' AS {target_type})")
+                        # Load the Parquet file into Trino
+                        load_sql = f"""
+                        INSERT INTO {self.catalog}.{self.schema}.{self.table}
+                        SELECT {column_names_str} FROM parquet.default.'{temp_path}'
+                        """
+                        
+                        logger.debug(f"Executing SQL to load data from Parquet file")
+                        self.trino_client.execute_query(load_sql)
+                        logger.info(f"Successfully loaded batch of {len(batch_slice)} rows from Parquet file")
+                        
+                    except Exception as e:
+                        logger.error(f"Error during Parquet conversion or loading: {str(e)}", exc_info=True)
+                        
+                        # Provide more detailed error information
+                        error_msg = str(e).lower()
+                        if "type mismatch" in error_msg:
+                            logger.error("Type mismatch detected - column types may not match target table schema")
+                        elif "table not found" in error_msg:
+                            logger.error("Table not found - the target table may have been dropped during the operation")
+                        
+                        raise RuntimeError(f"Failed to write data to Iceberg table: {str(e)}")
                     
-                    values_list.append(f"({', '.join(row_values)})")
-                
-                # Direct insertion with VALUES clause and explicit casts
-                direct_insert_sql = f"""
-                INSERT INTO {self.catalog}.{self.schema}.{self.table} ({column_names_str})
-                VALUES {', '.join(values_list)}
-                """
-                
-                try:
-                    # Log the query size to help diagnose potential issues with large queries
-                    query_size = len(direct_insert_sql)
-                    if query_size > 100000:
-                        logger.warning(f"Generated very large INSERT query ({query_size} bytes) - this may exceed Trino limits")
-                    elif query_size > 50000:
-                        logger.info(f"Generated large INSERT query ({query_size} bytes)")
-                    else:
-                        logger.debug(f"Generated INSERT query ({query_size} bytes)")
-                except Exception:
-                    # Ignore any errors in query size calculation
-                    pass
-                
-                try:
-                    # Execute the SQL statement
-                    self.trino_client.execute_query(direct_insert_sql)
-                    logger.debug(f"Inserted batch of {len(values_list)} rows with explicit casts")
-                except Exception as e:
-                    # Enhanced error logging for diagnosis
-                    logger.error(f"Failed to execute INSERT statement: {str(e)}")
-                    logger.error(f"Error with batch containing {len(values_list)} rows")
-                    
-                    # Check for common error patterns
-                    error_msg = str(e).lower()
-                    if "type mismatch" in error_msg:
-                        logger.error("Type mismatch detected - column types may not match target table schema")
-                    elif "duplicate column name" in error_msg:
-                        logger.error("Duplicate column name detected - check CSV header uniqueness")
-                    elif "exceeded max length" in error_msg or "max request size" in error_msg:
-                        logger.error("Query size limit exceeded - try reducing batch size further")
-                    
-                    # Re-raise the exception
-                    raise
+                    finally:
+                        # Clean up the temporary file
+                        try:
+                            if os.path.exists(temp_path):
+                                os.unlink(temp_path)
+                                logger.debug(f"Deleted temporary Parquet file: {temp_path}")
+                        except Exception as e:
+                            logger.warning(f"Failed to delete temporary Parquet file: {str(e)}")
             
             logger.info(f"Successfully wrote {len(batch_data)} rows to {self.catalog}.{self.schema}.{self.table}")
             
