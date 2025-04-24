@@ -230,19 +230,29 @@ class IcebergWriter:
             table_exists = self.trino_client.table_exists(self.catalog, self.schema, self.table)
             logger.info(f"Table {self.catalog}.{self.schema}.{self.table} exists: {table_exists}")
             
+            # For append mode on a non-existent table, we'll create the table below
+            # For overwrite mode on a non-existent table, we skip the truncate step
+            
             # Special handling for overwrite mode when table exists
             if table_exists and mode == 'overwrite' and len(batch_data) > 0:
-                # If table exists and we're in overwrite mode, truncate it
-                truncate_sql = f"DELETE FROM {self.catalog}.{self.schema}.{self.table}"
-                self.trino_client.execute_query(truncate_sql)
-                logger.debug(f"Truncated target table {self.table} for overwrite mode")
-                
-                # Invalidate schema cache after table truncation in case of schema changes
-                self.invalidate_schema_cache()
-                logger.debug("Schema cache invalidated after table truncation")
-            elif not table_exists:
-                # If table doesn't exist (for either mode), we need to create it
-                logger.info(f"Table {self.catalog}.{self.schema}.{self.table} doesn't exist, will be created")
+                try:
+                    # If table exists and we're in overwrite mode, truncate it
+                    truncate_sql = f"DELETE FROM {self.catalog}.{self.schema}.{self.table}"
+                    self.trino_client.execute_query(truncate_sql)
+                    logger.debug(f"Truncated target table {self.table} for overwrite mode")
+                    
+                    # Invalidate schema cache after table truncation in case of schema changes
+                    self.invalidate_schema_cache()
+                    logger.debug("Schema cache invalidated after table truncation")
+                except Exception as e:
+                    # If truncate fails (e.g., due to table permissions), log the error
+                    # but continue with the process - we'll attempt to write data anyway
+                    logger.warning(f"Failed to truncate table for overwrite mode: {str(e)}")
+                    logger.warning("Will continue with insert operation")
+            
+            # For both append and overwrite modes with non-existent tables
+            if not table_exists:
+                logger.info(f"Table {self.catalog}.{self.schema}.{self.table} doesn't exist, will be created automatically")
             
             # Get the target table schema (using cache if available)
             try:

@@ -17,50 +17,46 @@
             </span>
         </div>
         <div class="card-body">
-            <div class="row mb-3">
-                <div class="col-md-4">
-                    <strong>Created:</strong> {{ job.created_at_formatted }}
-                </div>
-                <div class="col-md-4">
-                    <strong>Completed:</strong> {{ job.completed_at_formatted }}
-                </div>
-                <div class="col-md-4">
-                    <strong>Duration:</strong> {{ job.duration_formatted }}
-                </div>
-            </div>
-
-            <div class="row mb-3">
-                <div class="col-md-6">
-                    <strong>Table Name:</strong> {{ job.table_name }}
-                </div>
-                <div class="col-md-6">
-                    <strong>File Size:</strong> {{ job.file_size_formatted }}
-                </div>
-            </div>
-
-            <div class="row mb-3">
-                <div class="col-md-4">
-                    <strong>File:</strong> {{ job.original_filename }}
-                </div>
-                <div class="col-md-4">
-                    <strong>Write Mode:</strong> {{ job.mode }}
-                </div>
-                <div class="col-md-4">
-                    <strong>Rows Processed:</strong> {{ job.rows_processed if job.rows_processed is not none else 'N/A' }}
-                </div>
-            </div>
-
-            <div class="row mb-3">
-                <div class="col-12">
-                    <strong>CSV Properties:</strong> 
-                    <ul class="list-inline">
-                        <li class="list-inline-item">Delimiter: "{{ job.delimiter }}"</li>
-                        <li class="list-inline-item">Quote Char: "{{ job.quote_char }}"</li>
-                        <li class="list-inline-item">Has Header: {{ "Yes" if job.has_header else "No" }}</li>
-                        <li class="list-inline-item">Batch Size: {{ job.batch_size }}</li>
-                    </ul>
-                </div>
-            </div>
+            <!-- Job metadata in a table format -->
+            <table class="table table-striped">
+                <tbody>
+                    <tr>
+                        <th style="width:20%">Created</th>
+                        <td>{{ job.created_at_formatted }}</td>
+                        <th style="width:20%">Completed</th>
+                        <td>{{ job.completed_at_formatted }}</td>
+                    </tr>
+                    <tr>
+                        <th>Duration</th>
+                        <td>{{ job.duration_formatted }}</td>
+                        <th>Rows Processed</th>
+                        <td><strong>{{ job.rows_processed if job.rows_processed is not none else 'N/A' }}</strong></td>
+                    </tr>
+                    <tr>
+                        <th>Table Name</th>
+                        <td>{{ job.table_name }}</td>
+                        <th>File Size</th>
+                        <td>{{ job.file_size_formatted }}</td>
+                    </tr>
+                    <tr>
+                        <th>File</th>
+                        <td>{{ job.original_filename }}</td>
+                        <th>Write Mode</th>
+                        <td>{{ job.mode }}</td>
+                    </tr>
+                    <tr>
+                        <th>CSV Properties</th>
+                        <td colspan="3">
+                            <ul class="list-inline mb-0">
+                                <li class="list-inline-item"><strong>Delimiter:</strong> "{{ job.delimiter }}"</li>
+                                <li class="list-inline-item"><strong>Quote Char:</strong> "{{ job.quote_char }}"</li>
+                                <li class="list-inline-item"><strong>Has Header:</strong> {{ "Yes" if job.has_header else "No" }}</li>
+                                <li class="list-inline-item"><strong>Batch Size:</strong> {{ job.batch_size }}</li>
+                            </ul>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
 
             {% if job.status == 'running' or job.status == 'pending' %}
             <div class="row mb-3">
