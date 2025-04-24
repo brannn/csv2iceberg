@@ -26,6 +26,32 @@ from pyiceberg.types import (
 
 logger = logging.getLogger(__name__)
 
+def clean_column_name(col_name: str) -> str:
+    """
+    Clean a column name to be compatible with Iceberg.
+    
+    Args:
+        col_name: Original column name
+        
+    Returns:
+        Cleaned column name
+    """
+    if not col_name:
+        return "column"
+        
+    # Replace invalid characters with underscores
+    clean_name = "".join(c if c.isalnum() or c == '_' else '_' for c in str(col_name).strip())
+    
+    # Ensure name starts with a letter or underscore
+    if clean_name and not (clean_name[0].isalpha() or clean_name[0] == '_'):
+        clean_name = 'col_' + clean_name
+    
+    # Handle special cases
+    if not clean_name or clean_name.lower() in ('table', 'column', 'select', 'where', 'from', 'order', 'group', 'by'):
+        clean_name = 'col_' + clean_name
+    
+    return clean_name
+
 def infer_schema_from_csv(
     csv_file: str, 
     delimiter: str = ',', 

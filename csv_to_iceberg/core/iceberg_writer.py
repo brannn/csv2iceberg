@@ -18,6 +18,7 @@ from pyiceberg.schema import Schema
 
 # Use package relative imports
 from csv_to_iceberg.connectors.trino_client import TrinoClient
+from csv_to_iceberg.core.schema_inferrer import infer_schema_from_df
 from csv_to_iceberg.connectors.hive_client import HiveMetastoreClient
 
 logger = logging.getLogger(__name__)
@@ -239,7 +240,7 @@ class IcebergWriter:
                     
                     # Create the table using inferred schema from batch data
                     # Use batch data to create a PyIceberg schema
-                    from csv_to_iceberg.core.schema_inferrer import infer_schema_from_df
+                    # Using the infer_schema_from_df function imported at the top of the file
                     
                     # Infer schema from batch data
                     iceberg_schema = infer_schema_from_df(batch_data)
@@ -390,12 +391,12 @@ class IcebergWriter:
                                             sample_val = None
                                 else:
                                     # Unsupported row type
-                                    self.logger.warning(f"Unsupported row type: {type(sample_row)}")
+                                    logger.warning(f"Unsupported row type: {type(sample_row)}")
                                     sample_val = None
                             else:
                                 sample_val = None
                         except (KeyError, IndexError, TypeError) as e:
-                            self.logger.warning(f"Error accessing sample value for column {col}: {str(e)}")
+                            logger.warning(f"Error accessing sample value for column {col}: {str(e)}")
                             sample_val = None
                         
                         # Try to infer type from the value
