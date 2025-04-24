@@ -13,6 +13,21 @@ from collections import OrderedDict
 from utils import setup_logging
 from config_manager import ConfigManager
 
+# LMDB support (feature flag controlled)
+USE_LMDB = os.environ.get("USE_LMDB_STORAGE", "false").lower() == "true"
+LMDB_IMPORTED = False
+
+try:
+    from lmdb_config_manager import LMDBConfigManager
+    LMDB_IMPORTED = True
+    logger = logging.getLogger("csv_to_iceberg")
+    if USE_LMDB:
+        logger.info("Using LMDB for configuration storage")
+except ImportError:
+    USE_LMDB = False
+    logger = logging.getLogger("csv_to_iceberg")
+    logger.warning("Failed to import LMDB modules, falling back to JSON storage")
+
 # Set up logging
 logger = setup_logging()
 # Enable more verbose Flask logging
@@ -23,7 +38,10 @@ app = Flask(__name__)
 app.secret_key = os.environ.get("SESSION_SECRET", "development-secret-key")
 
 # Initialize config manager
-config_manager = ConfigManager()
+if USE_LMDB:
+    config_manager = LMDBConfigManager()
+else:
+    config_manager = ConfigManager()
 
 # Configure upload folder
 UPLOAD_FOLDER = tempfile.mkdtemp()
@@ -1186,6 +1204,102 @@ def profile_use(name):
         flash(f"Profile '{name}' is now the active profile.", 'success')
     else:
         flash(f"Failed to set profile '{name}' as active.", 'error')
+    
+    return redirect(url_for('profiles'))
+
+@app.route('/admin/storage/<mode>')
+def toggle_storage_mode(mode):
+    """
+    Toggle between LMDB and JSON storage for profiles.
+    This is an admin feature for testing purposes.
+    
+    Args:
+        mode: Either 'lmdb' or 'json'
+    """
+    global config_manager, USE_LMDB
+    
+    if not LMDB_IMPORTED and mode == 'lmdb':
+        flash("LMDB modules are not available. Cannot switch to LMDB mode.", 'error')
+        return redirect(url_for('profiles'))
+    
+    if mode == 'lmdb' and not USE_LMDB:
+        # Switch to LMDB mode
+        USE_LMDB = True
+        os.environ["USE_LMDB_STORAGE"] = "true"
+        
+        # Save current config manager to keep reference open for migration
+        old_config_manager = config_manager
+        
+        # Create new LMDB config manager
+        config_manager = LMDBConfigManager()
+        
+        # Migrate profiles if needed
+        try:
+            # Get existing profiles from JSON
+            profiles = old_config_manager.get_profiles()
+            migrated_count = 0
+            
+            # Add each profile to LMDB
+            for profile in profiles:
+                if config_manager.get_profile(profile['name']):
+                    logger.debug(f"Profile '{profile['name']}' already exists in LMDB")
+                    continue
+                    
+                if config_manager.add_profile(profile):
+                    migrated_count += 1
+                    logger.info(f"Migrated profile '{profile['name']}' to LMDB")
+                
+            # Set last used profile
+            last_used = old_config_manager.get_last_used_profile()
+            if last_used:
+                config_manager.set_last_used_profile(last_used['name'])
+            
+            flash(f"Switched to LMDB storage mode. Migrated {migrated_count} profiles.", 'success')
+        except Exception as e:
+            logger.error(f"Error migrating profiles to LMDB: {str(e)}", exc_info=True)
+            flash(f"Error migrating profiles to LMDB: {str(e)}", 'error')
+    
+    elif mode == 'json' and USE_LMDB:
+        # Switch to JSON mode
+        USE_LMDB = False
+        os.environ["USE_LMDB_STORAGE"] = "false"
+        
+        # Save current config manager to keep reference open for migration
+        old_config_manager = config_manager
+        
+        # Create new JSON config manager
+        config_manager = ConfigManager()
+        
+        # Migrate profiles if needed
+        try:
+            # Get existing profiles from LMDB
+            profiles = old_config_manager.get_profiles()
+            migrated_count = 0
+            
+            # Add each profile to JSON
+            for profile in profiles:
+                if config_manager.get_profile(profile['name']):
+                    logger.debug(f"Profile '{profile['name']}' already exists in JSON")
+                    continue
+                    
+                if config_manager.add_profile(profile):
+                    migrated_count += 1
+                    logger.info(f"Migrated profile '{profile['name']}' to JSON")
+                
+            # Set last used profile
+            last_used = old_config_manager.get_last_used_profile()
+            if last_used:
+                config_manager.set_last_used_profile(last_used['name'])
+            
+            flash(f"Switched to JSON storage mode. Migrated {migrated_count} profiles.", 'success')
+        except Exception as e:
+            logger.error(f"Error migrating profiles to JSON: {str(e)}", exc_info=True)
+            flash(f"Error migrating profiles to JSON: {str(e)}", 'error')
+    
+    else:
+        # Already in the requested mode
+        current_mode = "LMDB" if USE_LMDB else "JSON"
+        flash(f"Already using {current_mode} storage mode.", 'info')
     
     return redirect(url_for('profiles'))
 
