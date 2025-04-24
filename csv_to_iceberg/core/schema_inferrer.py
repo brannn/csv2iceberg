@@ -452,3 +452,220 @@ def validate_iceberg_schema(schema: Schema) -> bool:
             logger.warning(f"Column '{field.name}' has struct type which may not be fully supported")
         
     return True
+
+
+def analyze_column_cardinality(
+    csv_file: str,
+    delimiter: str = ',',
+    has_header: bool = True,
+    quote_char: str = '"',
+    sample_size: int = 10000,
+    schema: Optional[Schema] = None
+) -> List[Dict[str, Any]]:
+    """
+    Analyze column cardinality from a CSV file and recommend partitioning strategies.
+    
+    Args:
+        csv_file: Path to the CSV file
+        delimiter: CSV delimiter character
+        has_header: Whether the CSV has a header row
+        quote_char: CSV quote character
+        sample_size: Number of rows to sample for analysis
+        schema: Optional pre-inferred schema
+        
+    Returns:
+        List of dictionaries with column recommendations
+    """
+    logger.info(f"Analyzing column cardinality for partitioning recommendations")
+    
+    try:
+        # Read the CSV file with a limited sample size for analysis
+        df = pl.read_csv(
+            csv_file,
+            separator=delimiter,
+            has_header=has_header,
+            quote_char=quote_char,
+            null_values=["", "NULL", "null", "NA", "N/A", "na", "n/a", "None", "none"],
+            try_parse_dates=True,
+            n_rows=sample_size,
+            low_memory=True,
+            ignore_errors=True
+        )
+        
+        # Use the provided schema if available, otherwise get column metadata from DataFrame
+        column_types = {}
+        if schema:
+            for field in schema.fields:
+                column_types[field.name] = type(field.field_type).__name__.replace('Type', '').lower()
+        
+        # Analyze cardinality for each column
+        results = []
+        for col_name in df.columns:
+            try:
+                # Count unique values
+                unique_values = len(df[col_name].unique())
+                total_values = len(df[col_name].drop_nulls())
+                null_count = len(df) - total_values
+                
+                # Skip columns with no data
+                if total_values == 0:
+                    continue
+                    
+                # Calculate cardinality ratio
+                cardinality_ratio = unique_values / total_values if total_values > 0 else 0
+                
+                # Get column data type (from schema or inferred)
+                if schema and col_name in column_types:
+                    col_type = column_types[col_name]
+                else:
+                    col_type = str(df[col_name].dtype).lower()
+                
+                # Check date/time patterns in string columns
+                date_match = False
+                time_patterns = [
+                    # ISO date/datetime patterns
+                    r'\d{4}-\d{2}-\d{2}',  # YYYY-MM-DD
+                    r'\d{4}/\d{2}/\d{2}',  # YYYY/MM/DD
+                    r'\d{2}-\d{2}-\d{4}',  # MM-DD-YYYY
+                    r'\d{2}/\d{2}/\d{4}',  # MM/DD/YYYY
+                ]
+                
+                if 'string' in col_type or 'str' in col_type:
+                    # Check for date patterns in sample values
+                    sample_values = df[col_name].drop_nulls().head(100)
+                    for val in sample_values:
+                        if any(re.search(pattern, str(val)) for pattern in time_patterns):
+                            date_match = True
+                            break
+                
+                # Recommend partitioning strategy based on data type and cardinality
+                recommendation = {
+                    'column': col_name,
+                    'type': col_type,
+                    'unique_values': unique_values,
+                    'total_values': total_values,
+                    'null_count': null_count,
+                    'cardinality_ratio': cardinality_ratio,
+                    'suitability_score': 0,  # Will be calculated below
+                    'recommendations': []
+                }
+                
+                # Calculate suitability score (0-100)
+                # Ideal partitioning columns have moderate cardinality - not too high or too low
+                suitability_score = 0
+                
+                # Timestamp/Date types are ideal for partitioning
+                is_datetime = ('date' in col_type or 'timestamp' in col_type or 
+                             'time' in col_type or date_match)
+                
+                if is_datetime:
+                    # Date/time columns are excellent for partitioning - highest priority
+                    suitability_score = 90
+                    recommendation['recommendations'].append({
+                        'transform': 'year',
+                        'description': 'Partition by year',
+                        'example': f"PARTITION BY year({col_name})"
+                    })
+                    recommendation['recommendations'].append({
+                        'transform': 'month',
+                        'description': 'Partition by month',
+                        'example': f"PARTITION BY month({col_name})"
+                    })
+                    if cardinality_ratio < 0.1:  # Lower cardinality favors day partitioning
+                        recommendation['recommendations'].append({
+                            'transform': 'day',
+                            'description': 'Partition by day',
+                            'example': f"PARTITION BY day({col_name})"
+                        })
+                
+                # Integer/numeric types with moderate cardinality
+                elif ('int' in col_type or 'long' in col_type or 'float' in col_type or 
+                      'double' in col_type or 'decimal' in col_type):
+                    
+                    # Perfect cardinality is between 0.001 and 0.1 (0.1% to 10% unique values)
+                    if 0.001 <= cardinality_ratio <= 0.1:
+                        suitability_score = 80
+                    # Good cardinality is between 0.0001 and 0.001 or between 0.1 and 0.3
+                    elif (0.0001 <= cardinality_ratio < 0.001) or (0.1 < cardinality_ratio <= 0.3):
+                        suitability_score = 60
+                    # Acceptable cardinality is between 0.3 and 0.5
+                    elif 0.3 < cardinality_ratio <= 0.5:
+                        suitability_score = 40
+                    # Poor cardinality is > 0.5 (too many unique values) or < 0.0001 (too few)
+                    else:
+                        suitability_score = 20
+                    
+                    # Recommend bucketing for numeric columns with moderate to high cardinality
+                    if cardinality_ratio > 0.01:
+                        bucket_size = 10 if unique_values < 1000 else 100
+                        recommendation['recommendations'].append({
+                            'transform': 'bucket',
+                            'description': f'Hash into {bucket_size} buckets',
+                            'example': f"PARTITION BY bucket({bucket_size}, {col_name})"
+                        })
+                    # Direct partitioning for lower cardinality
+                    else:
+                        recommendation['recommendations'].append({
+                            'transform': 'identity',
+                            'description': 'Partition directly by this column',
+                            'example': f"PARTITION BY {col_name}"
+                        })
+                
+                # String types with low to moderate cardinality are good candidates
+                elif 'string' in col_type or 'str' in col_type:
+                    # Low cardinality strings (e.g., status codes, categories) are good for partitioning
+                    if cardinality_ratio < 0.01 and unique_values < 100:
+                        suitability_score = 75
+                        recommendation['recommendations'].append({
+                            'transform': 'identity',
+                            'description': 'Partition directly by this column',
+                            'example': f"PARTITION BY {col_name}"
+                        })
+                    # Moderate cardinality strings
+                    elif cardinality_ratio < 0.1 and unique_values < 1000:
+                        suitability_score = 50
+                        recommendation['recommendations'].append({
+                            'transform': 'truncate',
+                            'description': 'Truncate to first 5 characters',
+                            'example': f"PARTITION BY truncate({col_name}, 5)"
+                        })
+                    # High cardinality strings
+                    else:
+                        suitability_score = 20
+                        recommendation['recommendations'].append({
+                            'transform': 'bucket',
+                            'description': 'Hash into 50 buckets',
+                            'example': f"PARTITION BY bucket(50, {col_name})"
+                        })
+                
+                # Boolean columns are typically not good for partitioning
+                elif 'bool' in col_type:
+                    suitability_score = 30 if null_count > 0 else 20
+                    # Only recommend if there are nulls (making it a 3-value column)
+                    if null_count > 0:
+                        recommendation['recommendations'].append({
+                            'transform': 'identity',
+                            'description': 'Partition by boolean value (only with nulls)',
+                            'example': f"PARTITION BY {col_name}"
+                        })
+                
+                # Update the suitability score
+                recommendation['suitability_score'] = suitability_score
+                
+                # Add to results if we have any recommendations
+                if recommendation['recommendations']:
+                    results.append(recommendation)
+                    
+            except Exception as e:
+                logger.warning(f"Error analyzing column {col_name}: {str(e)}")
+                continue
+        
+        # Sort by suitability score (descending)
+        results.sort(key=lambda x: x['suitability_score'], reverse=True)
+        
+        # Return top 5 recommendations
+        return results[:5]
+        
+    except Exception as e:
+        logger.error(f"Error analyzing column cardinality: {str(e)}", exc_info=True)
+        return []
