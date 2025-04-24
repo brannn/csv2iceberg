@@ -522,12 +522,14 @@ class IcebergWriter:
                                 except (ValueError, OverflowError):
                                     # Fallback to casting as string
                                     row_values.append(f"CAST('{val}' AS {target_type})")
-                            elif "INTEGER" in target_type or "BIGINT" in target_type:
+                            elif "INTEGER" in target_type or "BIGINT" in target_type or "INT" in target_type:
                                 # For integer columns, convert to int and output directly
                                 row_values.append(str(int(val)))
                             else:
                                 # For VARCHAR columns, wrap in quotes and cast
-                                row_values.append(f"CAST('{val}' AS {target_type})")
+                                # Escape any single quotes in the value
+                                str_val = str(val).replace("'", "''")
+                                row_values.append(f"CAST('{str_val}' AS {target_type})")
                         elif isinstance(val, bool):
                             # Handle boolean values
                             bool_val = 'TRUE' if val else 'FALSE'
@@ -558,33 +560,72 @@ class IcebergWriter:
                         else:
                             # Handle string and other values
                             val_str = str(val).replace("'", "''")
-                            if "VARCHAR" in target_type or target_type == "":
-                                # For VARCHAR, just use string literal
-                                row_values.append(f"'{val_str}'")
-                            elif "BIGINT" in target_type or "INTEGER" in target_type:
+                            
+                            # Handle numeric types based on target column type
+                            if "INTEGER" in target_type or "BIGINT" in target_type or "INT" in target_type:
                                 # For integer types, try to parse as integer first
                                 try:
                                     # For numeric types, try to convert and use directly
-                                    if val_str.strip() == '' or val_str.lower() == 'null' or val_str.lower() == 'none':
+                                    if val_str.strip() == '' or val_str.lower() in ('null', 'none', 'na', 'n/a'):
                                         # Handle empty strings and nulls for numeric columns
                                         row_values.append("NULL")
                                     else:
                                         # Try to convert to integer
-                                        # Remove any non-numeric characters first (except period)
-                                        clean_val = ''.join(c for c in val_str if c.isdigit() or c == '.')
-                                        if clean_val:
+                                        # Remove any non-numeric characters first (except period and negative sign)
+                                        clean_val = val_str.strip()
+                                        # For pure numeric values, just convert directly
+                                        if clean_val.replace('-', '', 1).replace('.', '', 1).isdigit():
+                                            # Convert safely to int (with float intermediate for decimals)
                                             val_int = int(float(clean_val))
                                             row_values.append(str(val_int))
                                         else:
-                                            # If we have no digits, use 0 or NULL
-                                            row_values.append("0")
+                                            # Extract numeric parts if possible
+                                            numeric_only = ''.join(c for c in clean_val if c.isdigit() or c in '.-')
+                                            if numeric_only:
+                                                try:
+                                                    val_int = int(float(numeric_only))
+                                                    row_values.append(str(val_int))
+                                                except (ValueError, OverflowError):
+                                                    # If conversion fails, use 0
+                                                    row_values.append("0")
+                                            else:
+                                                # No digits at all, use 0
+                                                row_values.append("0")
                                 except (ValueError, TypeError):
-                                    # Last resort: try to cast to integer with Trino
-                                    # If this fails, Trino will handle the error
-                                    if val_str.strip():  # Only if not empty
-                                        row_values.append(f"CAST('{val_str}' AS {target_type})")
-                                    else:
+                                    # Last resort: use 0 for integer columns
+                                    row_values.append("0")
+                            
+                            # Handle VARCHAR type (most common type)
+                            elif "VARCHAR" in target_type or target_type == "":
+                                # For VARCHAR, just use string literal with proper quoting
+                                row_values.append(f"'{val_str}'")
+                            
+                            # Handle floating point types
+                            elif "DOUBLE" in target_type or "FLOAT" in target_type or "REAL" in target_type:
+                                try:
+                                    if val_str.strip() == '' or val_str.lower() in ('null', 'none', 'na', 'n/a'):
                                         row_values.append("NULL")
+                                    else:
+                                        # Try to convert to float directly if possible
+                                        clean_val = val_str.strip()
+                                        if clean_val.replace('-', '', 1).replace('.', '', 1).isdigit():
+                                            val_float = float(clean_val)
+                                            row_values.append(str(val_float))
+                                        else:
+                                            # Extract numeric parts if possible
+                                            numeric_only = ''.join(c for c in clean_val if c.isdigit() or c in '.-')
+                                            if numeric_only:
+                                                try:
+                                                    val_float = float(numeric_only)
+                                                    row_values.append(str(val_float))
+                                                except (ValueError, OverflowError):
+                                                    row_values.append("0.0")
+                                            else:
+                                                row_values.append("0.0")
+                                except (ValueError, TypeError):
+                                    row_values.append("0.0")
+                            
+                            # For all other types, use explicit casting
                             else:
                                 # Otherwise explicitly cast to the target type
                                 row_values.append(f"CAST('{val_str}' AS {target_type})")
