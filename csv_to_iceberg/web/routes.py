@@ -431,6 +431,16 @@ def profile_use(name):
         flash(f'Failed to set {name} as the active profile', 'error')
     return redirect(url_for('routes.profiles'))
 
+@routes.route('/profiles/get/<name>')
+def profile_get(name):
+    """Get a profile by name."""
+    logger.debug(f"Profile get route called for {name}")
+    profile = config_manager.get_profile(name)
+    if profile:
+        return jsonify({'profile': profile}), 200
+    else:
+        return jsonify({'error': f'Profile {name} not found'}), 404
+
 @routes.route('/job/<job_id>')
 def job_detail(job_id):
     """Display job details."""
