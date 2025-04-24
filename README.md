@@ -14,6 +14,8 @@ This tool allows data engineers to easily convert CSV data files to Apache Icebe
 - Progress tracking with percentage complete
 - Schema validation and compatibility checks
 - Configurable CSV parsing options (delimiter, quote character, headers)
+- Data Dictionary Integration with column comments and table properties
+- Column filtering to include/exclude specific columns
 
 ## Requirements
 
@@ -36,7 +38,29 @@ This tool allows data engineers to easily convert CSV data files to Apache Icebe
 pip install -r requirements.txt
 ```
 
-## Usage
+## Web Interface
+
+You can use the web interface to convert CSV files to Iceberg tables through a user-friendly browser UI. This provides an interactive experience with:
+
+- CSV file uploading and preview
+- Schema customization with type editing and column comments
+- Table property management
+- Column filtering with include/exclude options
+- Job monitoring with real-time progress updates
+
+To start the web interface:
+
+```bash
+# Start with Flask's development server
+python main.py
+
+# Or use Gunicorn for production deployment
+gunicorn --bind 0.0.0.0:5000 --reuse-port --reload main:app
+```
+
+Then open your browser to http://localhost:5000 to access the web interface.
+
+## CLI Usage
 
 ### Basic Usage
 
@@ -83,6 +107,17 @@ Options:
                                  append)
   --sample-size INTEGER          Number of rows to sample for schema inference
                                  (default: 1000)
+  --include-columns TEXT         Comma-separated list of column names to include
+                                 (all others will be excluded)
+  --exclude-columns TEXT         Comma-separated list of column names to exclude
+                                 (ignored if --include-columns is specified)
+  --custom-schema TEXT           Path to a JSON file with custom schema definition
+                                 (allows type overrides and column comments)
+  --table-properties TEXT        Path to a JSON file with table properties
+                                 to add to the Iceberg table
+  --use-hive-metastore/--no-hive-metastore
+                                 Whether to use Hive metastore for table operations
+                                 (default: use-hive-metastore)
   -v, --verbose                  Enable verbose logging
   --help                         Show this message and exit.
 ```
@@ -138,6 +173,86 @@ python csv_to_iceberg.py convert \
   --hive-metastore-uri localhost:9083
 ```
 
+### Use custom schema with column comments
+
+First, create a JSON file with your custom schema (e.g., `schema.json`):
+
+```json
+[
+  {
+    "id": 1,
+    "name": "id",
+    "type": "int",
+    "required": true,
+    "comment": "Primary key for the table"
+  },
+  {
+    "id": 2,
+    "name": "customer_name",
+    "type": "string",
+    "required": false,
+    "comment": "Full name of the customer"
+  },
+  {
+    "id": 3,
+    "name": "order_date",
+    "type": "timestamp",
+    "required": true,
+    "comment": "Date when the order was placed"
+  }
+]
+```
+
+Then run the conversion with this schema:
+
+```bash
+python csv_to_iceberg.py convert \
+  --csv-file orders.csv \
+  --table-name iceberg.analytics.orders \
+  --trino-host trino-server.example.com \
+  --trino-port 443 \
+  --trino-user admin \
+  --trino-password your_password \
+  --http-scheme https \
+  --trino-catalog iceberg \
+  --trino-schema analytics \
+  --hive-metastore-uri metastore.example.com:9083 \
+  --custom-schema schema.json
+```
+
+### Add table properties and filter columns
+
+Create a JSON file with table properties (e.g., `properties.json`):
+
+```json
+{
+  "comment": "Orders data from retail system",
+  "owner": "data_team",
+  "retention.watermark": "2023-01-01",
+  "write.format.default": "parquet",
+  "write.metadata.compression-codec": "gzip"
+}
+```
+
+Then run the conversion with column filtering and table properties:
+
+```bash
+python csv_to_iceberg.py convert \
+  --csv-file orders_export.csv \
+  --table-name iceberg.analytics.filtered_orders \
+  --trino-host trino-server.example.com \
+  --trino-port 443 \
+  --trino-user admin \
+  --trino-password your_password \
+  --http-scheme https \
+  --trino-catalog iceberg \
+  --trino-schema analytics \
+  --hive-metastore-uri metastore.example.com:9083 \
+  --table-properties properties.json \
+  --include-columns "id,customer_name,order_date,total_amount" \
+  --mode overwrite
+```
+
 ## Troubleshooting
 
 If you encounter issues:
@@ -172,6 +287,22 @@ If you receive a "Cannot use authentication with HTTP" error:
    - Configure Trino to accept HTTP authentication (not recommended for production)
 
 Note: For security reasons, passwords should only be transmitted over HTTPS connections.
+
+### Data Dictionary Integration
+
+This tool supports enhancing your Iceberg tables with data dictionary metadata through:
+
+1. **Column Comments**: Add descriptive documentation to columns using the custom schema definition:
+   - Helps document the meaning and purpose of each column
+   - Makes tables self-documenting for other users
+   - Preserved in Iceberg table metadata and visible in SQL clients
+
+2. **Table Properties**: Add table-level metadata using a properties JSON file:
+   - Set table comments, ownership information, and other metadata
+   - Configure Iceberg-specific table behavior properties
+   - Add custom key-value metadata relevant to your organization
+
+These features together provide a comprehensive data dictionary capability directly integrated with your Iceberg tables, making them more maintainable and easier to understand.
 
 ### Role-Based Authorization
 
