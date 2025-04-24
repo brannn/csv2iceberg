@@ -211,39 +211,71 @@ class IcebergWriter:
             quoted_columns = [f'"{col}"' for col in columns]
             column_names_str = ", ".join(quoted_columns)
             
-            # If running in overwrite mode, truncate the target table first
+            # If running in overwrite mode, check if table exists and create or truncate as needed
             if mode == 'overwrite' and len(batch_data) > 0:
-                truncate_sql = f"DELETE FROM {self.catalog}.{self.schema}.{self.table}"
-                self.trino_client.execute_query(truncate_sql)
-                logger.debug(f"Truncated target table {self.table} for overwrite mode")
+                # First check if the table exists
+                table_exists = self.trino_client.table_exists(self.catalog, self.schema, self.table)
                 
-                # Invalidate schema cache after table truncation in case of schema changes
-                self.invalidate_schema_cache()
-                logger.debug("Schema cache invalidated after table truncation")
+                if table_exists:
+                    # If table exists, truncate it
+                    truncate_sql = f"DELETE FROM {self.catalog}.{self.schema}.{self.table}"
+                    self.trino_client.execute_query(truncate_sql)
+                    logger.debug(f"Truncated target table {self.table} for overwrite mode")
+                    
+                    # Invalidate schema cache after table truncation in case of schema changes
+                    self.invalidate_schema_cache()
+                    logger.debug("Schema cache invalidated after table truncation")
+                else:
+                    # If table doesn't exist, we'll create it automatically later in this method
+                    logger.info(f"Table {self.catalog}.{self.schema}.{self.table} doesn't exist, will be created")
             
             # Get the target table schema (using cache if available)
             try:
-                # Check if schema is already cached
-                if self._cached_target_schema is None:
-                    logger.info(f"Fetching and caching schema for {self.catalog}.{self.schema}.{self.table}")
-                    self._cached_target_schema = self.trino_client.get_table_schema(self.catalog, self.schema, self.table)
-                    
-                    # Create dictionary only if we got valid schema results
-                    if self._cached_target_schema is not None and len(self._cached_target_schema) > 0:
-                        self._cached_column_types_dict = {col_name: col_type for col_name, col_type in self._cached_target_schema}
-                        logger.debug(f"Cached schema with types: {self._cached_column_types_dict}")
-                    else:
-                        # If schema retrieval returned empty result, initialize empty dict
-                        self._cached_column_types_dict = {}
-                        logger.warning(f"Retrieved empty schema for {self.catalog}.{self.schema}.{self.table}")
-                else:
-                    logger.debug(f"Using cached schema for {self.catalog}.{self.schema}.{self.table}")
+                # Check if table exists first to avoid errors when trying to get schema
+                table_exists = self.trino_client.table_exists(self.catalog, self.schema, self.table)
                 
-                # Use the cached schema information, ensuring they're never None
-                target_schema = self._cached_target_schema if self._cached_target_schema is not None else []
-                column_types_dict = self._cached_column_types_dict if self._cached_column_types_dict is not None else {}
+                if not table_exists:
+                    logger.info(f"Table {self.catalog}.{self.schema}.{self.table} doesn't exist yet, creating it from batch data")
+                    
+                    # Create the table using inferred schema from batch data
+                    # Use batch data to create a PyIceberg schema
+                    from csv_to_iceberg.core.schema_inferrer import infer_schema_from_df
+                    
+                    # Infer schema from batch data
+                    iceberg_schema = infer_schema_from_df(batch_data)
+                    
+                    # Create the table
+                    self.trino_client.create_iceberg_table(self.catalog, self.schema, self.table, iceberg_schema)
+                    logger.info(f"Created table {self.catalog}.{self.schema}.{self.table}")
+                    
+                    # Set empty schema to force dynamic inference for the first batch
+                    self._cached_target_schema = []
+                    self._cached_column_types_dict = {}
+                    target_schema = []
+                    column_types_dict = {}
+                else:
+                    # Table exists, get its schema
+                    # Check if schema is already cached
+                    if self._cached_target_schema is None:
+                        logger.info(f"Fetching and caching schema for {self.catalog}.{self.schema}.{self.table}")
+                        self._cached_target_schema = self.trino_client.get_table_schema(self.catalog, self.schema, self.table)
+                        
+                        # Create dictionary only if we got valid schema results
+                        if self._cached_target_schema is not None and len(self._cached_target_schema) > 0:
+                            self._cached_column_types_dict = {col_name: col_type for col_name, col_type in self._cached_target_schema}
+                            logger.debug(f"Cached schema with types: {self._cached_column_types_dict}")
+                        else:
+                            # If schema retrieval returned empty result, initialize empty dict
+                            self._cached_column_types_dict = {}
+                            logger.warning(f"Retrieved empty schema for {self.catalog}.{self.schema}.{self.table}")
+                    else:
+                        logger.debug(f"Using cached schema for {self.catalog}.{self.schema}.{self.table}")
+                    
+                    # Use the cached schema information, ensuring they're never None
+                    target_schema = self._cached_target_schema if self._cached_target_schema is not None else []
+                    column_types_dict = self._cached_column_types_dict if self._cached_column_types_dict is not None else {}
             except Exception as e:
-                logger.error(f"Failed to retrieve target schema: {str(e)}")
+                logger.error(f"Failed to retrieve or create target schema: {str(e)}", exc_info=True)
                 
                 # Initialize empty schema info to allow fallback to dynamic type inference
                 target_schema = []
