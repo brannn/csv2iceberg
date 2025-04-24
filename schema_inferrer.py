@@ -183,15 +183,48 @@ def create_schema_from_custom_definition(schema_def: List[Dict[str, Any]]) -> Sc
     
     # Create a mapping of type names to PyIceberg types
     type_mapping = {
+        # Basic types
+        'boolean': BooleanType(),
         'Boolean': BooleanType(),
+        'int': IntegerType(),
+        'integer': IntegerType(),
         'Integer': IntegerType(),
+        'long': LongType(),
         'Long': LongType(),
+        'bigint': LongType(),
+        'float': FloatType(),
         'Float': FloatType(),
+        'double': DoubleType(),
         'Double': DoubleType(),
+        'date': DateType(),
         'Date': DateType(),
+        'timestamp': TimestampType(),
         'Timestamp': TimestampType(),
+        'string': StringType(),
         'String': StringType(),
-        'Decimal': DecimalType(38, 10)  # Default precision and scale
+        'varchar': StringType(),
+        'char': StringType(),
+        'text': StringType(),
+        'decimal': DecimalType(38, 10),  # Default precision and scale
+        'Decimal': DecimalType(38, 10),
+        # Binary types
+        'binary': BinaryType(),
+        'Binary': BinaryType(),
+        'fixed': FixedType(16),  # Default to 16 bytes
+        'Fixed': FixedType(16),
+        # Time types
+        'time': TimeType(),
+        'Time': TimeType(),
+        'timestamp_tz': TimestamptzType(),
+        'timestamptz': TimestamptzType(),
+        'timestamp_ntz': TimestampType(),
+        'timestamp_ltz': TimestamptzType(),
+        # Additional names for compatibility
+        'varchar2': StringType(),
+        'number': DecimalType(38, 10),
+        'byte': IntegerType(),
+        'short': IntegerType(),
+        'uuid': UUIDType()
     }
     
     try:
