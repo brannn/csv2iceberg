@@ -245,7 +245,8 @@ class TrinoClient:
         catalog: str, 
         schema: str, 
         table: str, 
-        iceberg_schema: Schema
+        iceberg_schema: Schema,
+        table_properties: Optional[Dict[str, str]] = None
     ) -> None:
         """
         Create a table using the provided schema. Originally designed for Iceberg tables,
@@ -256,6 +257,7 @@ class TrinoClient:
             schema: Schema name
             table: Table name
             iceberg_schema: PyIceberg Schema object
+            table_properties: Optional dictionary of table properties
         """
         try:
             # Clear any cached data for this table first
@@ -267,20 +269,40 @@ class TrinoClient:
                 # Properly quote column names to handle special characters and spaces
                 column_name = f'"{field.name}"'
                 column_type = iceberg_type_to_trino_type(field.field_type)
-                columns_ddl.append(f"{column_name} {column_type}")
+                
+                # Add column definition
+                column_def = f"{column_name} {column_type}"
+                
+                # Add comment if present
+                if hasattr(field, 'doc') and field.doc:
+                    # Escape single quotes in comments
+                    escaped_comment = field.doc.replace("'", "''")
+                    column_def += f" COMMENT '{escaped_comment}'"
+                
+                columns_ddl.append(column_def)
             
             columns_clause = ", ".join(columns_ddl)
             
-            # Create table DDL
-            # Use PARQUET format since 'ICEBERG' format is not supported in this Trino instance
+            # Create table DDL with format
             create_table_sql = f"""
             CREATE TABLE {catalog}.{schema}.{table} (
                 {columns_clause}
             )
             WITH (
-                format = 'PARQUET'
-            )
-            """
+                format = 'PARQUET'"""
+            
+            # Add table properties if provided
+            if table_properties and len(table_properties) > 0:
+                create_table_sql += ",\n"
+                props = []
+                for key, value in table_properties.items():
+                    # Escape single quotes in property values
+                    escaped_value = str(value).replace("'", "''")
+                    props.append(f"    {key} = '{escaped_value}'")
+                create_table_sql += ",\n".join(props)
+            
+            # Close the WITH clause
+            create_table_sql += "\n            )"
             
             logger.info(f"Creating table {catalog}.{schema}.{table} with PARQUET format")
             logger.debug(f"Create table SQL: {create_table_sql}")

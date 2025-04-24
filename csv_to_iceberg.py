@@ -125,6 +125,7 @@ def convert(csv_file: str, delimiter: str, has_header: bool, quote_char: str, ba
                         field_name = field_def.get('name', '')
                         field_type_name = field_def.get('type', 'String')
                         field_required = field_def.get('required', False)
+                        field_comment = field_def.get('comment', None)
                         
                         # Get the actual PyIceberg type from the mapping
                         field_type = type_mapping.get(field_type_name, StringType())
@@ -134,7 +135,8 @@ def convert(csv_file: str, delimiter: str, has_header: bool, quote_char: str, ba
                             field_id=field_id, 
                             name=field_name, 
                             field_type=field_type, 
-                            required=field_required
+                            required=field_required,
+                            doc=field_comment
                         ))
                     
                     # Create the schema
@@ -213,9 +215,23 @@ def convert(csv_file: str, delimiter: str, has_header: bool, quote_char: str, ba
                 trino_client.drop_table(catalog, schema, table)
                 table_exists = False
             
+            # Load table properties if provided
+            table_props = None
+            if table_properties:
+                try:
+                    logger.info(f"Loading table properties from: {table_properties}")
+                    import json
+                    with open(table_properties, 'r') as f:
+                        table_props = json.load(f)
+                    logger.debug(f"Loaded table properties: {table_props}")
+                except Exception as e:
+                    logger.error(f"Error loading table properties: {str(e)}", exc_info=True)
+                    console.print(f"[bold yellow]Warning:[/bold yellow] Failed to load table properties: {str(e)}")
+                    table_props = None
+            
             if not table_exists:
                 logger.info(f"Creating table {table_name}")
-                trino_client.create_iceberg_table(catalog, schema, table, iceberg_schema)
+                trino_client.create_iceberg_table(catalog, schema, table, iceberg_schema, table_properties=table_props)
             else:
                 logger.info(f"Table {table_name} already exists, verifying schema compatibility")
                 if not trino_client.validate_table_schema(catalog, schema, table, iceberg_schema):
