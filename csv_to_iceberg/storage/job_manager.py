@@ -252,10 +252,12 @@ class JobManager:
         """
         job_data = self.get_job(job_id)
         if not job_data:
+            logger.warning(f"Cannot mark job {job_id} as completed because it was not found")
             return False
             
         # Preserve important values from the job data
         rows_processed = job_data.get('rows_processed')
+        logger.info(f"Marking job {job_id} as {'completed' if success else 'failed'}, rows_processed: {rows_processed}")
             
         # Get timestamps
         now = datetime.datetime.now()
@@ -287,8 +289,22 @@ class JobManager:
             updates['returncode'] = returncode
         if error is not None:
             updates['error'] = error
-            
-        self.update_job(job_id, updates)
+        
+        # First update the memory store
+        for key, value in updates.items():
+            if job_id in self.memory_jobs:
+                self.memory_jobs[job_id][key] = value
+        
+        # Then update LMDB if enabled
+        if self.use_lmdb and self.lmdb_store:
+            logger.info(f"Updating LMDB for completed job {job_id}")
+            try:
+                success = self.lmdb_store.update_job(job_id, updates)
+                if not success:
+                    logger.error(f"Failed to update LMDB for completed job {job_id}")
+            except Exception as e:
+                logger.error(f"Error updating LMDB for completed job {job_id}: {str(e)}", exc_info=True)
+                
         return True
         
     def cleanup_old_jobs(self) -> None:

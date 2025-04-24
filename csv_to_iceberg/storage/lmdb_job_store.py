@@ -16,7 +16,7 @@ except ImportError:
     logging.warning("LMDB not available. Job persistence will be disabled.")
 
 # Default paths and constants
-DEFAULT_LMDB_PATH = "~/.csv_to_iceberg/lmdb_jobs"
+DEFAULT_LMDB_PATH = os.path.join(os.path.expanduser("~"), ".csv_to_iceberg", "lmdb_jobs")
 DEFAULT_MAP_SIZE = 100 * 1024 * 1024  # 100MB default map size
 MAX_JOBS_TO_KEEP = 100  # Maximum number of jobs to keep in LMDB
 JOB_TTL = 30 * 24 * 60 * 60  # 30 days retention for jobs in seconds
@@ -36,12 +36,18 @@ class LMDBJobStore:
         """
         if not LMDB_IMPORTED:
             raise ImportError("LMDB is not available. Please install the lmdb package.")
+        
+        # Don't use os.path.expanduser if already an absolute path
+        if os.path.isabs(path):
+            self.path = path
+        else:    
+            # Expand path for home directory if needed
+            self.path = os.path.expanduser(path)
             
-        # Expand path for home directory if needed
-        self.path = os.path.expanduser(path)
+        # Ensure directory exists
         os.makedirs(self.path, exist_ok=True)
         
-        logger.debug(f"Initialized LMDB job store at {self.path}")
+        logger.info(f"Initializing LMDB job store at {self.path}")
         
         # Create LMDB environment
         self.env = lmdb.open(
@@ -51,6 +57,12 @@ class LMDBJobStore:
             sync=True,
             max_dbs=2  # main db + index db
         )
+        
+        # Log information about the environment
+        with self.env.begin() as txn:
+            job_count = txn.stat()['entries']
+            
+        logger.info(f"LMDB job store initialized with {job_count} jobs")
         
         # Create a separate database for job ID index (sorted by timestamp)
         self.index_db = self.env.open_db(b'job_index')
@@ -170,13 +182,23 @@ class LMDBJobStore:
             job_key = job_id.encode('utf-8')
             job_value = json.dumps(serialized).encode('utf-8')
             
-            # If status is changing from pending to running or completed, 
-            # we want to update the timestamp in the index as well
+            # We should update the index if:
+            # 1. Status is changing from pending to running/completed/failed
+            # 2. Status is changing from running to completed/failed
+            # 3. Job is being marked as completed or failed regardless of previous state
             update_index = False
-            if ('status' in job_data and 
-                existing_job.get('status') == 'pending' and 
-                job_data['status'] in ['running', 'completed', 'failed']):
+            old_status = existing_job.get('status')
+            new_status = job_data.get('status')
+            
+            if new_status in ['completed', 'failed']:
+                # Always update index when a job is marked completed or failed
                 update_index = True
+                logger.info(f"Job {job_id} status changing to {new_status}, updating index")
+            elif ('status' in job_data and 
+                  old_status in ['pending', 'running'] and 
+                  new_status in ['running', 'completed', 'failed']):
+                update_index = True
+                logger.info(f"Job {job_id} status changing from {old_status} to {new_status}, updating index")
                 
             if update_index:
                 # First find and remove old index key
