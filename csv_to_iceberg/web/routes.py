@@ -59,13 +59,50 @@ def index():
 def convert():
     """Render the conversion page."""
     logger.debug("Convert route called")
-    return render_template('convert.html')
+    profiles_list = config_manager.get_profiles()
+    last_used_profile = None
+    last_used = config_manager.get_last_used_profile()
+    if last_used:
+        last_used_profile = last_used.get('name')
+    
+    if request.method == 'POST':
+        # Handle the conversion process
+        # [Conversion logic to be implemented]
+        flash('Conversion started', 'success')
+        return redirect(url_for('routes.jobs'))
+    
+    return render_template('convert.html', profiles=profiles_list, last_used_profile=last_used_profile)
 
 @routes.route('/jobs')
 def jobs():
     """Render the jobs list page."""
     logger.debug("Jobs route called")
-    return render_template('jobs.html')
+    all_jobs = job_manager.get_all_jobs(limit=50, include_test_jobs=False)
+    
+    # Sort jobs by creation time, newest first
+    jobs_sorted = sorted(all_jobs, key=lambda j: j.get('created_at', 0), reverse=True)
+    
+    # Format job data for display
+    for job in jobs_sorted:
+        # Format duration
+        duration = job.get('duration')
+        job['duration_formatted'] = format_duration(duration) if duration else 'N/A'
+        
+        # Format timestamps
+        created_at = job.get('created_at')
+        completed_at = job.get('completed_at')
+        job['created_at_formatted'] = format_datetime(created_at) if created_at else 'N/A'
+        job['completed_at_formatted'] = format_datetime(completed_at) if completed_at else 'N/A'
+        
+        # Format status
+        status = job.get('status')
+        job['status_formatted'] = format_status(status) if status is not None else 'Unknown'
+        
+        # Format file size
+        file_size = job.get('file_size', 0)
+        job['file_size_formatted'] = format_size(file_size) if file_size else 'N/A'
+        
+    return render_template('jobs.html', jobs=jobs_sorted)
 
 @routes.route('/profiles')
 def profiles():
