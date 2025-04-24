@@ -246,30 +246,16 @@ class IcebergWriter:
             quoted_columns = [f'"{col}"' for col in columns]
             column_names_str = ", ".join(quoted_columns)
             
-            # First check if the table exists before any operations
+            # Check if table exists for both append and overwrite modes
             table_exists = self.trino_client.table_exists(self.catalog, self.schema, self.table)
             logger.info(f"Table {self.catalog}.{self.schema}.{self.table} exists: {table_exists}")
             
-            # For non-existent tables in either mode (append or overwrite), create the table first
+            # For append mode on a non-existent table, we'll create the table below
+            # For overwrite mode on a non-existent table, we skip the truncate step
+            
+            # For both append and overwrite modes with non-existent tables
             if not table_exists:
-                logger.info(f"Table {self.catalog}.{self.schema}.{self.table} doesn't exist, creating it from batch data")
-                
-                # Create the table using inferred schema from batch data
-                # Use batch data to create a PyIceberg schema
-                iceberg_schema = infer_schema_from_df(batch_data)
-                
-                # Create the table
-                self.trino_client.create_iceberg_table(self.catalog, self.schema, self.table, iceberg_schema)
-                logger.info(f"Created table {self.catalog}.{self.schema}.{self.table}")
-                
-                # Set empty schema to force dynamic inference for the first batch
-                self._cached_target_schema = []
-                self._cached_column_types_dict = {}
-                target_schema = []
-                column_types_dict = {}
-                
-                # Update table_exists flag since we just created it
-                table_exists = True
+                logger.info(f"Table {self.catalog}.{self.schema}.{self.table} doesn't exist, will be created automatically")
             
             # Special handling for overwrite mode when table exists
             if table_exists and mode == 'overwrite' and len(batch_data) > 0:
@@ -290,7 +276,30 @@ class IcebergWriter:
             
             # Get the target table schema (using cache if available)
             try:
-                # Table exists, get its schema
+                # Check if table exists first to avoid errors when trying to get schema
+                table_exists = self.trino_client.table_exists(self.catalog, self.schema, self.table)
+                
+                if not table_exists:
+                    logger.info(f"Table {self.catalog}.{self.schema}.{self.table} doesn't exist yet, creating it from batch data")
+                    
+                    # Create the table using inferred schema from batch data
+                    # Use batch data to create a PyIceberg schema
+                    # Using the infer_schema_from_df function imported at the top of the file
+                    
+                    # Infer schema from batch data
+                    iceberg_schema = infer_schema_from_df(batch_data)
+                    
+                    # Create the table
+                    self.trino_client.create_iceberg_table(self.catalog, self.schema, self.table, iceberg_schema)
+                    logger.info(f"Created table {self.catalog}.{self.schema}.{self.table}")
+                    
+                    # Set empty schema to force dynamic inference for the first batch
+                    self._cached_target_schema = []
+                    self._cached_column_types_dict = {}
+                    target_schema = []
+                    column_types_dict = {}
+                else:
+                    # Table exists, get its schema
                     # Check if schema is already cached
                     if self._cached_target_schema is None:
                         logger.info(f"Fetching and caching schema for {self.catalog}.{self.schema}.{self.table}")
