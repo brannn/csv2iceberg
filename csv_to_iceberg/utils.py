@@ -5,6 +5,7 @@ import os
 import sys
 import logging
 import socket
+from datetime import datetime
 from typing import Dict, List, Any, Optional, Tuple
 
 def setup_logging() -> logging.Logger:
@@ -272,36 +273,73 @@ def is_test_job_id(job_id: str) -> bool:
     """
     return job_id.startswith("test_")
 
-def format_duration(start_time, end_time) -> str:
+def format_duration(duration=None, start_time=None, end_time=None) -> str:
     """
-    Calculate and format the duration between two timestamps.
+    Calculate and format the duration between two timestamps or from a duration value.
+    
+    This function can be called in multiple ways:
+    - format_duration(duration): With just a duration in seconds
+    - format_duration(start_time=start, end_time=end): With named start and end times
+    - format_duration(start_time, end_time): With positional start and end times
     
     Args:
-        start_time: Start timestamp (datetime object)
-        end_time: End timestamp (datetime object)
+        duration: Duration in seconds (optional)
+        start_time: Start timestamp (datetime object, optional)
+        end_time: End timestamp (datetime object, optional)
         
     Returns:
-        Formatted duration string (e.g., "5 minutes 30 seconds")
+        Formatted duration string (e.g., "00:05:30" or "5 minutes 30 seconds")
     """
-    if not start_time or not end_time:
-        return "N/A"
-        
-    # Calculate duration in seconds
-    duration_seconds = (end_time - start_time).total_seconds()
+    logger = logging.getLogger("csv_to_iceberg")
     
-    # Format duration
-    if duration_seconds < 60:
-        return f"{int(duration_seconds)} seconds"
-    elif duration_seconds < 3600:
-        minutes = int(duration_seconds // 60)
-        seconds = int(duration_seconds % 60)
-        return f"{minutes} minute{'s' if minutes != 1 else ''} {seconds} second{'s' if seconds != 1 else ''}"
-    else:
-        hours = int(duration_seconds // 3600)
-        remaining = duration_seconds % 3600
+    # Calculate duration if not provided but we have start and end times
+    if duration is None and start_time and end_time:
+        try:
+            if not isinstance(start_time, datetime) or not isinstance(end_time, datetime):
+                logger.warning(f"Invalid datetime objects: start={type(start_time)}, end={type(end_time)}")
+                return "00:00:00"
+            
+            # Ensure end_time is always >= start_time to avoid negative duration
+            if end_time >= start_time:
+                duration = (end_time - start_time).total_seconds()
+            else:
+                logger.warning(f"End time {end_time} is before start time {start_time}")
+                return "00:00:00"
+        except Exception as e:
+            logger.error(f"Error calculating duration: {e}")
+            return "00:00:00"
+    
+    if duration is None:
+        return "N/A"
+    
+    try:
+        # Ensure duration is positive
+        duration = max(0, float(duration))
+        
+        # Format as HH:MM:SS for UI display
+        hours = int(duration // 3600)
+        remaining = duration % 3600
         minutes = int(remaining // 60)
         seconds = int(remaining % 60)
-        return f"{hours} hour{'s' if hours != 1 else ''} {minutes} minute{'s' if minutes != 1 else ''} {seconds} second{'s' if seconds != 1 else ''}"
+        
+        return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+        
+        # For human-readable format (uncomment if needed)
+        # if duration < 60:
+        #     return f"{int(duration)} seconds"
+        # elif duration < 3600:
+        #     minutes = int(duration // 60)
+        #     seconds = int(duration % 60)
+        #     return f"{minutes} minute{'s' if minutes != 1 else ''} {seconds} second{'s' if seconds != 1 else ''}"
+        # else:
+        #     hours = int(duration // 3600)
+        #     remaining = duration % 3600
+        #     minutes = int(remaining // 60)
+        #     seconds = int(remaining % 60)
+        #     return f"{hours} hour{'s' if hours != 1 else ''} {minutes} minute{'s' if minutes != 1 else ''} {seconds} second{'s' if seconds != 1 else ''}"
+    except Exception as e:
+        logger.error(f"Error formatting duration: {e}")
+        return "00:00:00"
 
 def format_datetime(dt) -> str:
     """
