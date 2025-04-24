@@ -274,7 +274,7 @@ class TrinoClient:
                 column_def = f"{column_name} {column_type}"
                 
                 # Add comment if present
-                if hasattr(field, 'doc') and field.doc:
+                if field.doc:
                     # Escape single quotes in comments
                     escaped_comment = field.doc.replace("'", "''")
                     column_def += f" COMMENT '{escaped_comment}'"

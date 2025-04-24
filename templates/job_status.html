@@ -218,8 +218,9 @@
         return result;
     }
     
-    // Track job start time
-    let startTime = new Date('{{ job.started_at.isoformat() }}');
+    // Track job start time using UTC timestamp to avoid timezone issues
+    let startTimestamp = {{ job.started_at.timestamp() }} * 1000; // Convert to milliseconds
+    let startTime = new Date(startTimestamp);
     let timer = document.getElementById('running-time');
     
     // Function to update timer only
@@ -227,7 +228,8 @@
         // Update running time
         if (timer) {
             const now = new Date();
-            const seconds = Math.floor((now - startTime) / 1000);
+            // Use max to ensure we never have negative seconds
+            const seconds = Math.max(0, Math.floor((now - startTime) / 1000));
             timer.textContent = 'Running for: ' + formatDuration(seconds);
         }
         
