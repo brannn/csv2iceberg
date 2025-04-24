@@ -18,7 +18,7 @@
                                 <option value="{{ profile.name }}" {% if profile.name == last_used_profile %}selected{% endif %}>{{ profile.name }} - {{ profile.description }}</option>
                                 {% endfor %}
                             </select>
-                            <a href="{{ url_for('profiles') }}" class="btn btn-outline-secondary btn-sm">Manage Profiles</a>
+                            <a href="{{ url_for('routes.profiles') }}" class="btn btn-outline-secondary btn-sm">Manage Profiles</a>
                         </div>
                         <div class="form-text">Select a connection profile or configure the connection settings below.</div>
                     </div>
