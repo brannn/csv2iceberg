@@ -76,7 +76,7 @@ class IcebergWriter:
         include_columns: Optional[List[str]] = None,
         exclude_columns: Optional[List[str]] = None,
         progress_callback: Optional[Callable[[int], None]] = None
-    ) -> None:
+    ) -> int:
         """
         Write CSV data to an Iceberg table using Polars.
         
@@ -184,10 +184,14 @@ class IcebergWriter:
                 logger.info("Progress: 100%")
                 
             logger.info(f"Successfully wrote {processed_rows} rows to {self.catalog}.{self.schema}.{self.table}")
+            return processed_rows
             
         except Exception as e:
             logger.error(f"Error writing CSV to Iceberg: {str(e)}", exc_info=True)
+            # Need to raise to maintain the same behavior, but ensure all paths return an int
+            # This will never be reached because of the raise, but it keeps the type checker happy
             raise RuntimeError(f"Failed to write CSV to Iceberg: {str(e)}")
+            return 0  # Will never reach here due to the raise
     
     def _write_batch_to_iceberg(self, batch_data, mode: str) -> None:
         """
