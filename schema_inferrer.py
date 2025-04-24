@@ -4,6 +4,7 @@ Schema inference module for CSV to Iceberg conversion using Polars
 import os
 import logging
 import datetime
+import json
 from typing import Dict, List, Any, Optional, Tuple
 
 import polars as pl
@@ -162,6 +163,67 @@ def infer_schema_from_csv(
     except Exception as e:
         logger.error(f"Error inferring schema from CSV with Polars: {str(e)}", exc_info=True)
         raise RuntimeError(f"Failed to infer schema from CSV: {str(e)}")
+
+def create_schema_from_custom_definition(schema_def: List[Dict[str, Any]]) -> Schema:
+    """
+    Create an Iceberg schema from a custom schema definition.
+    
+    Args:
+        schema_def: List of field definitions, where each field is a dictionary with keys:
+            - id: Field ID
+            - name: Field name
+            - type: Field type (string representation)
+            - required: Whether the field is required
+            - comment: Optional field comment/documentation
+            
+    Returns:
+        PyIceberg Schema object
+    """
+    logger.info(f"Creating schema from custom definition with {len(schema_def)} fields")
+    
+    # Create a mapping of type names to PyIceberg types
+    type_mapping = {
+        'Boolean': BooleanType(),
+        'Integer': IntegerType(),
+        'Long': LongType(),
+        'Float': FloatType(),
+        'Double': DoubleType(),
+        'Date': DateType(),
+        'Timestamp': TimestampType(),
+        'String': StringType(),
+        'Decimal': DecimalType(38, 10)  # Default precision and scale
+    }
+    
+    try:
+        # Create schema fields from the custom schema definition
+        fields = []
+        for field_def in schema_def:
+            field_id = field_def.get('id', 0)
+            field_name = field_def.get('name', '')
+            field_type_name = field_def.get('type', 'String')
+            field_required = field_def.get('required', False)
+            field_comment = field_def.get('comment', None)
+            
+            # Get the actual PyIceberg type from the mapping
+            field_type = type_mapping.get(field_type_name, StringType())
+            
+            # Add field to schema with all attributes including comment
+            fields.append(NestedField(
+                field_id=field_id, 
+                name=field_name, 
+                field_type=field_type, 
+                required=field_required,
+                doc=field_comment
+            ))
+        
+        # Create the PyIceberg Schema
+        schema = Schema(*fields)
+        logger.debug(f"Created custom schema: {schema}")
+        return schema
+        
+    except Exception as e:
+        logger.error(f"Error creating schema from custom definition: {str(e)}", exc_info=True)
+        raise RuntimeError(f"Failed to create schema from custom definition: {str(e)}")
 
 def _pyarrow_type_to_iceberg_type(pa_type: pa.DataType) -> Any:
     """
@@ -325,7 +387,7 @@ def _infer_schema_from_large_csv(
             iceberg_type = _pyarrow_type_to_iceberg_type(field.type)
             
             # Add field to schema with explicit boolean for required parameter
-            fields.append(NestedField(field_id=field_id, name=clean_col_name, field_type=iceberg_type, required=False))
+            fields.append(NestedField(field_id=field_id, name=clean_col_name, field_type=iceberg_type, required=False, doc=None))
             field_id += 1
         
         # Create the PyIceberg Schema
