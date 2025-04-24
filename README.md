@@ -37,7 +37,7 @@ Optional Features (Future Support):
 
 ```bash
 # Install the required dependencies
-pip install -r requirements.txt
+pip install -r requirements-equivalent.txt
 ```
 
 ## Usage
