@@ -356,8 +356,20 @@ def convert():
                         # Mark job as completed
                         job_manager.mark_job_completed(job_id, success=True)
                     else:
-                        # Mark job as failed with error
-                        job_manager.mark_job_completed(job_id, success=False, error=result['error'])
+                        # Mark job as failed with error and traceback if available
+                        error = result['error']
+                        traceback_info = result.get('traceback', '')
+                        # Create a detailed error message with traceback
+                        stderr_info = f"Error: {error}\n\n"
+                        if traceback_info:
+                            stderr_info += f"Traceback:\n{traceback_info}"
+                            
+                        job_manager.mark_job_completed(
+                            job_id, 
+                            success=False, 
+                            error=error,
+                            stderr=stderr_info
+                        )
                     
                     # Clean up temporary file in either case
                     try:
@@ -366,9 +378,22 @@ def convert():
                         logger.warning(f"Could not remove temporary file: {job_params['csv_file']}")
                         
                 except Exception as e:
+                    import traceback
                     error_msg = str(e)
+                    # Get the full traceback
+                    tb = traceback.format_exc()
                     logger.error(f"Error in conversion job {job_id}: {error_msg}", exc_info=True)
-                    job_manager.mark_job_completed(job_id, success=False, error=error_msg)
+                    
+                    # Create a detailed error message with traceback
+                    detailed_error = f"Error: {error_msg}\n\nTraceback:\n{tb}"
+                    
+                    # Store both the summary error and detailed stderr output
+                    job_manager.mark_job_completed(
+                        job_id, 
+                        success=False, 
+                        error=error_msg, 
+                        stderr=detailed_error
+                    )
                     
                     # Clean up temporary file on error
                     try:

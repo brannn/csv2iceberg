@@ -109,6 +109,47 @@
                 </div>
             </div>
             {% endif %}
+            
+            <!-- Output/Logs Section -->
+            <div class="row mt-4">
+                <div class="col-12">
+                    <h5>Logs and Output</h5>
+                    <ul class="nav nav-tabs" id="logTabs" role="tablist">
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link active" id="stdout-tab" data-bs-toggle="tab" 
+                                    data-bs-target="#stdout-tab-pane" type="button" role="tab" 
+                                    aria-controls="stdout-tab-pane" aria-selected="true">
+                                Standard Output
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" id="stderr-tab" data-bs-toggle="tab" 
+                                    data-bs-target="#stderr-tab-pane" type="button" role="tab" 
+                                    aria-controls="stderr-tab-pane" aria-selected="false">
+                                Error Output
+                            </button>
+                        </li>
+                    </ul>
+                    <div class="tab-content" id="logTabsContent">
+                        <div class="tab-pane fade show active" id="stdout-tab-pane" role="tabpanel" 
+                             aria-labelledby="stdout-tab" tabindex="0">
+                            <div class="card">
+                                <div class="card-body bg-dark">
+                                    <pre class="text-light mb-0" style="max-height: 400px; overflow-y: auto;">{{ job.stdout or 'No standard output available.' }}</pre>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="tab-pane fade" id="stderr-tab-pane" role="tabpanel" 
+                             aria-labelledby="stderr-tab" tabindex="0">
+                            <div class="card">
+                                <div class="card-body bg-dark">
+                                    <pre class="text-light mb-0" style="max-height: 400px; overflow-y: auto;">{{ job.stderr or 'No error output available.' }}</pre>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
 
             <div class="row mt-4">
                 <div class="col-12">

@@ -144,9 +144,18 @@ def convert_csv_to_iceberg(
         result['rows_processed'] = rows_written
         
     except Exception as e:
-        logger.error(f"Error during conversion: {str(e)}", exc_info=True)
-        result['error'] = str(e)
-        result['traceback'] = traceback.format_exc()
+        import traceback
+        error_msg = str(e)
+        tb = traceback.format_exc()
+        logger.error(f"Error during conversion: {error_msg}", exc_info=True)
+        result['success'] = False
+        result['error'] = error_msg
+        result['traceback'] = tb
+        
+        # Also log the first few lines of the error to make debugging easier
+        error_lines = tb.split('\n')
+        if len(error_lines) > 5:
+            logger.error(f"Error summary: {error_lines[-5:]}")
     finally:
         # Calculate duration
         end_time = time.time()
