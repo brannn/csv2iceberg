@@ -6,7 +6,7 @@
 <div class="container mt-4">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h2>Job Details</h2>
-        <a href="{{ url_for('routes.jobs') }}" class="btn btn-outline-secondary">Back to Jobs</a>
+        <a href="{{ url_for('routes.jobs') }}" class="btn btn-primary">Return to Jobs</a>
     </div>
 
     <div class="card mb-4">
@@ -196,6 +196,11 @@
                         </tbody>
                     </table>
                 </div>
+            </div>
+            
+            <!-- Bottom return button for better usability -->
+            <div class="d-flex justify-content-end mt-4">
+                <a href="{{ url_for('routes.jobs') }}" class="btn btn-primary">Return to Jobs</a>
             </div>
         </div>
     </div>
