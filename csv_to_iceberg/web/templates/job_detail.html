@@ -72,11 +72,30 @@
                     </div>
                 </div>
             </div>
-            <div class="d-flex justify-content-center mt-2">
-                <div class="spinner-border text-primary" role="status">
-                    <span class="visually-hidden">Loading...</span>
+            <div class="row mt-3">
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-body">
+                            <h5 class="card-title">Elapsed Time</h5>
+                            <div class="d-flex align-items-center">
+                                <div class="spinner-border text-primary me-3" role="status">
+                                    <span class="visually-hidden">Loading...</span>
+                                </div>
+                                <div id="elapsed-time" class="h4 mb-0">00:00:00</div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
-                <div class="ms-2">Processing, please wait...</div>
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-body">
+                            <h5 class="card-title">Status</h5>
+                            <div class="d-flex align-items-center">
+                                <div class="h4 mb-0">Processing</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
             {% endif %}
 
@@ -147,6 +166,35 @@
 {% if job.status == 'running' %}
 <script>
 document.addEventListener('DOMContentLoaded', function() {
+    // Get start time from job
+    const startTime = new Date('{{ job.created_at_iso }}');
+    const elapsedTimeElement = document.getElementById('elapsed-time');
+    
+    // Function to format elapsed time as HH:MM:SS
+    function formatElapsedTime(milliseconds) {
+        const totalSeconds = Math.floor(milliseconds / 1000);
+        const hours = Math.floor(totalSeconds / 3600);
+        const minutes = Math.floor((totalSeconds % 3600) / 60);
+        const seconds = totalSeconds % 60;
+        
+        return [
+            hours.toString().padStart(2, '0'),
+            minutes.toString().padStart(2, '0'),
+            seconds.toString().padStart(2, '0')
+        ].join(':');
+    }
+    
+    // Function to update elapsed time
+    function updateElapsedTime() {
+        const now = new Date();
+        const elapsed = now - startTime;
+        elapsedTimeElement.textContent = formatElapsedTime(elapsed);
+    }
+    
+    // Update elapsed time immediately and then every second
+    updateElapsedTime();
+    const timerInterval = setInterval(updateElapsedTime, 1000);
+    
     // Function to update job status
     function updateJobStatus() {
         fetch('{{ url_for("routes.job_status", job_id=job.id) }}')
@@ -166,6 +214,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 // Check if job completed or failed
                 if (data.status === 'completed' || data.status === 'failed') {
                     clearInterval(statusInterval);
+                    clearInterval(timerInterval);
                     // Reload the page to show completed status
                     window.location.reload();
                 }
@@ -173,6 +222,7 @@ document.addEventListener('DOMContentLoaded', function() {
             .catch(error => {
                 console.error('Error updating job status:', error);
                 clearInterval(statusInterval);
+                clearInterval(timerInterval);
             });
     }
     

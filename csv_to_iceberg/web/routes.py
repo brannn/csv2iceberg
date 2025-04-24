@@ -564,6 +564,10 @@ def job_detail(job_id):
     job['created_at_formatted'] = format_datetime(created_at) if created_at else 'N/A'
     job['completed_at_formatted'] = format_datetime(completed_at) if completed_at else 'N/A'
     
+    # Add ISO format for JavaScript timer
+    if created_at and isinstance(created_at, datetime):
+        job['created_at_iso'] = created_at.isoformat()
+    
     # Format status
     status = job.get('status')
     job['status_formatted'] = format_status(status) if status is not None else 'Unknown'

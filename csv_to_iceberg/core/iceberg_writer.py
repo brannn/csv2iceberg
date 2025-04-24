@@ -209,6 +209,16 @@ class IcebergWriter:
             # Get column names from the dataframe
             # Works with both Polars and Pandas DataFrames
             columns = batch_data.columns.tolist() if hasattr(batch_data.columns, 'tolist') else list(batch_data.columns)
+            
+            # Clean column names to replace spaces with underscores
+            cleaned_columns = []
+            for col in columns:
+                # Replace spaces with underscores for SQL compatibility
+                clean_col = col.replace(' ', '_') if isinstance(col, str) else str(col).replace(' ', '_')
+                cleaned_columns.append(clean_col)
+            
+            # Update the columns list with cleaned names
+            columns = cleaned_columns
             quoted_columns = [f'"{col}"' for col in columns]
             column_names_str = ", ".join(quoted_columns)
             
