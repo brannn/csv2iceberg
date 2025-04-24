@@ -23,8 +23,8 @@ MAX_JOBS_TO_KEEP = 50      # Maximum number of jobs to keep in memory
 COMPLETED_JOB_TTL = 1800   # Seconds to keep completed jobs in memory (30 minutes)
 TEST_JOB_TTL = 3600        # Seconds to keep test jobs in memory (1 hour)
 
-# Feature flag for LMDB job storage
-USE_LMDB_JOBS = os.environ.get("USE_LMDB_JOBS", "false").lower() == "true"
+# Feature flag for LMDB job storage - enable by default for persistence
+USE_LMDB_JOBS = os.environ.get("USE_LMDB_JOBS", "true").lower() == "true"
 
 class JobManager:
     """Manager for conversion jobs with support for persistent storage"""
