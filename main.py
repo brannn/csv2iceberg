@@ -56,14 +56,8 @@ ALLOWED_EXTENSIONS = {'csv', 'txt'}
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB limit
 
-# Constants for job management
-MAX_JOBS_TO_KEEP = 50      # Maximum number of jobs to keep in memory
-COMPLETED_JOB_TTL = 1800   # Seconds to keep completed jobs in memory (30 minutes)
-TEST_JOB_TTL = 3600        # Seconds to keep test jobs in memory (1 hour)
-
-# Dictionary to track which jobs are being actively viewed
-# This prevents cleanup of jobs that are currently being viewed
-active_job_views = {}
+# Import job manager for job storage with LMDB support
+from job_manager import job_manager
 
 # Utility function for job duration
 def format_duration(start_time, end_time):
@@ -97,9 +91,7 @@ def format_duration(start_time, end_time):
         seconds = int(remaining % 60)
         return f"{hours} hour{'s' if hours != 1 else ''} {minutes} minute{'s' if minutes != 1 else ''} {seconds} second{'s' if seconds != 1 else ''}"
 
-# Store conversion jobs using OrderedDict to maintain insertion order
-# This helps manage job retention policies by time
-conversion_jobs = OrderedDict()
+# We use the job_manager for job storage instead of in-memory OrderedDict
 
 def allowed_file(filename):
     """Check if the uploaded file has an allowed extension."""
@@ -219,18 +211,19 @@ def run_conversion(job_id, file_path, params):
         logger.info(f"Starting conversion job {job_id} with command: {' '.join(cmd)}")
         process = subprocess.run(cmd, capture_output=True, text=True)
         
-        # Store results
-        conversion_jobs[job_id]['status'] = 'completed' if process.returncode == 0 else 'failed'
-        conversion_jobs[job_id]['stdout'] = process.stdout
-        conversion_jobs[job_id]['stderr'] = process.stderr
-        conversion_jobs[job_id]['returncode'] = process.returncode
-        # Add completion timestamp
-        conversion_jobs[job_id]['completed_at'] = datetime.datetime.now()
-        # Set progress to 100% when completed
-        if conversion_jobs[job_id]['status'] == 'completed':
-            conversion_jobs[job_id]['progress'] = 100
+        # Store results using job manager
+        status = 'completed' if process.returncode == 0 else 'failed'
         
-        logger.info(f"Completed conversion job {job_id} with status: {conversion_jobs[job_id]['status']}")
+        # Mark job as completed
+        job_manager.mark_job_completed(
+            job_id, 
+            success=(status == 'completed'),
+            stdout=process.stdout,
+            stderr=process.stderr,
+            returncode=process.returncode
+        )
+        
+        logger.info(f"Completed conversion job {job_id} with status: {status}")
         
         # Clean up temporary files
         if custom_schema_file:
@@ -242,10 +235,8 @@ def run_conversion(job_id, file_path, params):
         
     except Exception as e:
         logger.error(f"Error in conversion job {job_id}: {str(e)}", exc_info=True)
-        conversion_jobs[job_id]['status'] = 'failed'
-        conversion_jobs[job_id]['error'] = str(e)
-        # Add completion timestamp even for failed jobs
-        conversion_jobs[job_id]['completed_at'] = datetime.datetime.now()
+        # Mark job as failed using job manager
+        job_manager.mark_job_completed(job_id, success=False, error=str(e))
         
         # Clean up temporary files in case of error
         if schema_temp_file:
