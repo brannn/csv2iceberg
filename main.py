@@ -14,7 +14,7 @@ from utils import setup_logging
 from config_manager import ConfigManager
 
 # LMDB support (feature flag controlled)
-USE_LMDB = os.environ.get("USE_LMDB_STORAGE", "false").lower() == "true"
+USE_LMDB = os.environ.get("USE_LMDB_STORAGE", "true").lower() == "true"
 LMDB_IMPORTED = False
 
 try:
