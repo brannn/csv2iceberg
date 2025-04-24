@@ -368,7 +368,8 @@ def convert():
             threading.Thread(target=run_conversion_job, daemon=True).start()
             
             flash(f'Conversion started with job ID: {job_id}', 'success')
-            return redirect(url_for('routes.jobs'))
+            # Redirect to the job detail page instead of the jobs list
+            return redirect(url_for('routes.job_detail', job_id=job_id))
             
         except Exception as e:
             logger.error(f"Error starting conversion: {str(e)}", exc_info=True)

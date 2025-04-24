@@ -1,0 +1,90 @@
+INFO:werkzeug:198.18.240.120 - - [24/Apr/2025 20:55:40] "GET /convert HTTP/1.1" 200 -
+INFO:csv_to_iceberg.web.routes:Constructing full table name: iceberg.ingestor2.refactor_test_003 from catalog: iceberg, schema: ingestor2, table: refactor_test_003
+INFO:csv_to_iceberg.storage.job_manager:get_job called for job_id: 9226e907-de59-4b50-a6c6-5b08c0d094fc
+INFO:werkzeug:198.18.240.120 - - [24/Apr/2025 20:55:56] "POST /convert HTTP/1.1" 302 -
+INFO:csv_to_iceberg.storage.job_manager:Job 9226e907-de59-4b50-a6c6-5b08c0d094fc found in memory cache
+INFO:csv_to_iceberg.storage.job_manager:get_job called for job_id: 9226e907-de59-4b50-a6c6-5b08c0d094fc
+INFO:csv_to_iceberg.storage.job_manager:Job 9226e907-de59-4b50-a6c6-5b08c0d094fc found in memory cache
+INFO:csv_to_iceberg.storage.job_manager:get_job called for job_id: 9226e907-de59-4b50-a6c6-5b08c0d094fc
+INFO:csv_to_iceberg.storage.job_manager:Job 9226e907-de59-4b50-a6c6-5b08c0d094fc found in memory cache
+INFO:csv_to_iceberg.connectors.trino_client:Connecting to Trino at sep.sdp-dev.pd.switchnet.nv:443 as user 'admin' with authentication
+INFO:csv_to_iceberg.connectors.trino_client:Using Trino role: sysadmin
+INFO:csv_to_iceberg.connectors.trino_client:Successfully connected to Trino at sep.sdp-dev.pd.switchnet.nv:443
+INFO:csv_to_iceberg.core.iceberg_writer:CSV file has 525 rows
+INFO:csv_to_iceberg.core.iceberg_writer:Processing CSV file in batch mode (batch size: 20000)
+INFO:csv_to_iceberg.core.iceberg_writer:Write mode: append
+INFO:csv_to_iceberg.core.iceberg_writer:Writing batch of 525 rows to iceberg.ingestor2.refactor_test_003 in append mode
+INFO:csv_to_iceberg.core.iceberg_writer:Fetching and caching schema for iceberg.ingestor2.refactor_test_003
+INFO:csv_to_iceberg.connectors.trino_client:Fetching schema for iceberg.ingestor2.refactor_test_003
+INFO:csv_to_iceberg.connectors.trino_client:Executing query on Trino: 
+            SELECT column_name, data_type 
+            FROM iceberg.information_schema.columns 
+            WHERE table_catalog = 'iceberg' 
+              AND table_schema = 'ingestor2' 
+              AND table_name = 'refactor_test_003'
+            ORDER BY ordinal_position
+            
+INFO:werkzeug:198.18.240.120 - - [24/Apr/2025 20:55:56] "GET /jobs HTTP/1.1" 200 -
+/usr/src/app/feature-branches/refactor/csv2iceberg/lib/python3.12/site-packages/urllib3/connectionpool.py:1013: InsecureRequestWarning: Unverified HTTPS request is being made to host 'sep.sdp-dev.pd.switchnet.nv'. Adding certificate verification is strongly advised. See: https://urllib3.readthedocs.io/en/1.26.x/advanced-usage.html#ssl-warnings
+  warnings.warn(
+/usr/src/app/feature-branches/refactor/csv2iceberg/lib/python3.12/site-packages/urllib3/connectionpool.py:1013: InsecureRequestWarning: Unverified HTTPS request is being made to host 'sep.sdp-dev.pd.switchnet.nv'. Adding certificate verification is strongly advised. See: https://urllib3.readthedocs.io/en/1.26.x/advanced-usage.html#ssl-warnings
+  warnings.warn(
+/usr/src/app/feature-branches/refactor/csv2iceberg/lib/python3.12/site-packages/urllib3/connectionpool.py:1013: InsecureRequestWarning: Unverified HTTPS request is being made to host 'sep.sdp-dev.pd.switchnet.nv'. Adding certificate verification is strongly advised. See: https://urllib3.readthedocs.io/en/1.26.x/advanced-usage.html#ssl-warnings
+  warnings.warn(
+/usr/src/app/feature-branches/refactor/csv2iceberg/lib/python3.12/site-packages/urllib3/connectionpool.py:1013: InsecureRequestWarning: Unverified HTTPS request is being made to host 'sep.sdp-dev.pd.switchnet.nv'. Adding certificate verification is strongly advised. See: https://urllib3.readthedocs.io/en/1.26.x/advanced-usage.html#ssl-warnings
+  warnings.warn(
+/usr/src/app/feature-branches/refactor/csv2iceberg/lib/python3.12/site-packages/urllib3/connectionpool.py:1013: InsecureRequestWarning: Unverified HTTPS request is being made to host 'sep.sdp-dev.pd.switchnet.nv'. Adding certificate verification is strongly advised. See: https://urllib3.readthedocs.io/en/1.26.x/advanced-usage.html#ssl-warnings
+  warnings.warn(
+/usr/src/app/feature-branches/refactor/csv2iceberg/lib/python3.12/site-packages/urllib3/connectionpool.py:1013: InsecureRequestWarning: Unverified HTTPS request is being made to host 'sep.sdp-dev.pd.switchnet.nv'. Adding certificate verification is strongly advised. See: https://urllib3.readthedocs.io/en/1.26.x/advanced-usage.html#ssl-warnings
+  warnings.warn(
+INFO:csv_to_iceberg.connectors.trino_client:Query returned 0 rows
+INFO:csv_to_iceberg.connectors.trino_client:Cached schema for iceberg.ingestor2.refactor_test_003: 0 columns
+WARNING:csv_to_iceberg.core.iceberg_writer:Retrieved empty schema for iceberg.ingestor2.refactor_test_003
+INFO:csv_to_iceberg.core.iceberg_writer:Dynamically adjusted max rows per INSERT: 100 (for 24 columns)
+INFO:csv_to_iceberg.core.iceberg_writer:Target schema metadata unavailable - inferring types from data
+ERROR:csv_to_iceberg.core.iceberg_writer:Error in _write_batch_to_iceberg: tuple indices must be integers or slices, not str
+Traceback (most recent call last):
+  File "/usr/src/app/feature-branches/refactor/csv2iceberg/csv_to_iceberg/core/iceberg_writer.py", line 345, in _write_batch_to_iceberg
+    sample_val = sample_row[col]
+                 ~~~~~~~~~~^^^^^
+TypeError: tuple indices must be integers or slices, not str
+ERROR:csv_to_iceberg.core.iceberg_writer:Error writing CSV to Iceberg: Failed to write batch to Iceberg: tuple indices must be integers or slices, not str
+Traceback (most recent call last):
+  File "/usr/src/app/feature-branches/refactor/csv2iceberg/csv_to_iceberg/core/iceberg_writer.py", line 345, in _write_batch_to_iceberg
+    sample_val = sample_row[col]
+                 ~~~~~~~~~~^^^^^
+TypeError: tuple indices must be integers or slices, not str
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/usr/src/app/feature-branches/refactor/csv2iceberg/csv_to_iceberg/core/iceberg_writer.py", line 168, in write_csv_to_iceberg
+    self._write_batch_to_iceberg(batch, current_mode)
+  File "/usr/src/app/feature-branches/refactor/csv2iceberg/csv_to_iceberg/core/iceberg_writer.py", line 554, in _write_batch_to_iceberg
+    raise RuntimeError(f"Failed to write batch to Iceberg: {str(e)}")
+RuntimeError: Failed to write batch to Iceberg: tuple indices must be integers or slices, not str
+ERROR:csv_to_iceberg.core.conversion_service:Error during conversion: Failed to write CSV to Iceberg: Failed to write batch to Iceberg: tuple indices must be integers or slices, not str
+Traceback (most recent call last):
+  File "/usr/src/app/feature-branches/refactor/csv2iceberg/csv_to_iceberg/core/iceberg_writer.py", line 345, in _write_batch_to_iceberg
+    sample_val = sample_row[col]
+                 ~~~~~~~~~~^^^^^
+TypeError: tuple indices must be integers or slices, not str
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/usr/src/app/feature-branches/refactor/csv2iceberg/csv_to_iceberg/core/iceberg_writer.py", line 168, in write_csv_to_iceberg
+    self._write_batch_to_iceberg(batch, current_mode)
+  File "/usr/src/app/feature-branches/refactor/csv2iceberg/csv_to_iceberg/core/iceberg_writer.py", line 554, in _write_batch_to_iceberg
+    raise RuntimeError(f"Failed to write batch to Iceberg: {str(e)}")
+RuntimeError: Failed to write batch to Iceberg: tuple indices must be integers or slices, not str
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/usr/src/app/feature-branches/refactor/csv2iceberg/csv_to_iceberg/core/conversion_service.py", line 130, in convert_csv_to_iceberg
+    rows_written = writer.write_csv_to_iceberg(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/src/app/feature-branches/refactor/csv2iceberg/csv_to_iceberg/core/iceberg_writer.py", line 189, in write_csv_to_iceberg
+    raise RuntimeError(f"Failed to write CSV to Iceberg: {str(e)}")
+RuntimeError: Failed to write CSV to Iceberg: Failed to write batch to Iceberg: tuple indices must be integers or slices, not str

@@ -340,15 +340,30 @@ class IcebergWriter:
                         # Get the value from the sample row for this column
                         try:
                             if sample_row is not None:
-                                if hasattr(sample_row, '__getitem__'):
+                                if isinstance(sample_row, dict):
                                     # Dictionary-like row (Polars to_dicts)
                                     sample_val = sample_row[col]
+                                elif isinstance(sample_row, tuple) and isinstance(j, int):
+                                    # Polars row as tuple
+                                    sample_val = sample_row[j] if j < len(sample_row) else None
+                                elif hasattr(sample_row, '__getitem__'):
+                                    # Pandas Series or other indexed object
+                                    try:
+                                        sample_val = sample_row[col]
+                                    except TypeError:
+                                        # If column name indexing fails, try positional
+                                        if isinstance(j, int) and j < len(sample_row):
+                                            sample_val = sample_row[j]
+                                        else:
+                                            sample_val = None
                                 else:
-                                    # Pandas Series
-                                    sample_val = sample_row[col]
+                                    # Unsupported row type
+                                    self.logger.warning(f"Unsupported row type: {type(sample_row)}")
+                                    sample_val = None
                             else:
                                 sample_val = None
-                        except (KeyError, IndexError):
+                        except (KeyError, IndexError, TypeError) as e:
+                            self.logger.warning(f"Error accessing sample value for column {col}: {str(e)}")
                             sample_val = None
                         
                         # Try to infer type from the value
@@ -406,12 +421,30 @@ class IcebergWriter:
                     row_values = []
                     for idx, col in enumerate(columns):
                         # Get value based on DataFrame type
-                        if hasattr(row, '__getitem__'):
-                            # Dictionary-like row (Polars to_dicts)
-                            val = row[col]
-                        else:
-                            # Pandas Series
-                            val = row[col]
+                        try:
+                            if isinstance(row, dict):
+                                # Dictionary-like row (Polars to_dicts)
+                                val = row[col]
+                            elif isinstance(row, tuple) and idx < len(row):
+                                # Polars row as tuple
+                                val = row[idx]
+                            elif hasattr(row, '__getitem__'):
+                                # Pandas Series or other indexed object
+                                try:
+                                    val = row[col]
+                                except TypeError:
+                                    # If column name indexing fails, try positional
+                                    if isinstance(idx, int) and idx < len(row):
+                                        val = row[idx]
+                                    else:
+                                        val = None
+                            else:
+                                # Unsupported row type
+                                logger.warning(f"Unsupported row type in VALUES generation: {type(row)}")
+                                val = None
+                        except (KeyError, IndexError, TypeError) as e:
+                            logger.warning(f"Error accessing value for column {col}: {str(e)}")
+                            val = None
                             
                         # Get type from our position-based mapping
                         target_type = column_types_by_position[idx] if idx < len(column_types_by_position) else "VARCHAR"
