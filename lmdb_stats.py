@@ -5,19 +5,15 @@ This module provides functions to gather statistics and information about
 the LMDB databases used by the application.
 """
 import os
+import json
 import shutil
 import tempfile
 from typing import Dict, Any, Optional
 
-try:
-    import lmdb
-    LMDB_AVAILABLE = True
-except ImportError:
-    LMDB_AVAILABLE = False
+import lmdb
 
-# Get the paths from the storage modules
-from csv_to_iceberg.storage.lmdb_job_store import DEFAULT_LMDB_PATH as JOB_STORE_PATH
-from csv_to_iceberg.storage.lmdb_config_manager import DEFAULT_LMDB_PATH as CONFIG_STORE_PATH
+from lmdb_job_store import DEFAULT_LMDB_PATH as JOB_STORE_PATH
+from lmdb_config_manager import DEFAULT_LMDB_PATH as CONFIG_STORE_PATH
 
 
 def get_formatted_size(size_bytes: int) -> str:
@@ -51,7 +47,7 @@ def count_lmdb_entries(env_path: str, db_name: str = None) -> int:
     Returns:
         Number of entries in the database or 0 if database doesn't exist
     """
-    if not LMDB_AVAILABLE or not os.path.exists(env_path):
+    if not os.path.exists(env_path):
         return 0
         
     try:
@@ -94,7 +90,7 @@ def get_lmdb_info(env_path: str) -> Dict[str, Any]:
         'disk_total_formatted': '0 B'
     }
     
-    # Get disk space information for the drive containing the database
+    # Get disk space information
     try:
         disk_usage = shutil.disk_usage(os.path.dirname(env_path))
         result['disk_total'] = disk_usage.total
@@ -106,10 +102,10 @@ def get_lmdb_info(env_path: str) -> Dict[str, Any]:
     except Exception:
         pass
     
-    if not result['exists'] or not LMDB_AVAILABLE:
+    if not result['exists']:
         return result
         
-    # Get database size on disk
+    # Get database size
     try:
         size = 0
         for dirpath, dirnames, filenames in os.walk(env_path):
@@ -151,7 +147,7 @@ def get_system_info() -> Dict[str, Any]:
     }
 
 
-def get_all_storage_stats() -> Dict[str, Any]:
+def get_all_stats() -> Dict[str, Any]:
     """Get all LMDB statistics.
     
     Returns:
@@ -161,5 +157,10 @@ def get_all_storage_stats() -> Dict[str, Any]:
         'job_store': get_lmdb_info(JOB_STORE_PATH),
         'config_store': get_lmdb_info(CONFIG_STORE_PATH),
         'system': get_system_info(),
-        'lmdb_available': LMDB_AVAILABLE
+        'lmdb_available': True
     }
+
+
+if __name__ == "__main__":
+    # Print stats when run directly
+    print(json.dumps(get_all_stats(), indent=2))
