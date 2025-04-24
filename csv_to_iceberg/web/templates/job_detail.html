@@ -207,8 +207,23 @@
 {% if job.status == 'running' or job.status == 'pending' %}
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    // Get start time from job
-    const startTime = new Date('{{ job.created_at_iso }}');
+    // Get start time from job and validate it
+    let startTime;
+    try {
+        startTime = new Date('{{ job.created_at_iso }}');
+        // Check if date is valid 
+        if (isNaN(startTime.getTime())) {
+            console.error("Invalid date format from server:", '{{ job.created_at_iso }}');
+            // Use a fallback current time
+            startTime = new Date();
+        }
+    } catch (error) {
+        console.error("Error parsing date:", error);
+        // Use a fallback current time
+        startTime = new Date();
+    }
+    
+    console.log("Using start time:", startTime);
     const elapsedTimeElement = document.getElementById('elapsed-time');
     
     // Function to format elapsed time as HH:MM:SS
