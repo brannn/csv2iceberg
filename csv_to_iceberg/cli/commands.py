@@ -263,5 +263,8 @@ def parse_table_name(table_name: str) -> Tuple[Optional[str], Optional[str], Opt
         return None, None, None
     return parts[0], parts[1], parts[2]
 
+# Export the CLI function as main for easy importing
+main = cli
+
 if __name__ == '__main__':
     cli()
