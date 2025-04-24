@@ -290,7 +290,12 @@ document.addEventListener('DOMContentLoaded', function() {
                 const option = document.createElement('option');
                 option.value = type;
                 option.textContent = type;
-                if (column.type.toLowerCase().includes(type.toLowerCase())) {
+                
+                // Match the type more precisely - exact match with the start of the type string
+                // This handles cases like 'decimal(10,2)' matching with 'decimal'
+                if (type === column.type || 
+                    (column.type.startsWith(type) && 
+                     (type === 'decimal' || type === column.type))) {
                     option.selected = true;
                 }
                 typeSelect.appendChild(option);
