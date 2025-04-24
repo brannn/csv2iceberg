@@ -1,0 +1,90 @@
+jinja2.exceptions.UndefinedError: 'format_duration' is undefined
+
+Traceback (most recent call last)
+File
+"/usr/src/app/feature-branches/refactor/csv2iceberg/lib/python3.12/site-packages/flask/app.py"
+
+, line 1536, in __call__
+return self.wsgi_app(environ, start_response)
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+File
+"/usr/src/app/feature-branches/refactor/csv2iceberg/lib/python3.12/site-packages/flask/app.py"
+
+, line 1514, in wsgi_app
+response = self.handle_exception(e)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+File
+"/usr/src/app/feature-branches/refactor/csv2iceberg/lib/python3.12/site-packages/flask/app.py"
+
+, line 1511, in wsgi_app
+response = self.full_dispatch_request()
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+File
+"/usr/src/app/feature-branches/refactor/csv2iceberg/lib/python3.12/site-packages/flask/app.py"
+
+, line 919, in full_dispatch_request
+rv = self.handle_user_exception(e)
+     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+File
+"/usr/src/app/feature-branches/refactor/csv2iceberg/lib/python3.12/site-packages/flask/app.py"
+
+, line 917, in full_dispatch_request
+rv = self.dispatch_request()
+     ^^^^^^^^^^^^^^^^^^^^^^^
+File
+"/usr/src/app/feature-branches/refactor/csv2iceberg/lib/python3.12/site-packages/flask/app.py"
+
+, line 902, in dispatch_request
+return self.ensure_sync(self.view_functions[rule.endpoint])(**view_args)  # type: ignore[no-any-return]
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+File
+"/usr/src/app/feature-branches/refactor/csv2iceberg/csv_to_iceberg/web/routes.py"
+
+, line 345, in jobs
+return render_template('jobs.html', jobs=jobs_sorted)
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+File
+"/usr/src/app/feature-branches/refactor/csv2iceberg/lib/python3.12/site-packages/flask/templating.py"
+
+, line 150, in render_template
+return _render(app, template, context)
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+File
+"/usr/src/app/feature-branches/refactor/csv2iceberg/lib/python3.12/site-packages/flask/templating.py"
+
+, line 131, in _render
+rv = template.render(context)
+     ^^^^^^^^^^^^^^^^^^^^^^^^
+File
+"/usr/src/app/feature-branches/refactor/csv2iceberg/lib/python3.12/site-packages/jinja2/environment.py"
+
+, line 1295, in render
+self.environment.handle_exception()
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+File
+"/usr/src/app/feature-branches/refactor/csv2iceberg/lib/python3.12/site-packages/jinja2/environment.py"
+
+, line 942, in handle_exception
+raise rewrite_traceback_stack(source=source)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+File
+"/usr/src/app/feature-branches/refactor/csv2iceberg/csv_to_iceberg/web/templates/jobs.html"
+
+, line 1, in top-level template code
+{% extends 'base.html' %}
+File
+"/usr/src/app/feature-branches/refactor/csv2iceberg/csv_to_iceberg/web/templates/base.html"
+
+, line 66, in top-level template code
+{% block content %}{% endblock %}
+File
+"/usr/src/app/feature-branches/refactor/csv2iceberg/csv_to_iceberg/web/templates/jobs.html"
+
+, line 63, in block 'content'
+{{ format_duration(job.started_at, job.completed_at) }}
+File
+"/usr/src/app/feature-branches/refactor/csv2iceberg/lib/python3.12/site-packages/jinja2/utils.py"
+
+, line 92, in from_obj
+if hasattr(obj, "jinja_pass_arg"):
+   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

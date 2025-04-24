@@ -9,10 +9,73 @@ from werkzeug.utils import secure_filename
 import os
 import json
 import uuid
-import datetime
+from datetime import datetime, timedelta
 import tempfile
 import logging
 import threading
+
+# Utility functions for templates
+def format_datetime(timestamp):
+    """Format a timestamp for display."""
+    if not timestamp:
+        return "N/A"
+    if isinstance(timestamp, (int, float)):
+        dt = datetime.fromtimestamp(timestamp)
+    else:
+        dt = timestamp
+    return dt.strftime("%Y-%m-%d %H:%M:%S")
+
+def format_duration(duration=None, start_time=None, end_time=None):
+    """Format a duration or calculate it from start and end times."""
+    if duration is not None:
+        # If duration is directly provided
+        seconds = duration
+    elif start_time and end_time:
+        # Calculate duration from start and end times
+        if isinstance(start_time, (int, float)) and isinstance(end_time, (int, float)):
+            seconds = end_time - start_time
+        elif isinstance(start_time, datetime) and isinstance(end_time, datetime):
+            seconds = (end_time - start_time).total_seconds()
+        else:
+            return "N/A"
+    else:
+        return "N/A"
+    
+    # Convert seconds to a human-readable format
+    if seconds < 60:
+        return f"{seconds:.1f} seconds"
+    elif seconds < 3600:
+        minutes = seconds / 60
+        return f"{minutes:.1f} minutes"
+    else:
+        hours = seconds / 3600
+        return f"{hours:.2f} hours"
+
+def format_status(status):
+    """Format a job status for display."""
+    if status == "completed":
+        return "Completed"
+    elif status == "failed":
+        return "Failed"
+    elif status == "running":
+        return "Running"
+    else:
+        return status.capitalize() if status else "Unknown"
+
+def format_size(size_bytes):
+    """Format file size in a human-readable format."""
+    if not size_bytes:
+        return "0 B"
+    
+    units = ['B', 'KB', 'MB', 'GB', 'TB']
+    size = float(size_bytes)
+    unit_index = 0
+    
+    while size >= 1024 and unit_index < len(units) - 1:
+        size /= 1024
+        unit_index += 1
+    
+    return f"{size:.2f} {units[unit_index]}"
 import sys
 import traceback
 from typing import Dict, Any, List, Optional, Tuple
