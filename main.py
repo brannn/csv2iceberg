@@ -89,7 +89,7 @@ def run_conversion(job_id, file_path, params):
     try:
         # Get server URL from current environment
         server_host = os.environ.get('HOST', 'localhost')
-        server_port = os.environ.get('PORT', '5000')
+        server_port = os.environ.get('PORT', '5001')
         server_url = f"http://{server_host}:{server_port}"
         
         # Handle schema customization if present
@@ -1239,4 +1239,4 @@ if __name__ == '__main__':
     os.makedirs('templates', exist_ok=True)
     
     # Run the app
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    app.run(host='0.0.0.0', port=5001, debug=True)

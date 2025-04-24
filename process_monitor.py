@@ -51,7 +51,7 @@ def report_progress(job_id, percent, api_url):
     except Exception as e:
         logger.error(f"Error reporting progress for job {job_id}: {str(e)}")
 
-def monitor_process(job_id, cmd, api_url="http://localhost:5000"):
+def monitor_process(job_id, cmd, api_url="http://localhost:5001"):
     """
     Run a subprocess and monitor its output for progress information.
     
@@ -129,7 +129,7 @@ def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(description="Monitor CSV to Iceberg conversion progress")
     parser.add_argument("--job-id", required=True, help="Conversion job ID")
-    parser.add_argument("--api-url", default="http://localhost:5000", help="Base URL of the web application API")
+    parser.add_argument("--api-url", default="http://localhost:5001", help="Base URL of the web application API")
     parser.add_argument("command", nargs=argparse.REMAINDER, help="Command to run and monitor")
     
     args = parser.parse_args()
