@@ -158,69 +158,61 @@ def convert():
             # Run the job in a background thread
             def run_conversion_job():
                 try:
-                    # Import here to avoid circular imports
-                    from csv_to_iceberg.core.iceberg_writer import IcebergWriter
-                    from csv_to_iceberg.connectors.trino_client import TrinoClient
-                    from csv_to_iceberg.connectors.hive_client import HiveMetastoreClient
+                    # Import the centralized conversion service
+                    from csv_to_iceberg.core.conversion_service import convert_csv_to_iceberg
                     
                     job_manager.update_job_progress(job_id, 0)
                     
-                    # Create Trino client
-                    trino_client = TrinoClient(
-                        host=job_params['trino_host'],
-                        port=job_params['trino_port'],
-                        user=job_params['trino_user'],
-                        password=job_params['trino_password'],
-                        http_scheme=job_params['http_scheme'],
-                        role=job_params['trino_role']
-                    )
-                    
-                    # Create Hive client if needed
-                    hive_client = None
-                    if job_params['use_hive_metastore']:
-                        hive_client = HiveMetastoreClient(job_params['hive_metastore_uri'])
-                    
-                    # Create Iceberg writer
-                    table_parts = job_params['table_name'].split('.')
-                    if len(table_parts) == 3:
-                        catalog, schema, table = table_parts
-                    elif len(table_parts) == 2:
-                        catalog = job_params['trino_catalog']
-                        schema, table = table_parts
-                    else:
-                        catalog = job_params['trino_catalog']
-                        schema = job_params['trino_schema']
-                        table = job_params['table_name']
-                    
-                    writer = IcebergWriter(
-                        trino_client=trino_client,
-                        catalog=catalog,
-                        schema=schema,
-                        table=table,
-                        hive_client=hive_client
-                    )
-                    
-                    # Progress callback
+                    # Progress callback function
                     def update_progress(percent):
                         job_manager.update_job_progress(job_id, percent)
                     
-                    # Write CSV to Iceberg
-                    writer.write_csv_to_iceberg(
+                    # Run the conversion using our centralized service
+                    result = convert_csv_to_iceberg(
+                        # File parameters
                         csv_file=job_params['csv_file'],
-                        mode=job_params['mode'],
+                        table_name=job_params['table_name'],
+                        
+                        # Connection parameters
+                        trino_host=job_params['trino_host'],
+                        trino_port=job_params['trino_port'],
+                        trino_user=job_params['trino_user'],
+                        trino_password=job_params['trino_password'],
+                        http_scheme=job_params['http_scheme'],
+                        trino_role=job_params['trino_role'],
+                        trino_catalog=job_params['trino_catalog'],
+                        trino_schema=job_params['trino_schema'],
+                        use_hive_metastore=job_params['use_hive_metastore'],
+                        hive_metastore_uri=job_params['hive_metastore_uri'],
+                        
+                        # CSV handling parameters
                         delimiter=job_params['delimiter'],
-                        has_header=job_params['has_header'],
                         quote_char=job_params['quote_char'],
+                        has_header=job_params['has_header'],
                         batch_size=job_params['batch_size'],
+                        
+                        # Schema/data parameters
+                        mode=job_params['mode'],
+                        sample_size=job_params['sample_size'],
                         include_columns=job_params['include_columns'],
                         exclude_columns=job_params['exclude_columns'],
+                        custom_schema=job_params['custom_schema'],
+                        
+                        # Progress callback
                         progress_callback=update_progress
                     )
                     
-                    # Mark job as completed
-                    job_manager.mark_job_completed(job_id, success=True)
+                    # Handle the result
+                    if result['success']:
+                        # Update job with row count
+                        job_manager.update_job(job_id, {'rows_processed': result['rows_processed']})
+                        # Mark job as completed
+                        job_manager.mark_job_completed(job_id, success=True)
+                    else:
+                        # Mark job as failed with error
+                        job_manager.mark_job_completed(job_id, success=False, error=result['error'])
                     
-                    # Clean up temporary file
+                    # Clean up temporary file in either case
                     try:
                         os.remove(job_params['csv_file'])
                     except OSError:
@@ -231,7 +223,7 @@ def convert():
                     logger.error(f"Error in conversion job {job_id}: {error_msg}", exc_info=True)
                     job_manager.mark_job_completed(job_id, success=False, error=error_msg)
                     
-                    # Clean up temporary file on error too
+                    # Clean up temporary file on error
                     try:
                         os.remove(job_params['csv_file'])
                     except OSError:
