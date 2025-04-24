@@ -135,11 +135,6 @@
 
             <div class="d-flex gap-2">
                 <a href="{{ url_for('profiles') }}" class="btn btn-outline-secondary">Back to Profiles</a>
-                {% if status.storage_type == 'LMDB' %}
-                    <a href="{{ url_for('toggle_storage_mode', mode='json') }}" class="btn btn-primary">Switch to JSON Storage</a>
-                {% else %}
-                    <a href="{{ url_for('toggle_storage_mode', mode='lmdb') }}" class="btn btn-info">Switch to LMDB Storage</a>
-                {% endif %}
             </div>
         </div>
     </div>

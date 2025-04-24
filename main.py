@@ -13,20 +13,19 @@ from collections import OrderedDict
 from utils import setup_logging
 from config_manager import ConfigManager
 
-# LMDB support (feature flag controlled)
-USE_LMDB = os.environ.get("USE_LMDB_STORAGE", "true").lower() == "true"
+# LMDB is our permanent storage solution
+USE_LMDB = True
 LMDB_IMPORTED = False
 
 try:
     from lmdb_config_manager import LMDBConfigManager
     LMDB_IMPORTED = True
     logger = logging.getLogger("csv_to_iceberg")
-    if USE_LMDB:
-        logger.info("Using LMDB for configuration storage")
+    logger.info("Using LMDB for configuration storage")
 except ImportError:
     USE_LMDB = False
     logger = logging.getLogger("csv_to_iceberg")
-    logger.warning("Failed to import LMDB modules, falling back to JSON storage")
+    logger.warning("Failed to import LMDB modules, falling back to JSON storage as a last resort")
 
 # Set up logging
 logger = setup_logging()
@@ -47,8 +46,8 @@ else:
 @app.before_request
 def set_session_defaults():
     """Set default session variables."""
-    if 'USE_LMDB' not in session:
-        session['USE_LMDB'] = USE_LMDB
+    # Always set USE_LMDB to True as it's our permanent storage solution
+    session['USE_LMDB'] = True
 
 # Configure upload folder
 UPLOAD_FOLDER = tempfile.mkdtemp()
@@ -1163,165 +1162,33 @@ def profile_use(name):
 @app.route('/admin/storage/status')
 def storage_status():
     """Show the current storage status."""
-    global config_manager, USE_LMDB
-    
-    # Get profile names for comparison
+    # Get profile names
     profile_names = [p['name'] for p in config_manager.get_profiles()]
-    
-    # Get session info
-    session_storage = "LMDB" if session.get('USE_LMDB', False) else "JSON"
     
     # Get information about temp and cache directories
     temp_dir = tempfile.gettempdir()
     home_dir = os.path.expanduser("~")
     
-    # Check both storage backends if LMDB is available
-    other_storage_profiles = []
-    if LMDB_IMPORTED:
-        # Create a temporary instance of the other storage type
-        if USE_LMDB:
-            # We're using LMDB, so check JSON
-            other_storage = ConfigManager()
-            other_type = "JSON"
-        else:
-            # We're using JSON, so check LMDB
-            other_storage = LMDBConfigManager()
-            other_type = "LMDB"
-            
-        # Get profiles from other storage
-        try:
-            other_profiles = other_storage.get_profiles()
-            other_storage_profiles = [p['name'] for p in other_profiles]
-        except Exception as e:
-            other_storage_profiles = [f"Error: {str(e)}"]
-    
-    # Get path constants from appropriate modules
-    if LMDB_IMPORTED:
-        from lmdb_config_manager import DEFAULT_LMDB_PATH
-        default_lmdb_path = DEFAULT_LMDB_PATH
-    else:
-        default_lmdb_path = "~/.csv_to_iceberg/lmdb_config"
-    
-    # Get JSON config path from ConfigManager module
-    from config_manager import DEFAULT_CONFIG_FILE as JSON_CONFIG_FILE
+    # Get path constants
+    from lmdb_config_manager import DEFAULT_LMDB_PATH
     
     status = {
-        "storage_type": "LMDB" if USE_LMDB else "JSON",
-        "session_storage_type": session_storage,
-        "lmdb_available": LMDB_IMPORTED,
+        "storage_type": "LMDB",
+        "session_storage_type": "LMDB",
+        "lmdb_available": True,
         "current_profiles": profile_names,
         "current_profiles_count": len(profile_names),
-        "other_storage_profiles": other_storage_profiles,
-        "environment_variable": os.environ.get("USE_LMDB_STORAGE", "false"),
+        "other_storage_profiles": [],
+        "environment_variable": "true",
         "temp_directory": temp_dir,
         "home_directory": home_dir,
-        "lmdb_config_path": os.path.expanduser(default_lmdb_path),
-        "json_config_path": os.path.expanduser(JSON_CONFIG_FILE)
+        "lmdb_config_path": os.path.expanduser(DEFAULT_LMDB_PATH),
+        "json_config_path": "Not used"
     }
     
     return render_template('storage_status.html', status=status)
 
-@app.route('/admin/storage/<mode>')
-def toggle_storage_mode(mode):
-    """
-    Toggle between LMDB and JSON storage for profiles.
-    This is an admin feature for testing purposes.
-    
-    Args:
-        mode: Either 'lmdb' or 'json'
-    """
-    global config_manager, USE_LMDB
-    
-    if not LMDB_IMPORTED and mode == 'lmdb':
-        flash("LMDB modules are not available. Cannot switch to LMDB mode.", 'error')
-        return redirect(url_for('profiles'))
-    
-    if mode == 'lmdb' and not USE_LMDB:
-        # Switch to LMDB mode
-        USE_LMDB = True
-        os.environ["USE_LMDB_STORAGE"] = "true"
-        session['USE_LMDB'] = True
-        # Force session update
-        session.modified = True
-        
-        # Save current config manager to keep reference open for migration
-        old_config_manager = config_manager
-        
-        # Create new LMDB config manager
-        config_manager = LMDBConfigManager()
-        
-        # Migrate profiles if needed
-        try:
-            # Get existing profiles from JSON
-            profiles = old_config_manager.get_profiles()
-            migrated_count = 0
-            
-            # Add each profile to LMDB
-            for profile in profiles:
-                if config_manager.get_profile(profile['name']):
-                    logger.debug(f"Profile '{profile['name']}' already exists in LMDB")
-                    continue
-                    
-                if config_manager.add_profile(profile):
-                    migrated_count += 1
-                    logger.info(f"Migrated profile '{profile['name']}' to LMDB")
-                
-            # Set last used profile
-            last_used = old_config_manager.get_last_used_profile()
-            if last_used:
-                config_manager.set_last_used_profile(last_used['name'])
-            
-            flash(f"Switched to LMDB storage mode. Migrated {migrated_count} profiles.", 'success')
-        except Exception as e:
-            logger.error(f"Error migrating profiles to LMDB: {str(e)}", exc_info=True)
-            flash(f"Error migrating profiles to LMDB: {str(e)}", 'error')
-    
-    elif mode == 'json' and USE_LMDB:
-        # Switch to JSON mode
-        USE_LMDB = False
-        os.environ["USE_LMDB_STORAGE"] = "false"
-        session['USE_LMDB'] = False
-        # Force session update
-        session.modified = True
-        
-        # Save current config manager to keep reference open for migration
-        old_config_manager = config_manager
-        
-        # Create new JSON config manager
-        config_manager = ConfigManager()
-        
-        # Migrate profiles if needed
-        try:
-            # Get existing profiles from LMDB
-            profiles = old_config_manager.get_profiles()
-            migrated_count = 0
-            
-            # Add each profile to JSON
-            for profile in profiles:
-                if config_manager.get_profile(profile['name']):
-                    logger.debug(f"Profile '{profile['name']}' already exists in JSON")
-                    continue
-                    
-                if config_manager.add_profile(profile):
-                    migrated_count += 1
-                    logger.info(f"Migrated profile '{profile['name']}' to JSON")
-                
-            # Set last used profile
-            last_used = old_config_manager.get_last_used_profile()
-            if last_used:
-                config_manager.set_last_used_profile(last_used['name'])
-            
-            flash(f"Switched to JSON storage mode. Migrated {migrated_count} profiles.", 'success')
-        except Exception as e:
-            logger.error(f"Error migrating profiles to JSON: {str(e)}", exc_info=True)
-            flash(f"Error migrating profiles to JSON: {str(e)}", 'error')
-    
-    else:
-        # Already in the requested mode
-        current_mode = "LMDB" if USE_LMDB else "JSON"
-        flash(f"Already using {current_mode} storage mode.", 'info')
-    
-    return redirect(url_for('profiles'))
+# Storage toggle route has been removed as LMDB is now the permanent storage solution
 
 if __name__ == '__main__':
     # Create templates directory if it doesn't exist
