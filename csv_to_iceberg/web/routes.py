@@ -500,8 +500,13 @@ def convert():
 @routes.route('/jobs')
 def jobs():
     """Render the jobs list page."""
-    logger.debug("Jobs route called")
+    logger.info("Jobs route called - retrieving all jobs from job manager")
     all_jobs = job_manager.get_all_jobs(limit=50, include_test_jobs=False)
+    
+    # Log info about retrieved jobs
+    logger.info(f"Retrieved {len(all_jobs)} jobs from job manager")
+    for i, job in enumerate(all_jobs):
+        logger.info(f"Job {i+1}: ID={job.get('id')}, Status={job.get('status')}, Created={job.get('created_at')}")
     
     # Sort jobs by creation time, newest first
     jobs_sorted = sorted(all_jobs, key=lambda j: j.get('created_at', 0), reverse=True)
