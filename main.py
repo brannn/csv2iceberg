@@ -43,6 +43,13 @@ if USE_LMDB:
 else:
     config_manager = ConfigManager()
 
+# Create a before_request handler to set session variables
+@app.before_request
+def set_session_defaults():
+    """Set default session variables."""
+    if 'USE_LMDB' not in session:
+        session['USE_LMDB'] = USE_LMDB
+
 # Configure upload folder
 UPLOAD_FOLDER = tempfile.mkdtemp()
 ALLOWED_EXTENSIONS = {'csv', 'txt'}
@@ -1207,6 +1214,20 @@ def profile_use(name):
     
     return redirect(url_for('profiles'))
 
+@app.route('/admin/storage/status')
+def storage_status():
+    """Show the current storage status."""
+    global config_manager, USE_LMDB
+    
+    status = {
+        "storage_type": "LMDB" if USE_LMDB else "JSON",
+        "lmdb_available": LMDB_IMPORTED,
+        "current_profiles_count": len(config_manager.get_profiles()),
+        "environment_variable": os.environ.get("USE_LMDB_STORAGE", "false")
+    }
+    
+    return jsonify(status)
+
 @app.route('/admin/storage/<mode>')
 def toggle_storage_mode(mode):
     """
@@ -1226,6 +1247,7 @@ def toggle_storage_mode(mode):
         # Switch to LMDB mode
         USE_LMDB = True
         os.environ["USE_LMDB_STORAGE"] = "true"
+        session['USE_LMDB'] = True
         
         # Save current config manager to keep reference open for migration
         old_config_manager = config_manager
@@ -1263,6 +1285,7 @@ def toggle_storage_mode(mode):
         # Switch to JSON mode
         USE_LMDB = False
         os.environ["USE_LMDB_STORAGE"] = "false"
+        session['USE_LMDB'] = False
         
         # Save current config manager to keep reference open for migration
         old_config_manager = config_manager
