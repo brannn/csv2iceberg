@@ -143,13 +143,47 @@
                                     <div class="form-check mb-2">
                                         <input class="form-check-input" type="checkbox" id="use_custom_schema" name="use_custom_schema" value="true">
                                         <label class="form-check-label" for="use_custom_schema">
-                                            Use custom schema
+                                            Customize column schema
                                         </label>
                                     </div>
                                     <div id="custom_schema_container" style="display: none;">
-                                        <label for="custom_schema" class="form-label">Custom Schema (JSON)</label>
-                                        <textarea class="form-control" id="custom_schema" name="custom_schema" rows="4"></textarea>
-                                        <div class="form-text">JSON schema to override automatic schema inference</div>
+                                        <!-- Schema preview section that will be filled by JavaScript -->
+                                        <div id="schema_preview_section" class="mb-3">
+                                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                                <h6 class="mb-0">Schema Preview</h6>
+                                                <div>
+                                                    <button type="button" id="analyze_csv_btn" class="btn btn-sm btn-primary me-2">
+                                                        Analyze CSV
+                                                    </button>
+                                                    <button type="button" id="add_column_btn" class="btn btn-sm btn-success">
+                                                        Add Column
+                                                    </button>
+                                                </div>
+                                            </div>
+                                            <div class="alert alert-info" id="schema_preview_placeholder">
+                                                Click "Analyze CSV" to infer schema from your file
+                                            </div>
+                                            <div id="schema_preview_table_container" style="display: none;">
+                                                <div class="table-responsive">
+                                                    <table class="table table-sm table-hover" id="schema_preview_table">
+                                                        <thead>
+                                                            <tr>
+                                                                <th>Column Name</th>
+                                                                <th>Data Type</th>
+                                                                <th>Required</th>
+                                                                <th>Actions</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody id="schema_columns_body">
+                                                            <!-- Will be filled by JavaScript -->
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        
+                                        <!-- Hidden input field to store the schema JSON -->
+                                        <input type="hidden" id="custom_schema" name="custom_schema">
                                     </div>
                                 </div>
                             </div>
@@ -192,6 +226,195 @@ document.addEventListener('DOMContentLoaded', function() {
         } else {
             customSchemaContainer.style.display = 'none';
         }
+    });
+    
+    // Schema analysis and editing
+    const analyzeCsvBtn = document.getElementById('analyze_csv_btn');
+    const addColumnBtn = document.getElementById('add_column_btn');
+    const schemaPreviewPlaceholder = document.getElementById('schema_preview_placeholder');
+    const schemaPreviewTableContainer = document.getElementById('schema_preview_table_container');
+    const schemaColumnsBody = document.getElementById('schema_columns_body');
+    const customSchemaInput = document.getElementById('custom_schema');
+    
+    // Array to store the schema columns
+    let schemaColumns = [];
+    
+    // Available Iceberg types
+    const icebergTypes = [
+        'boolean',
+        'int',
+        'long',
+        'float',
+        'double',
+        'decimal(38,18)',
+        'date',
+        'timestamp',
+        'string'
+    ];
+    
+    // Update the hidden input with the current schema
+    function updateSchemaJson() {
+        customSchemaInput.value = JSON.stringify(schemaColumns);
+    }
+    
+    // Render the schema table
+    function renderSchemaTable() {
+        // Clear the table
+        schemaColumnsBody.innerHTML = '';
+        
+        // Add a row for each column
+        schemaColumns.forEach((column, index) => {
+            const row = document.createElement('tr');
+            
+            // Column name cell
+            const nameCell = document.createElement('td');
+            const nameInput = document.createElement('input');
+            nameInput.type = 'text';
+            nameInput.className = 'form-control form-control-sm';
+            nameInput.value = column.name;
+            nameInput.dataset.index = index;
+            nameInput.addEventListener('change', function() {
+                schemaColumns[this.dataset.index].name = this.value;
+                updateSchemaJson();
+            });
+            nameCell.appendChild(nameInput);
+            
+            // Column type cell
+            const typeCell = document.createElement('td');
+            const typeSelect = document.createElement('select');
+            typeSelect.className = 'form-select form-select-sm';
+            typeSelect.dataset.index = index;
+            
+            // Add options for each type
+            icebergTypes.forEach(type => {
+                const option = document.createElement('option');
+                option.value = type;
+                option.textContent = type;
+                if (column.type.toLowerCase().includes(type.toLowerCase())) {
+                    option.selected = true;
+                }
+                typeSelect.appendChild(option);
+            });
+            
+            typeSelect.addEventListener('change', function() {
+                schemaColumns[this.dataset.index].type = this.value;
+                updateSchemaJson();
+            });
+            typeCell.appendChild(typeSelect);
+            
+            // Required checkbox cell
+            const requiredCell = document.createElement('td');
+            const requiredCheckbox = document.createElement('input');
+            requiredCheckbox.type = 'checkbox';
+            requiredCheckbox.className = 'form-check-input';
+            requiredCheckbox.checked = column.required;
+            requiredCheckbox.dataset.index = index;
+            requiredCheckbox.addEventListener('change', function() {
+                schemaColumns[this.dataset.index].required = this.checked;
+                updateSchemaJson();
+            });
+            requiredCell.appendChild(requiredCheckbox);
+            
+            // Actions cell
+            const actionsCell = document.createElement('td');
+            const deleteBtn = document.createElement('button');
+            deleteBtn.type = 'button';
+            deleteBtn.className = 'btn btn-sm btn-danger';
+            deleteBtn.textContent = 'Remove';
+            deleteBtn.dataset.index = index;
+            deleteBtn.addEventListener('click', function() {
+                schemaColumns.splice(this.dataset.index, 1);
+                renderSchemaTable();
+                updateSchemaJson();
+            });
+            actionsCell.appendChild(deleteBtn);
+            
+            // Add all cells to the row
+            row.appendChild(nameCell);
+            row.appendChild(typeCell);
+            row.appendChild(requiredCell);
+            row.appendChild(actionsCell);
+            
+            // Add the row to the table
+            schemaColumnsBody.appendChild(row);
+        });
+        
+        // Update the schema JSON
+        updateSchemaJson();
+        
+        // Show the table and hide the placeholder
+        if (schemaColumns.length > 0) {
+            schemaPreviewPlaceholder.style.display = 'none';
+            schemaPreviewTableContainer.style.display = 'block';
+        } else {
+            schemaPreviewPlaceholder.style.display = 'block';
+            schemaPreviewTableContainer.style.display = 'none';
+        }
+    }
+    
+    // Handle analyze CSV button click
+    analyzeCsvBtn.addEventListener('click', function() {
+        // Check if a file is selected
+        if (!csvFileInput.files || csvFileInput.files.length === 0) {
+            alert('Please select a CSV file first');
+            return;
+        }
+        
+        // Get form values
+        const delimiter = document.getElementById('delimiter').value;
+        const quoteChar = document.getElementById('quote_char').value;
+        const hasHeader = document.getElementById('has_header_yes').checked;
+        const sampleSize = document.getElementById('sample_size') ? document.getElementById('sample_size').value : 1000;
+        
+        // Create form data for the request
+        const formData = new FormData();
+        formData.append('csv_file', csvFileInput.files[0]);
+        formData.append('delimiter', delimiter);
+        formData.append('quote_char', quoteChar);
+        formData.append('has_header', hasHeader ? 'true' : 'false');
+        formData.append('sample_size', sampleSize);
+        
+        // Show loading state
+        schemaPreviewPlaceholder.textContent = 'Analyzing CSV file...';
+        schemaPreviewPlaceholder.style.display = 'block';
+        schemaPreviewTableContainer.style.display = 'none';
+        
+        // Send the request to the server
+        fetch('/analyze-csv', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.error) {
+                schemaPreviewPlaceholder.textContent = `Error: ${data.error}`;
+                schemaPreviewPlaceholder.className = 'alert alert-danger';
+            } else {
+                // Update the schema columns array
+                schemaColumns = data.schema;
+                
+                // Render the schema table
+                renderSchemaTable();
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            schemaPreviewPlaceholder.textContent = `Error: ${error.message}`;
+            schemaPreviewPlaceholder.className = 'alert alert-danger';
+        });
+    });
+    
+    // Handle add column button click
+    addColumnBtn.addEventListener('click', function() {
+        // Add a new column to the schema
+        schemaColumns.push({
+            name: `column_${schemaColumns.length + 1}`,
+            type: 'string',
+            required: false
+        });
+        
+        // Render the schema table
+        renderSchemaTable();
     });
     
     // Profile selector dynamic target fields

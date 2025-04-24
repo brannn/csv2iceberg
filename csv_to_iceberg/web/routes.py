@@ -54,6 +54,63 @@ def index():
     except Exception as e:
         logger.error(f"Error rendering index.html: {str(e)}", exc_info=True)
         return "Error rendering template. Check logs."
+    
+@routes.route('/analyze-csv', methods=['POST'])
+def analyze_csv():
+    """Analyze a CSV file and return its schema."""
+    logger.debug("Analyze CSV route called")
+    try:
+        if 'csv_file' not in request.files:
+            return jsonify({'error': 'No file provided'}), 400
+            
+        csv_file = request.files['csv_file']
+        if not csv_file or csv_file.filename == '':
+            return jsonify({'error': 'No file selected'}), 400
+            
+        # Get parameters
+        delimiter = request.form.get('delimiter', ',')
+        quote_char = request.form.get('quote_char', '"')
+        has_header = request.form.get('has_header') == 'true'
+        sample_size = int(request.form.get('sample_size', 1000))
+        
+        # Save the file temporarily
+        temp_dir = os.path.join(os.getcwd(), 'uploads')
+        os.makedirs(temp_dir, exist_ok=True)
+        
+        file_id = str(uuid.uuid4())
+        file_path = os.path.join(temp_dir, f'{file_id}_{secure_filename(csv_file.filename)}')
+        
+        csv_file.save(file_path)
+        
+        # Infer schema
+        schema = infer_schema_from_csv(
+            csv_file=file_path,
+            delimiter=delimiter,
+            quote_char=quote_char,
+            has_header=has_header,
+            sample_size=sample_size
+        )
+        
+        # Clean up the file
+        try:
+            os.remove(file_path)
+        except OSError:
+            logger.warning(f"Could not remove temporary file: {file_path}")
+            
+        # Convert the PyIceberg schema to a list of columns
+        columns = []
+        for field in schema.fields:
+            columns.append({
+                'name': field.name,
+                'type': str(field.field_type),
+                'required': not field.is_optional,
+            })
+            
+        return jsonify({'schema': columns}), 200
+        
+    except Exception as e:
+        logger.error(f"Error analyzing CSV: {str(e)}", exc_info=True)
+        return jsonify({'error': f'Error analyzing CSV: {str(e)}'}), 500
 
 @routes.route('/convert', methods=['GET', 'POST'])
 def convert():
