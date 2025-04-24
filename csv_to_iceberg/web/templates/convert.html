@@ -140,9 +140,17 @@
                                 </div>
                                 
                                 <div class="mb-3">
-                                    <label for="custom_schema" class="form-label">Custom Schema (JSON)</label>
-                                    <textarea class="form-control" id="custom_schema" name="custom_schema" rows="4"></textarea>
-                                    <div class="form-text">Optional JSON schema to override automatic schema inference</div>
+                                    <div class="form-check mb-2">
+                                        <input class="form-check-input" type="checkbox" id="use_custom_schema" name="use_custom_schema" value="true">
+                                        <label class="form-check-label" for="use_custom_schema">
+                                            Use custom schema
+                                        </label>
+                                    </div>
+                                    <div id="custom_schema_container" style="display: none;">
+                                        <label for="custom_schema" class="form-label">Custom Schema (JSON)</label>
+                                        <textarea class="form-control" id="custom_schema" name="custom_schema" rows="4"></textarea>
+                                        <div class="form-text">JSON schema to override automatic schema inference</div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -171,6 +179,18 @@ document.addEventListener('DOMContentLoaded', function() {
             const baseName = fileName.replace(/\.[^/.]+$/, ""); // Remove extension
             const cleanName = baseName.replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase(); // Clean up name
             tableNameInput.value = cleanName;
+        }
+    });
+    
+    // Custom schema toggle
+    const useCustomSchemaCheckbox = document.getElementById('use_custom_schema');
+    const customSchemaContainer = document.getElementById('custom_schema_container');
+    
+    useCustomSchemaCheckbox.addEventListener('change', function() {
+        if (this.checked) {
+            customSchemaContainer.style.display = 'block';
+        } else {
+            customSchemaContainer.style.display = 'none';
         }
     });
     

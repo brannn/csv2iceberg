@@ -84,7 +84,8 @@ def convert():
             sample_size = int(request.form.get('sample_size', 1000))
             include_columns = request.form.get('include_columns', '')
             exclude_columns = request.form.get('exclude_columns', '')
-            custom_schema = request.form.get('custom_schema', '')
+            use_custom_schema = request.form.get('use_custom_schema') == 'true'
+            custom_schema = request.form.get('custom_schema', '') if use_custom_schema else ''
             
             # Parse column lists
             include_cols_list = [col.strip() for col in include_columns.split(',')] if include_columns.strip() else None
