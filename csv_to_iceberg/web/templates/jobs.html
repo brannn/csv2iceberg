@@ -103,7 +103,7 @@
                                     {% endif %}
                                 </td>
                                 <td>
-                                    <a href="{{ url_for('routes.job_status', job_id=job.id) }}" class="btn btn-sm btn-primary">Details</a>
+                                    <a href="{{ url_for('routes.job_detail', job_id=job.id) }}" class="btn btn-sm btn-primary">Details</a>
                                 </td>
                             </tr>
                         {% endfor %}
