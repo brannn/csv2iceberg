@@ -183,6 +183,20 @@ def convert():
             # Get file size
             file_size = os.path.getsize(file_path)
             
+            # Get catalog and schema from the profile
+            catalog = profile.get('trino_catalog')
+            schema = profile.get('trino_schema')
+            
+            # Construct the fully qualified table name if needed
+            # If the user entered a bare table name (no dots), prepend catalog and schema
+            if table_name and '.' not in table_name:
+                full_table_name = f"{catalog}.{schema}.{table_name}"
+                logger.info(f"Constructing full table name: {full_table_name} from catalog: {catalog}, schema: {schema}, table: {table_name}")
+            else:
+                # User provided a qualified name already, use as-is
+                full_table_name = table_name
+                logger.info(f"Using user-provided qualified table name: {full_table_name}")
+            
             # Create job parameters
             job_params = {
                 'csv_file': file_path,
@@ -190,7 +204,7 @@ def convert():
                 'has_header': has_header,
                 'quote_char': quote_char,
                 'batch_size': batch_size,
-                'table_name': table_name,
+                'table_name': full_table_name,
                 'trino_host': profile.get('trino_host'),
                 'trino_port': profile.get('trino_port'),
                 'trino_user': profile.get('trino_user'),
