@@ -144,6 +144,79 @@
                     </div>
                     
                     <div class="mt-4">
+                        <h5>Iceberg Partitioning Recommendations</h5>
+                        <div class="alert alert-info">
+                            <i class="fas fa-info-circle me-2"></i>
+                            These recommendations are based on column cardinality analysis. Effective partitioning can significantly improve query performance.
+                        </div>
+                        
+                        {% if partition_recommendations and partition_recommendations|length > 0 %}
+                        <div class="row">
+                            {% for rec in partition_recommendations %}
+                            <div class="col-md-6 mb-3">
+                                <div class="card h-100">
+                                    <div class="card-header d-flex justify-content-between align-items-center">
+                                        <h6 class="mb-0">{{ rec.column }}</h6>
+                                        <span class="badge bg-{{ 'success' if rec.suitability_score >= 70 else 'primary' if rec.suitability_score >= 40 else 'secondary' }}">
+                                            {{ 'Excellent' if rec.suitability_score >= 70 else 'Good' if rec.suitability_score >= 40 else 'Fair' }}
+                                            ({{ rec.suitability_score }}/100)
+                                        </span>
+                                    </div>
+                                    <div class="card-body">
+                                        <div class="mb-3">
+                                            <div class="d-flex justify-content-between">
+                                                <small class="text-muted">Type: <span class="fw-bold">{{ rec.type }}</span></small>
+                                                <small class="text-muted">Unique values: <span class="fw-bold">{{ rec.unique_values }}</span></small>
+                                            </div>
+                                            <div class="d-flex justify-content-between">
+                                                <small class="text-muted">Cardinality: <span class="fw-bold">{{ rec.cardinality_ratio }}%</span></small>
+                                                <small class="text-muted">Total values: <span class="fw-bold">{{ rec.total_values }}</span></small>
+                                            </div>
+                                        </div>
+                                        
+                                        <h6 class="card-subtitle mb-2">Recommended Transforms:</h6>
+                                        <ul class="list-group">
+                                            {% for transform in rec.transforms %}
+                                            <li class="list-group-item">
+                                                <div class="d-flex justify-content-between align-items-center">
+                                                    <div>
+                                                        <span class="fw-bold text-primary">{{ transform.name }}</span>
+                                                        <p class="mb-0 small">{{ transform.description }}</p>
+                                                    </div>
+                                                </div>
+                                                <div class="mt-1">
+                                                    <pre class="bg-light p-2 rounded small">{{ transform.example }}</pre>
+                                                </div>
+                                            </li>
+                                            {% endfor %}
+                                        </ul>
+                                    </div>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                        {% else %}
+                        <div class="alert alert-warning">
+                            <i class="fas fa-exclamation-triangle me-2"></i>
+                            No partition recommendations available. This could be due to insufficient data to analyze or uniform distribution of values.
+                        </div>
+                        {% endif %}
+                        
+                        <div class="alert alert-secondary mt-3">
+                            <h6 class="mb-2">About Iceberg Partitioning</h6>
+                            <p class="mb-1">Partitioning divides data into separate files based on column values, improving query performance when those columns are used for filtering.</p>
+                            <p class="mb-0">
+                                <strong>Common transforms:</strong>
+                                <code>year(timestamp)</code>, 
+                                <code>month(timestamp)</code>, 
+                                <code>day(timestamp)</code>, 
+                                <code>bucket(n, column)</code>,
+                                <code>truncate(width, column)</code>
+                            </p>
+                        </div>
+                    </div>
+                    
+                    <div class="mt-4">
                         <h5>Data Preview</h5>
                         <div class="table-responsive">
                             <table class="table table-sm table-bordered table-striped">

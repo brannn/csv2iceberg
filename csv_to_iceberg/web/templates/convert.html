@@ -257,6 +257,150 @@ document.addEventListener('DOMContentLoaded', function() {
         customSchemaInput.value = JSON.stringify(schemaColumns);
     }
     
+    // Render the partition recommendations section
+    function renderPartitionRecommendations(recommendations) {
+        // Create the partition recommendations container if it doesn't exist
+        let partitionSection = document.getElementById('partition_recommendations_section');
+        if (!partitionSection) {
+            partitionSection = document.createElement('div');
+            partitionSection.id = 'partition_recommendations_section';
+            partitionSection.className = 'mt-4';
+            
+            // Insert it after the schema preview table
+            const schemaTableContainer = document.getElementById('schema_preview_table_container');
+            schemaTableContainer.after(partitionSection);
+        }
+        
+        // Clear the container
+        partitionSection.innerHTML = '';
+        
+        // If there are no recommendations, show a message
+        if (!recommendations || recommendations.length === 0) {
+            partitionSection.innerHTML = `
+            <div class="alert alert-info">
+                <i class="fas fa-info-circle me-2"></i>
+                No partitioning recommendations available for this dataset.
+            </div>`;
+            return;
+        }
+        
+        // Create the header
+        const header = document.createElement('h5');
+        header.textContent = 'Iceberg Partitioning Recommendations';
+        partitionSection.appendChild(header);
+        
+        // Create the info alert
+        const infoAlert = document.createElement('div');
+        infoAlert.className = 'alert alert-info';
+        infoAlert.innerHTML = `
+        <i class="fas fa-info-circle me-2"></i>
+        These recommendations are based on column cardinality analysis. Effective partitioning can significantly improve query performance.`;
+        partitionSection.appendChild(infoAlert);
+        
+        // Create the row container
+        const row = document.createElement('div');
+        row.className = 'row';
+        partitionSection.appendChild(row);
+        
+        // Add a card for each recommendation
+        recommendations.forEach(rec => {
+            // Create the column
+            const col = document.createElement('div');
+            col.className = 'col-md-6 mb-3';
+            
+            // Create the card
+            const card = document.createElement('div');
+            card.className = 'card h-100';
+            
+            // Create the card header
+            const cardHeader = document.createElement('div');
+            cardHeader.className = 'd-flex justify-content-between align-items-center card-header';
+            
+            // Add the column name
+            const columnName = document.createElement('h6');
+            columnName.className = 'mb-0';
+            columnName.textContent = rec.column;
+            cardHeader.appendChild(columnName);
+            
+            // Add the suitability badge
+            const badge = document.createElement('span');
+            const badgeClass = rec.suitability_score >= 70 ? 'success' : 
+                              rec.suitability_score >= 40 ? 'primary' : 'secondary';
+            const badgeText = rec.suitability_score >= 70 ? 'Excellent' : 
+                             rec.suitability_score >= 40 ? 'Good' : 'Fair';
+            badge.className = `badge bg-${badgeClass}`;
+            badge.textContent = `${badgeText} (${rec.suitability_score}/100)`;
+            cardHeader.appendChild(badge);
+            
+            card.appendChild(cardHeader);
+            
+            // Create the card body
+            const cardBody = document.createElement('div');
+            cardBody.className = 'card-body';
+            
+            // Add the column metadata
+            const metadata = document.createElement('div');
+            metadata.className = 'mb-3';
+            metadata.innerHTML = `
+            <div class="d-flex justify-content-between">
+                <small class="text-muted">Type: <span class="fw-bold">${rec.type}</span></small>
+                <small class="text-muted">Unique values: <span class="fw-bold">${rec.unique_values}</span></small>
+            </div>
+            <div class="d-flex justify-content-between">
+                <small class="text-muted">Cardinality: <span class="fw-bold">${rec.cardinality_ratio}%</span></small>
+                <small class="text-muted">Total values: <span class="fw-bold">${rec.total_values}</span></small>
+            </div>`;
+            cardBody.appendChild(metadata);
+            
+            // Add transform recommendations
+            const transformsTitle = document.createElement('h6');
+            transformsTitle.className = 'card-subtitle mb-2';
+            transformsTitle.textContent = 'Recommended Transforms:';
+            cardBody.appendChild(transformsTitle);
+            
+            const transformsList = document.createElement('ul');
+            transformsList.className = 'list-group';
+            
+            // Add each transform
+            rec.transforms.forEach(transform => {
+                const item = document.createElement('li');
+                item.className = 'list-group-item';
+                item.innerHTML = `
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <span class="fw-bold text-primary">${transform.name}</span>
+                        <p class="mb-0 small">${transform.description}</p>
+                    </div>
+                </div>
+                <div class="mt-1">
+                    <pre class="bg-light p-2 rounded small">${transform.example}</pre>
+                </div>`;
+                transformsList.appendChild(item);
+            });
+            
+            cardBody.appendChild(transformsList);
+            card.appendChild(cardBody);
+            col.appendChild(card);
+            row.appendChild(col);
+        });
+        
+        // Add a note about Iceberg partitioning
+        const note = document.createElement('div');
+        note.className = 'alert alert-secondary mt-3';
+        note.innerHTML = `
+        <h6 class="mb-2">About Iceberg Partitioning</h6>
+        <p class="mb-1">Partitioning divides data into separate files based on column values, improving query performance when those columns are used for filtering.</p>
+        <p class="mb-0">
+            <strong>Common transforms:</strong>
+            <code>year(timestamp)</code>, 
+            <code>month(timestamp)</code>, 
+            <code>day(timestamp)</code>, 
+            <code>bucket(n, column)</code>,
+            <code>truncate(width, column)</code>
+        </p>`;
+        partitionSection.appendChild(note);
+    }
+
     // Render the schema table
     function renderSchemaTable() {
         // Clear the table
@@ -398,8 +542,15 @@ document.addEventListener('DOMContentLoaded', function() {
                 // Update the schema columns array
                 schemaColumns = data.schema;
                 
+                // Store partition recommendations if available
+                const partitionRecommendations = data.partition_recommendations || [];
+                console.log('Partition recommendations:', partitionRecommendations);
+                
                 // Render the schema table
                 renderSchemaTable();
+                
+                // Render the partition recommendations section
+                renderPartitionRecommendations(partitionRecommendations);
             }
         })
         .catch(error => {

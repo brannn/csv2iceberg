@@ -207,6 +207,20 @@ def analyze_csv():
             sample_size=sample_size
         )
         
+        # Generate partition recommendations
+        from csv_to_iceberg.core.schema_inferrer import analyze_column_cardinality
+        partition_recommendations = analyze_column_cardinality(
+            csv_file=file_path,
+            delimiter=delimiter,
+            has_header=has_header,
+            quote_char=quote_char,
+            sample_size=sample_size,
+            schema=schema
+        )
+        
+        # Log the recommendations
+        logger.info(f"Generated {len(partition_recommendations)} partition recommendations")
+        
         # Clean up the file
         try:
             os.remove(file_path)
@@ -235,7 +249,36 @@ def analyze_csv():
             })
             
         logger.debug(f"Inferred schema with {len(columns)} columns: {columns}")
-        return jsonify({'schema': columns}), 200
+        
+        # Format the partition recommendations for the UI
+        formatted_recommendations = []
+        for rec in partition_recommendations:
+            # Create a simplified version for the UI
+            formatted_rec = {
+                'column': rec['column'],
+                'type': rec['type'],
+                'suitability_score': rec['suitability_score'],
+                'cardinality_ratio': round(rec['cardinality_ratio'] * 100, 2),  # Convert to percentage
+                'unique_values': rec['unique_values'],
+                'total_values': rec['total_values'],
+                'transforms': []
+            }
+            
+            # Add the transform recommendations
+            for transform in rec['recommendations']:
+                formatted_rec['transforms'].append({
+                    'name': transform['transform'],
+                    'description': transform['description'],
+                    'example': transform['example']
+                })
+            
+            formatted_recommendations.append(formatted_rec)
+            
+        # Return both the schema and partition recommendations
+        return jsonify({
+            'schema': columns,
+            'partition_recommendations': formatted_recommendations
+        }), 200
         
     except Exception as e:
         logger.error(f"Error analyzing CSV: {str(e)}", exc_info=True)
