@@ -21,8 +21,8 @@ def create_app(test_config=None):
     """
     # Create and configure the app
     app = Flask(__name__, 
-                template_folder="templates",
-                static_folder="static")
+                template_folder=os.path.join(os.path.dirname(__file__), "templates"),
+                static_folder=os.path.join(os.path.dirname(__file__), "static"))
     
     # Set default configuration
     app.config.from_mapping(

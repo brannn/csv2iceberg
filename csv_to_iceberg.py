@@ -11,11 +11,11 @@ import click
 from rich.console import Console
 from rich.progress import Progress, TextColumn, BarColumn, TimeElapsedColumn, TimeRemainingColumn
 
-from schema_inferrer import infer_schema_from_csv
-from trino_client import TrinoClient
-from hive_client import HiveMetastoreClient
-from iceberg_writer import IcebergWriter
-from utils import setup_logging, validate_csv_file, validate_connection_params
+from csv_to_iceberg.core.schema_inferrer import infer_schema_from_csv
+from csv_to_iceberg.connectors.trino_client import TrinoClient
+from csv_to_iceberg.connectors.hive_client import HiveMetastoreClient
+from csv_to_iceberg.core.iceberg_writer import IcebergWriter
+from csv_to_iceberg.utils import setup_logging, validate_csv_file, validate_connection_params
 
 # Initialize console for rich output
 console = Console()
