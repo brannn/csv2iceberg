@@ -33,7 +33,7 @@
                 <span class="navbar-toggler-icon"></span>
             </button>
             <div class="collapse navbar-collapse" id="navbarNav">
-                <ul class="navbar-nav">
+                <ul class="navbar-nav me-auto">
                     <li class="nav-item">
                         <a class="nav-link {% if request.path == '/' %}active{% endif %}" href="{{ url_for('index') }}">Home</a>
                     </li>
@@ -47,6 +47,9 @@
                         <a class="nav-link {% if request.path.startswith('/profiles') %}active{% endif %}" href="{{ url_for('profiles') }}">Profiles</a>
                     </li>
                 </ul>
+                <span class="navbar-text text-light small">
+                    Running version: <code>f4cb1b92c995</code>
+                </span>
             </div>
         </div>
     </nav>
