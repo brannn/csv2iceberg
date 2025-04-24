@@ -163,6 +163,59 @@ def infer_schema_from_csv(
         logger.error(f"Error inferring schema from CSV with Polars: {str(e)}", exc_info=True)
         raise RuntimeError(f"Failed to infer schema from CSV: {str(e)}")
 
+def infer_schema_from_df(df) -> Schema:
+    """
+    Infer an Iceberg schema from a Pandas or Polars DataFrame.
+    
+    Args:
+        df: DataFrame (pandas or polars)
+        
+    Returns:
+        PyIceberg Schema object
+    """
+    try:
+        logger.info(f"Inferring schema from DataFrame with {len(df.columns)} columns")
+        
+        # Clean and normalize column names
+        clean_columns = [clean_column_name(col) for col in df.columns]
+        
+        # If it's a pandas DataFrame, convert to PyArrow table
+        if hasattr(df, 'to_arrow'):
+            # It's a pandas DataFrame
+            arrow_table = df.to_arrow()
+        elif hasattr(df, 'to_arrow_table'):
+            # It's a polars DataFrame
+            arrow_table = df.to_arrow_table()
+        else:
+            # Unknown DataFrame type
+            raise ValueError(f"Unsupported DataFrame type: {type(df)}")
+        
+        # Process the schema
+        fields = []
+        field_id = 1  # Start field IDs from 1 (0 is reserved in Iceberg)
+        
+        # Process each column
+        for i, field in enumerate(arrow_table.schema):
+            # Get clean name
+            clean_col_name = clean_columns[i]
+            
+            # Convert PyArrow type to Iceberg type
+            iceberg_type = _pyarrow_type_to_iceberg_type(field.type)
+            
+            # Add field to schema with explicit boolean for required parameter
+            fields.append(NestedField(field_id=field_id, name=clean_col_name, field_type=iceberg_type, required=False))
+            field_id += 1
+        
+        # Create the PyIceberg Schema
+        schema = Schema(*fields)
+        
+        logger.info(f"Successfully inferred schema with {len(fields)} fields from DataFrame")
+        return schema
+        
+    except Exception as e:
+        logger.error(f"Error inferring schema from DataFrame: {str(e)}", exc_info=True)
+        raise RuntimeError(f"Failed to infer schema from DataFrame: {str(e)}")
+
 def _pyarrow_type_to_iceberg_type(pa_type: pa.DataType) -> Any:
     """
     Convert a PyArrow type to an Iceberg type.

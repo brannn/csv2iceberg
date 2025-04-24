@@ -26,7 +26,19 @@ def format_datetime(timestamp):
     return dt.strftime("%Y-%m-%d %H:%M:%S")
 
 def format_duration(duration=None, start_time=None, end_time=None):
-    """Format a duration or calculate it from start and end times."""
+    """Format a duration or calculate it from start and end times.
+    
+    This function can be called in multiple ways:
+    - format_duration(duration): With just a duration in seconds
+    - format_duration(start_time=start, end_time=end): With named start and end times
+    - format_duration(start, end): With positional start and end times
+    """
+    # Handle the case when called with positional arguments
+    if duration is not None and start_time is not None and end_time is None:
+        # This means it was called as format_duration(start_time, end_time)
+        start_time, end_time = duration, start_time
+        duration = None
+    
     if duration is not None:
         # If duration is directly provided
         seconds = duration
