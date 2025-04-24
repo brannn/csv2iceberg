@@ -198,15 +198,28 @@ def analyze_csv():
         except OSError:
             logger.warning(f"Could not remove temporary file: {file_path}")
             
-        # Convert the PyIceberg schema to a list of columns
+        # Convert the PyIceberg schema to a list of columns with proper type information
         columns = []
         for field in schema.fields:
+            # Get simple type name without PyIceberg class information
+            type_name = type(field.field_type).__name__.replace('Type', '').lower()
+            
+            # Handle special cases
+            if type_name == 'decimal':
+                precision = getattr(field.field_type, 'precision', 38)
+                scale = getattr(field.field_type, 'scale', 18)
+                type_str = f"decimal({precision},{scale})"
+            else:
+                type_str = type_name
+            
             columns.append({
                 'name': field.name,
-                'type': str(field.field_type),
+                'type': type_str,
+                'original_type': str(field.field_type),
                 'required': field.required,
             })
             
+        logger.debug(f"Inferred schema with {len(columns)} columns: {columns}")
         return jsonify({'schema': columns}), 200
         
     except Exception as e:
