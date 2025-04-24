@@ -2,12 +2,16 @@ import os
 import logging
 import datetime
 import time
+import json
+import uuid
+import sys
 from flask import Flask, render_template, request, redirect, url_for, flash, session, jsonify
 import tempfile
 import subprocess
 import threading
 from werkzeug.utils import secure_filename
 from collections import OrderedDict
+from schema_inferrer import create_schema_from_custom_definition, infer_schema_from_csv
 
 # Import helper modules
 from utils import setup_logging
@@ -90,14 +94,27 @@ def run_conversion(job_id, file_path, params):
         
         # Handle schema customization if present
         schema_temp_file = None
+        custom_schema_file = None
+        
         if 'schema_customization' in params:
             try:
                 # Create a temporary file for the custom schema
-                import json
-                import tempfile
+                schema_customization = params['schema_customization']
+                logger.info(f"Schema customization data: {schema_customization}")
                 
+                # Create the schema object using our function
+                try:
+                    # This is the new function that properly handles comments
+                    custom_schema = create_schema_from_custom_definition(schema_customization)
+                    logger.info(f"Successfully created custom schema with {len(custom_schema.fields)} fields")
+                    logger.debug(f"Schema: {custom_schema}")
+                except Exception as schema_create_err:
+                    logger.error(f"Error creating custom schema object: {str(schema_create_err)}", exc_info=True)
+                    # Fall back to using JSON file
+                
+                # Create a temporary JSON file (for CLI compatibility)
                 schema_temp_file = tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.json')
-                json.dump(params['schema_customization'], schema_temp_file)
+                json.dump(schema_customization, schema_temp_file)
                 schema_temp_file.close()
                 
                 logger.info(f"Created temporary schema customization file: {schema_temp_file.name}")
@@ -112,8 +129,6 @@ def run_conversion(job_id, file_path, params):
                     except:
                         pass
                 custom_schema_file = None
-        else:
-            custom_schema_file = None
         
         # Build conversion command
         conversion_cmd = [
@@ -540,7 +555,8 @@ def schema_preview():
                 'id': field.field_id,
                 'name': field.name,
                 'type': type_info,
-                'required': field.required
+                'required': field.required,
+                'comment': field.doc if hasattr(field, 'doc') else ''
             })
         
         # Render the schema preview template
