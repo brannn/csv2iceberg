@@ -59,7 +59,7 @@
                 </div>
             </div>
 
-            {% if job.status == 'running' %}
+            {% if job.status == 'running' or job.status == 'pending' %}
             <div class="row mb-3">
                 <div class="col-12">
                     <h5>Progress</h5>
@@ -204,7 +204,7 @@
 {% endblock %}
 
 {% block scripts %}
-{% if job.status == 'running' %}
+{% if job.status == 'running' or job.status == 'pending' %}
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     // Get start time from job

@@ -308,6 +308,11 @@ def convert():
                     # Import the centralized conversion service
                     from csv_to_iceberg.core.conversion_service import convert_csv_to_iceberg
                     
+                    # Update job status to running
+                    job_manager.update_job(job_id, {
+                        'status': 'running',
+                        'started_at': datetime.now(),
+                    })
                     job_manager.update_job_progress(job_id, 0)
                     
                     # Progress callback function
