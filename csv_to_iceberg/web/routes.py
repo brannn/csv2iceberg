@@ -119,6 +119,32 @@ def allowed_file(filename):
     ALLOWED_EXTENSIONS = {'csv', 'txt'}
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
+def get_git_info():
+    """Get git information (branch and commit SHA)."""
+    import subprocess
+    
+    try:
+        # Get branch name
+        branch = subprocess.check_output(
+            ['git', 'rev-parse', '--abbrev-ref', 'HEAD'],
+            stderr=subprocess.DEVNULL
+        ).decode('utf-8').strip()
+        
+        # Get commit SHA
+        commit_sha = subprocess.check_output(
+            ['git', 'rev-parse', '--short', 'HEAD'],
+            stderr=subprocess.DEVNULL
+        ).decode('utf-8').strip()
+        
+        if branch and commit_sha:
+            return f"{branch}/{commit_sha}"
+        elif commit_sha:
+            return commit_sha
+        else:
+            return "unknown"
+    except (subprocess.SubprocessError, FileNotFoundError):
+        return "unknown"
+
 # Route handlers
 @routes.route('/')
 def index():
