@@ -178,13 +178,11 @@
                     <div class="alert alert-secondary mt-4">
                         <small>
                             <i class="bi bi-info-circle"></i>
-                            <strong>Job Retention:</strong> This {{ 'test' if job_id.startswith('test_') or job_id.startswith('running_test_') else 'regular' }} job will remain in memory for 
-                            <strong>{{ (job_ttl / 60)|int }} minutes</strong> after completion.
+                            <strong>Job Retention:</strong> This {{ 'test' if job_id.startswith('test_') or job_id.startswith('running_test_') else 'regular' }} job will remain available for a limited time after completion.
                             <br>
                             <small class="text-muted">
                                 Job completed at {{ job.completed_at.strftime('%Y-%m-%d %H:%M:%S') }}.
-                                Job data will be removed after {{ (job_ttl / 60)|int }} minutes of inactivity
-                                unless this page is actively being viewed.
+                                Jobs being actively viewed are not removed.
                             </small>
                         </small>
                     </div>
