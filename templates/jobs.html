@@ -13,8 +13,8 @@
         <div class="alert alert-info mb-3">
             <small>
                 <i class="bi bi-info-circle"></i>
-                <strong>Job Retention Policy:</strong> Regular jobs are retained for {{ (regular_ttl / 60)|int }} minutes after completion. 
-                Test jobs (IDs starting with "test_") are kept for {{ (test_ttl / 60)|int }} minutes after completion.
+                <strong>Job Retention Policy:</strong> Completed jobs are retained for a limited time.
+                Test jobs (IDs starting with "test_" or "running_test_") are kept longer than regular jobs.
                 Jobs being actively viewed are not removed.
             </small>
         </div>

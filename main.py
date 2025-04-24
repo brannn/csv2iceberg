@@ -635,41 +635,39 @@ def job_status(job_id):
 def test_progress(job_id):
     """Test page for monitoring job progress."""
     # Clean up old jobs first
-    cleanup_old_jobs()
+    job_manager.cleanup_old_jobs()
     
-    if job_id not in conversion_jobs:
+    # Get job from job manager
+    job = job_manager.get_job(job_id)
+    if not job:
         flash('Job not found or has been archived', 'info')
         return redirect(url_for('jobs'))
     
-    # Mark this job as being actively viewed (to prevent premature cleanup)
-    mark_job_as_active(job_id)
-    
-    # Determine appropriate TTL based on job type
-    ttl = TEST_JOB_TTL if job_id.startswith('test_') or job_id.startswith('running_test_') else COMPLETED_JOB_TTL
+    # Mark this job as being actively viewed
+    job_manager.mark_job_as_active(job_id)
     
     return render_template('test_progress.html',
-                          job=conversion_jobs[job_id],
-                          job_id=job_id,
-                          job_ttl=ttl)
+                          job=job,
+                          job_id=job_id)
 
 @app.route('/jobs')
 def jobs():
     """List all conversion jobs."""
     # Clean up old jobs first
-    cleanup_old_jobs()
+    job_manager.cleanup_old_jobs()
     
-    # When the jobs list is viewed, all jobs being viewed are considered "active"
-    # This prevents cleanup of jobs shown in the list while user is viewing them
-    for job_id in conversion_jobs.keys():
-        mark_job_as_active(job_id)
+    # Get all jobs from job manager
+    all_jobs = job_manager.get_all_jobs(include_test_jobs=True)
+    
+    # Mark all jobs as active when viewing the list
+    for job in all_jobs:
+        job_manager.mark_job_as_active(job.get('id'))
         
     now = datetime.datetime.now()
     return render_template('jobs.html', 
-                          jobs=conversion_jobs, 
+                          jobs=all_jobs, 
                           now=now, 
-                          format_duration=format_duration,
-                          regular_ttl=COMPLETED_JOB_TTL,
-                          test_ttl=TEST_JOB_TTL)
+                          format_duration=format_duration)
 
 @app.route('/job/<job_id>/progress/<int:percent>', methods=['POST'])
 def update_job_progress(job_id, percent):
@@ -780,15 +778,18 @@ def cleanup_old_jobs():
 def get_job_progress(job_id):
     """Get the current progress of a conversion job."""
     # Clean up old jobs first (except the one being viewed)
-    cleanup_old_jobs()
+    job_manager.cleanup_old_jobs()
     
-    if job_id in conversion_jobs:
+    # Get job from job manager
+    job = job_manager.get_job(job_id)
+    
+    if job:
         # Mark this job as being actively viewed during progress polling
-        mark_job_as_active(job_id)
+        job_manager.mark_job_as_active(job_id)
         
         # Get current progress value and log it
-        current_progress = conversion_jobs[job_id].get('progress', 0)
-        current_status = conversion_jobs[job_id]['status']
+        current_progress = job.get('progress', 0)
+        current_status = job.get('status', 'unknown')
         current_phase = _get_progress_phase(current_progress)
         
         logger.debug(f"Progress for job {job_id}: {current_progress}%, status: {current_status}, phase: {current_phase}")
@@ -802,8 +803,11 @@ def get_job_progress(job_id):
             "test_job": job_id.startswith('test_') or job_id.startswith('running_test_')
         })
     else:
-        # Include an archive flag to help frontend understand why the job is missing
-        was_archived = any(job_id.startswith(job_id[:10]) for job_id in conversion_jobs.keys())
+        # Check if there are any jobs with similar ID prefix
+        all_jobs = job_manager.get_all_jobs()
+        job_ids = [j.get('id', '') for j in all_jobs]
+        was_archived = any(job_id.startswith(jid[:10]) or jid.startswith(job_id[:10]) for jid in job_ids)
+        
         return jsonify({
             "status": "error", 
             "message": "Job not found",
@@ -832,33 +836,32 @@ def diagnostics():
     """Diagnostic endpoint to verify server operation."""
     logger.info("Diagnostics endpoint called")
     try:
+        # Get all jobs from job manager
+        all_jobs = job_manager.get_all_jobs(include_test_jobs=True)
+        
         # Count jobs by status
         status_counts = {}
-        for job in conversion_jobs.values():
+        for job in all_jobs:
             status = job.get('status', 'unknown')
             status_counts[status] = status_counts.get(status, 0) + 1
             
         # Count test jobs
-        test_job_count = sum(1 for job_id in conversion_jobs if 
-                            job_id.startswith('test_') or job_id.startswith('running_test_'))
-            
-        # Get active views info
-        active_views_info = {
-            'count': len(active_job_views),
-            'jobs': [{'job_id': job_id, 'last_viewed': active_job_views[job_id].isoformat()} 
-                    for job_id in active_job_views]
-        }
+        test_job_count = sum(1 for job in all_jobs if 
+                          job.get('id', '').startswith('test_') or 
+                          job.get('id', '').startswith('running_test_'))
+        
+        # Get storage information
+        from job_manager import USE_LMDB_JOBS
+        storage_type = "LMDB" if USE_LMDB_JOBS else "Memory"
         
         data = {
             "status": "ok",
-            "jobs_count": len(conversion_jobs),
+            "jobs_count": len(all_jobs),
             "jobs_by_status": status_counts,
             "test_job_count": test_job_count,
-            "active_views": active_views_info,
-            "ttl_settings": {
-                "regular_job_ttl_minutes": COMPLETED_JOB_TTL / 60,
-                "test_job_ttl_minutes": TEST_JOB_TTL / 60,
-                "max_jobs_to_keep": MAX_JOBS_TO_KEEP
+            "job_storage": {
+                "type": storage_type,
+                "job_manager_class": job_manager.__class__.__name__
             },
             "timestamp": datetime.datetime.now().isoformat(),
             "upload_folder": UPLOAD_FOLDER,
@@ -878,7 +881,8 @@ def add_test_job():
     now = datetime.datetime.now()
     ten_minutes_ago = now - datetime.timedelta(minutes=10)
     
-    conversion_jobs[job_id] = {
+    # Create job using job manager
+    job_data = job_manager.create_job(job_id, {
         'file_path': '/tmp/test.csv',
         'filename': 'test.csv',
         'params': {
@@ -900,15 +904,24 @@ def add_test_job():
             'sample_size': '1000',
             'verbose': 'false'
         },
-        'status': 'completed',
-        'stdout': 'Mock conversion completed successfully.',
-        'stderr': '',
-        'error': None,
-        'returncode': 0,
+        'is_test': True
+    })
+    
+    # Set job as completed
+    job_manager.mark_job_completed(
+        job_id,
+        success=True,
+        stdout='Mock conversion completed successfully.',
+        stderr='',
+        returncode=0
+    )
+    
+    # Update job timestamps for testing
+    job_manager.update_job(job_id, {
         'started_at': ten_minutes_ago,
         'completed_at': now,
-        'progress': 100  # Completed jobs have 100% progress
-    }
+        'progress': 100
+    })
     
     flash(f'Test job created with ID: {job_id}', 'success')
     return redirect(url_for('jobs'))
@@ -918,14 +931,19 @@ def api_test():
     """Simple API testing page to verify progress updates."""
     test_job_id = "test_api_" + os.urandom(4).hex()
     
-    # Create a simple test job
-    conversion_jobs[test_job_id] = {
+    # Create a simple test job using job manager
+    job_data = job_manager.create_job(test_job_id, {
+        'filename': 'test.csv',
+        'params': {'table_name': 'test_table'},
+        'is_test': True
+    })
+    
+    # Update the job to set progress and status
+    job_manager.update_job(test_job_id, {
         'status': 'running',
         'progress': 50,  # Set to 50% for testing
-        'started_at': datetime.datetime.now(),
-        'params': {'table_name': 'test_table'},
-        'filename': 'test.csv'
-    }
+        'started_at': datetime.datetime.now()
+    })
     
     # Create HTML using normal string formatting instead of f-string
     html = '''
@@ -990,7 +1008,8 @@ def add_running_test_job():
     # Create a mock job with running status and timestamps
     now = datetime.datetime.now()
     
-    conversion_jobs[job_id] = {
+    # Create job using job manager
+    job_data = job_manager.create_job(job_id, {
         'file_path': '/tmp/test.csv',
         'filename': 'test.csv',
         'params': {
@@ -1012,21 +1031,25 @@ def add_running_test_job():
             'sample_size': '1000',
             'verbose': 'false'
         },
+        'is_test': True
+    })
+    
+    # Update the job to mark it as running
+    job_manager.update_job(job_id, {
         'status': 'running',
+        'started_at': now,
         'stdout': 'Mock conversion in progress...',
         'stderr': '',
         'error': None,
         'returncode': None,
-        'started_at': now,
         'progress': 0  # Start with 0% progress
-    }
+    })
     
     # Start a thread to simulate progress updates with improved reliability
     def simulate_progress():
         try:
             # Log initial state
             logger.info(f"Starting progress simulation for job {job_id}")
-            logger.info(f"Initial job state: {conversion_jobs[job_id]}")
             
             # Progress simulation phases
             phases = [
@@ -1051,34 +1074,49 @@ def add_running_test_job():
             
             # Simulate each phase of the progress
             for progress, message in phases:
-                if job_id not in conversion_jobs:
+                # Get the current job to check if it still exists
+                job = job_manager.get_job(job_id)
+                if not job:
                     logger.warning(f"Job {job_id} no longer exists, stopping simulation")
                     return
-                    
-                # Update the progress and add a message to stdout
-                conversion_jobs[job_id]['progress'] = progress
-                conversion_jobs[job_id]['stdout'] += f"\n{message} ({progress}%)"
                 
-                # Log progress update (use info level for better visibility)
+                # Update job progress
+                job_manager.update_job_progress(job_id, progress)
+                
+                # Append message to stdout
+                current_stdout = job.get('stdout', '')
+                job_manager.update_job(job_id, {
+                    'stdout': current_stdout + f"\n{message} ({progress}%)"
+                })
+                
+                # Log progress update
                 logger.info(f"Updated progress for job {job_id} to {progress}% - {message}")
                 
-                # Sleep for a bit to simulate processing time (more realistic timing)
-                time.sleep(1.5)  # Slow down a bit for better visibility
+                # Sleep for a bit to simulate processing time
+                time.sleep(1.5)
             
             # Mark as completed when done
-            if job_id in conversion_jobs:
-                conversion_jobs[job_id]['status'] = 'completed'
-                conversion_jobs[job_id]['completed_at'] = datetime.datetime.now()
-                conversion_jobs[job_id]['progress'] = 100
-                conversion_jobs[job_id]['stdout'] += "\nCSV to Iceberg conversion completed successfully."
-                logger.info(f"Completed job {job_id}, final state: {conversion_jobs[job_id]}")
+            job = job_manager.get_job(job_id)
+            if job:
+                current_stdout = job.get('stdout', '')
+                job_manager.mark_job_completed(
+                    job_id,
+                    success=True,
+                    stdout=current_stdout + "\nCSV to Iceberg conversion completed successfully.",
+                    stderr='',
+                    returncode=0
+                )
+                logger.info(f"Completed job {job_id}")
             
         except Exception as e:
             logger.error(f"Error in progress simulation: {str(e)}", exc_info=True)
-            if job_id in conversion_jobs:
-                conversion_jobs[job_id]['status'] = 'failed'
-                conversion_jobs[job_id]['error'] = str(e)
-                conversion_jobs[job_id]['completed_at'] = datetime.datetime.now()
+            job = job_manager.get_job(job_id)
+            if job:
+                job_manager.mark_job_completed(
+                    job_id,
+                    success=False,
+                    error=str(e)
+                )
     
     # Start the simulation thread
     thread = threading.Thread(target=simulate_progress, daemon=True)
