@@ -289,7 +289,7 @@ class TrinoClient:
                 {columns_clause}
             )
             WITH (
-                format = 'ICEBERG'"""
+                format = 'PARQUET'"""
             
             # Add table properties if provided
             if table_properties and len(table_properties) > 0:
@@ -304,7 +304,7 @@ class TrinoClient:
             # Close the WITH clause
             create_table_sql += "\n            )"
             
-            logger.info(f"Creating table {catalog}.{schema}.{table} with ICEBERG format")
+            logger.info(f"Creating table {catalog}.{schema}.{table} with PARQUET format")
             logger.debug(f"Create table SQL: {create_table_sql}")
             
             self.execute_query(create_table_sql)
