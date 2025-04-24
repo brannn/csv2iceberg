@@ -295,13 +295,34 @@ class JobManager:
             if job_id in self.memory_jobs:
                 self.memory_jobs[job_id][key] = value
         
+        # Force the job ID to be correct
+        if job_id in self.memory_jobs:
+            self.memory_jobs[job_id]['id'] = job_id
+        
         # Then update LMDB if enabled
         if self.use_lmdb and self.lmdb_store:
             logger.info(f"Updating LMDB for completed job {job_id}")
             try:
-                success = self.lmdb_store.update_job(job_id, updates)
-                if not success:
-                    logger.error(f"Failed to update LMDB for completed job {job_id}")
+                # For completed jobs, ensure we have the full job data to save
+                complete_job_data = self.get_job(job_id)
+                
+                if complete_job_data:
+                    # Apply the updates to the complete job data
+                    for key, value in updates.items():
+                        complete_job_data[key] = value
+                    
+                    # Ensure job ID is correct
+                    complete_job_data['id'] = job_id
+                    
+                    # Use a full add rather than update to ensure indexed correctly
+                    success = self.lmdb_store.add_job(job_id, complete_job_data)
+                    if not success:
+                        logger.error(f"Failed to add completed job {job_id} to LMDB")
+                else:
+                    # If we can't get the full job, use update with just the changes
+                    success = self.lmdb_store.update_job(job_id, updates)
+                    if not success:
+                        logger.error(f"Failed to update LMDB for completed job {job_id}")
             except Exception as e:
                 logger.error(f"Error updating LMDB for completed job {job_id}: {str(e)}", exc_info=True)
                 

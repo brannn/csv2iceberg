@@ -126,6 +126,9 @@ class LMDBJobStore:
             if 'created_at' not in serialized:
                 serialized['created_at'] = datetime.datetime.now().isoformat()
                 
+            # Ensure job ID is correct in the serialized data
+            serialized['id'] = job_id
+                
             # Encode job data
             job_key = job_id.encode('utf-8')
             job_value = json.dumps(serialized).encode('utf-8')
@@ -135,14 +138,22 @@ class LMDBJobStore:
             timestamp = int(time.time())
             reverse_timestamp = 2147483647 - timestamp  # Use max 32-bit signed integer
             index_key = f"{reverse_timestamp:012d}:{job_id}".encode('utf-8')
-            logger.debug(f"Adding job {job_id} to LMDB with index key {index_key.decode('utf-8')}")
+            logger.info(f"Adding job {job_id} to LMDB with index key {index_key.decode('utf-8')}")
             
             # Store job data and update index
             with self.env.begin(write=True) as txn:
                 txn.put(job_key, job_value)
                 txn.put(index_key, job_key, db=self.index_db)
+
+            # Debug: Check if job was added correctly
+            with self.env.begin() as txn:
+                value = txn.get(job_key)
+                index_value = txn.get(index_key, db=self.index_db)
                 
-            logger.debug(f"Added job {job_id} to LMDB")
+                if value and index_value:
+                    logger.info(f"Successfully added job {job_id} to LMDB and indexed it")
+                else:
+                    logger.error(f"Failed to verify job {job_id} in LMDB. Data exists: {value is not None}, Index exists: {index_value is not None}")
             
             # Run cleanup of old jobs
             self._cleanup_old_jobs()
@@ -294,7 +305,7 @@ class LMDBJobStore:
         Returns:
             List of job data dictionaries
         """
-        logger.debug(f"LMDB store get_all_jobs called (limit={limit}, include_test_jobs={include_test_jobs})")
+        logger.info(f"LMDB store get_all_jobs called (limit={limit}, include_test_jobs={include_test_jobs})")
         try:
             jobs = []
             count = 0
@@ -309,7 +320,21 @@ class LMDBJobStore:
                         if not cursor.next():
                             break
             
-            logger.debug(f"LMDB store contains {len(all_job_keys)} total jobs: {all_job_keys}")
+            logger.info(f"LMDB store contains {len(all_job_keys)} total jobs: {all_job_keys}")
+            
+            # Check index database size
+            index_entries = []
+            with self.env.begin() as txn:
+                cursor = txn.cursor(db=self.index_db)
+                if cursor.first():
+                    while True:
+                        key = cursor.key().decode('utf-8')
+                        value = cursor.value().decode('utf-8')
+                        index_entries.append(f"{key}->{value}")
+                        if not cursor.next():
+                            break
+            
+            logger.info(f"LMDB job index contains {len(index_entries)} entries: {index_entries}")
             
             with self.env.begin() as txn:
                 # Use the sorted index to get jobs by timestamp (newest first)
