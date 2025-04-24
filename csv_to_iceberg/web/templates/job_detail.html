@@ -39,11 +39,14 @@
             </div>
 
             <div class="row mb-3">
-                <div class="col-md-6">
+                <div class="col-md-4">
                     <strong>File:</strong> {{ job.original_filename }}
                 </div>
-                <div class="col-md-6">
+                <div class="col-md-4">
                     <strong>Write Mode:</strong> {{ job.mode }}
+                </div>
+                <div class="col-md-4">
+                    <strong>Rows Processed:</strong> {{ job.rows_processed if job.rows_processed is not none else 'N/A' }}
                 </div>
             </div>
 
