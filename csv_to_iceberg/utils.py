@@ -343,17 +343,28 @@ def format_duration(duration=None, start_time=None, end_time=None) -> str:
 
 def format_datetime(dt) -> str:
     """
-    Format a datetime object for display.
+    Format a datetime object or ISO datetime string for display.
     
     Args:
-        dt: Datetime object
+        dt: Datetime object or ISO format string
         
     Returns:
         Formatted datetime string
     """
     if not dt:
         return "N/A"
-        
+    
+    # Handle ISO format strings
+    if isinstance(dt, str):
+        try:
+            import datetime
+            dt = datetime.datetime.fromisoformat(dt.replace('Z', '+00:00'))
+        except (ValueError, TypeError) as e:
+            import logging
+            logging.warning(f"Failed to parse datetime string: {dt}, error: {str(e)}")
+            return dt
+    
+    # Now format the datetime object
     return dt.strftime("%Y-%m-%d %H:%M:%S")
 
 def format_status(status: str) -> str:

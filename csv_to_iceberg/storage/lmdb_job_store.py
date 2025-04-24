@@ -79,12 +79,22 @@ class LMDBJobStore:
         # Create a copy to avoid modifying the original
         serialized = job_data.copy()
         
-        # Convert datetime objects to ISO format
-        for key in ['created_at', 'started_at', 'completed_at']:
-            if key in serialized and isinstance(serialized[key], datetime.datetime):
-                serialized[key] = serialized[key].isoformat()
-                
-        return serialized
+        # Recursively handle all datetime objects
+        return self._serialize_value(serialized)
+    
+    def _serialize_value(self, value):
+        """Recursively serialize a value for JSON.
+        
+        Handles datetime objects, lists, and dictionaries.
+        """
+        if isinstance(value, datetime.datetime):
+            return value.isoformat()
+        elif isinstance(value, dict):
+            return {k: self._serialize_value(v) for k, v in value.items()}
+        elif isinstance(value, list):
+            return [self._serialize_value(item) for item in value]
+        else:
+            return value
         
     def deserialize_job(self, job_data: Dict[str, Any]) -> Dict[str, Any]:
         """Deserialize job data from LMDB.
@@ -98,15 +108,29 @@ class LMDBJobStore:
         # Create a copy to avoid modifying the original
         deserialized = job_data.copy()
         
-        # Convert ISO datetime strings back to datetime objects
-        for key in ['created_at', 'started_at', 'completed_at']:
-            if key in deserialized and isinstance(deserialized[key], str):
-                try:
-                    deserialized[key] = datetime.datetime.fromisoformat(deserialized[key])
-                except (ValueError, TypeError):
-                    logger.warning(f"Failed to parse datetime from {key}: {deserialized[key]}")
-                    
-        return deserialized
+        # Recursively handle deserialization
+        return self._deserialize_value(deserialized)
+        
+    def _deserialize_value(self, value):
+        """Recursively deserialize a value from JSON.
+        
+        Converts ISO datetime strings back to datetime objects.
+        """
+        if isinstance(value, str) and len(value) > 10:
+            # Try to parse as datetime if it has the right format
+            # Check if it might be an ISO datetime string (simple heuristic)
+            try:
+                if 'T' in value and ('+' in value or 'Z' in value or '-' in value[10:]):
+                    return datetime.datetime.fromisoformat(value.replace('Z', '+00:00'))
+            except (ValueError, TypeError):
+                pass
+            return value
+        elif isinstance(value, dict):
+            return {k: self._deserialize_value(v) for k, v in value.items()}
+        elif isinstance(value, list):
+            return [self._deserialize_value(item) for item in value]
+        else:
+            return value
     
     def add_job(self, job_id: str, job_data: Dict[str, Any]) -> bool:
         """Add a job to the store.
