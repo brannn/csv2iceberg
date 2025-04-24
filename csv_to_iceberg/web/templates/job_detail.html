@@ -213,7 +213,9 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Function to format elapsed time as HH:MM:SS
     function formatElapsedTime(milliseconds) {
-        const totalSeconds = Math.floor(milliseconds / 1000);
+        // Ensure we're working with positive values
+        const totalSeconds = Math.max(0, Math.floor(milliseconds / 1000));
+        
         const hours = Math.floor(totalSeconds / 3600);
         const minutes = Math.floor((totalSeconds % 3600) / 60);
         const seconds = totalSeconds % 60;
