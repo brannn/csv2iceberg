@@ -57,7 +57,7 @@ def index():
 
 @routes.route('/convert', methods=['GET', 'POST'])
 def convert():
-    """Render the conversion page."""
+    """Render the conversion page and handle conversion requests."""
     logger.debug("Convert route called")
     profiles_list = config_manager.get_profiles()
     last_used_profile = None
@@ -66,10 +66,186 @@ def convert():
         last_used_profile = last_used.get('name')
     
     if request.method == 'POST':
-        # Handle the conversion process
-        # [Conversion logic to be implemented]
-        flash('Conversion started', 'success')
-        return redirect(url_for('routes.jobs'))
+        try:
+            # Get the uploaded file
+            csv_file = request.files.get('csv_file')
+            if not csv_file:
+                flash('No file selected', 'error')
+                return render_template('convert.html', profiles=profiles_list, last_used_profile=last_used_profile)
+            
+            # Get form parameters
+            profile_name = request.form.get('profile')
+            table_name = request.form.get('table_name')
+            delimiter = request.form.get('delimiter', ',')
+            has_header = request.form.get('has_header') == 'true'
+            quote_char = request.form.get('quote_char', '"')
+            write_mode = request.form.get('write_mode', 'append')
+            batch_size = int(request.form.get('batch_size', 10000))
+            sample_size = int(request.form.get('sample_size', 1000))
+            include_columns = request.form.get('include_columns', '')
+            exclude_columns = request.form.get('exclude_columns', '')
+            custom_schema = request.form.get('custom_schema', '')
+            
+            # Parse column lists
+            include_cols_list = [col.strip() for col in include_columns.split(',')] if include_columns.strip() else None
+            exclude_cols_list = [col.strip() for col in exclude_columns.split(',')] if exclude_columns.strip() else None
+            
+            # Validate required fields
+            if not profile_name:
+                flash('Profile is required', 'error')
+                return render_template('convert.html', profiles=profiles_list, last_used_profile=last_used_profile)
+            
+            if not table_name:
+                flash('Table name is required', 'error')
+                return render_template('convert.html', profiles=profiles_list, last_used_profile=last_used_profile)
+            
+            # Get the profile
+            profile = config_manager.get_profile(profile_name)
+            if not profile:
+                flash(f'Profile {profile_name} not found', 'error')
+                return render_template('convert.html', profiles=profiles_list, last_used_profile=last_used_profile)
+            
+            # Set last used profile
+            config_manager.set_last_used_profile(profile_name)
+            
+            # Save the file to a temporary location
+            temp_dir = os.path.join(os.getcwd(), 'uploads')
+            os.makedirs(temp_dir, exist_ok=True)
+            
+            # Create a unique filename
+            file_id = str(uuid.uuid4())
+            file_path = os.path.join(temp_dir, f'{file_id}_{secure_filename(csv_file.filename)}')
+            
+            # Save the file
+            csv_file.save(file_path)
+            
+            # Create a job ID
+            job_id = str(uuid.uuid4())
+            
+            # Get file size
+            file_size = os.path.getsize(file_path)
+            
+            # Create job parameters
+            job_params = {
+                'csv_file': file_path,
+                'delimiter': delimiter,
+                'has_header': has_header,
+                'quote_char': quote_char,
+                'batch_size': batch_size,
+                'table_name': table_name,
+                'trino_host': profile.get('trino_host'),
+                'trino_port': profile.get('trino_port'),
+                'trino_user': profile.get('trino_user'),
+                'trino_password': profile.get('trino_password'),
+                'http_scheme': profile.get('http_scheme'),
+                'trino_role': profile.get('trino_role'),
+                'trino_catalog': profile.get('trino_catalog'),
+                'trino_schema': profile.get('trino_schema'),
+                'hive_metastore_uri': profile.get('hive_metastore_uri'),
+                'use_hive_metastore': profile.get('use_hive_metastore'),
+                'mode': write_mode,
+                'sample_size': sample_size,
+                'file_size': file_size,
+                'original_filename': secure_filename(csv_file.filename),
+                'include_columns': include_cols_list,
+                'exclude_columns': exclude_cols_list,
+                'custom_schema': custom_schema if custom_schema.strip() else None
+            }
+            
+            # Create the job
+            job = job_manager.create_job(job_id, job_params)
+            
+            # Run the job in a background thread
+            def run_conversion_job():
+                try:
+                    # Import here to avoid circular imports
+                    from csv_to_iceberg.core.iceberg_writer import IcebergWriter
+                    from csv_to_iceberg.connectors.trino_client import TrinoClient
+                    from csv_to_iceberg.connectors.hive_client import HiveMetastoreClient
+                    
+                    job_manager.update_job_progress(job_id, 0)
+                    
+                    # Create Trino client
+                    trino_client = TrinoClient(
+                        host=job_params['trino_host'],
+                        port=job_params['trino_port'],
+                        user=job_params['trino_user'],
+                        password=job_params['trino_password'],
+                        http_scheme=job_params['http_scheme'],
+                        role=job_params['trino_role']
+                    )
+                    
+                    # Create Hive client if needed
+                    hive_client = None
+                    if job_params['use_hive_metastore']:
+                        hive_client = HiveMetastoreClient(job_params['hive_metastore_uri'])
+                    
+                    # Create Iceberg writer
+                    table_parts = job_params['table_name'].split('.')
+                    if len(table_parts) == 3:
+                        catalog, schema, table = table_parts
+                    elif len(table_parts) == 2:
+                        catalog = job_params['trino_catalog']
+                        schema, table = table_parts
+                    else:
+                        catalog = job_params['trino_catalog']
+                        schema = job_params['trino_schema']
+                        table = job_params['table_name']
+                    
+                    writer = IcebergWriter(
+                        trino_client=trino_client,
+                        catalog=catalog,
+                        schema=schema,
+                        table=table,
+                        hive_client=hive_client
+                    )
+                    
+                    # Progress callback
+                    def update_progress(percent):
+                        job_manager.update_job_progress(job_id, percent)
+                    
+                    # Write CSV to Iceberg
+                    writer.write_csv_to_iceberg(
+                        csv_file=job_params['csv_file'],
+                        mode=job_params['mode'],
+                        delimiter=job_params['delimiter'],
+                        has_header=job_params['has_header'],
+                        quote_char=job_params['quote_char'],
+                        batch_size=job_params['batch_size'],
+                        include_columns=job_params['include_columns'],
+                        exclude_columns=job_params['exclude_columns'],
+                        progress_callback=update_progress
+                    )
+                    
+                    # Mark job as completed
+                    job_manager.mark_job_completed(job_id, success=True)
+                    
+                    # Clean up temporary file
+                    try:
+                        os.remove(job_params['csv_file'])
+                    except OSError:
+                        logger.warning(f"Could not remove temporary file: {job_params['csv_file']}")
+                        
+                except Exception as e:
+                    error_msg = str(e)
+                    logger.error(f"Error in conversion job {job_id}: {error_msg}", exc_info=True)
+                    job_manager.mark_job_completed(job_id, success=False, error=error_msg)
+                    
+                    # Clean up temporary file on error too
+                    try:
+                        os.remove(job_params['csv_file'])
+                    except OSError:
+                        logger.warning(f"Could not remove temporary file: {job_params['csv_file']}")
+            
+            # Start the job in a background thread
+            threading.Thread(target=run_conversion_job, daemon=True).start()
+            
+            flash(f'Conversion started with job ID: {job_id}', 'success')
+            return redirect(url_for('routes.jobs'))
+            
+        except Exception as e:
+            logger.error(f"Error starting conversion: {str(e)}", exc_info=True)
+            flash(f'Error starting conversion: {str(e)}', 'error')
     
     return render_template('convert.html', profiles=profiles_list, last_used_profile=last_used_profile)
 
@@ -204,3 +380,67 @@ def profile_use(name):
     else:
         flash(f'Failed to set {name} as the active profile', 'error')
     return redirect(url_for('routes.profiles'))
+
+@routes.route('/job/<job_id>')
+def job_detail(job_id):
+    """Display job details."""
+    logger.debug(f"Job detail route called for {job_id}")
+    job = job_manager.get_job(job_id)
+    
+    if not job:
+        flash(f'Job {job_id} not found', 'error')
+        return redirect(url_for('routes.jobs'))
+    
+    # Mark job as active to prevent cleanup
+    job_manager.mark_job_as_active(job_id)
+    
+    # Format job data for display
+    # Format duration
+    duration = job.get('duration')
+    job['duration_formatted'] = format_duration(duration) if duration else 'N/A'
+    
+    # Format timestamps
+    created_at = job.get('created_at')
+    completed_at = job.get('completed_at')
+    job['created_at_formatted'] = format_datetime(created_at) if created_at else 'N/A'
+    job['completed_at_formatted'] = format_datetime(completed_at) if completed_at else 'N/A'
+    
+    # Format status
+    status = job.get('status')
+    job['status_formatted'] = format_status(status) if status is not None else 'Unknown'
+    
+    # Format file size
+    file_size = job.get('file_size', 0)
+    job['file_size_formatted'] = format_size(file_size) if file_size else 'N/A'
+    
+    # Format parameters
+    params = {}
+    for k, v in job.items():
+        if k not in ('created_at', 'completed_at', 'duration', 'status', 'progress', 'error', 'stdout', 'stderr'):
+            if isinstance(v, (str, int, float, bool)) or v is None:
+                params[k] = v
+    
+    return render_template('job_detail.html', job=job, params=params)
+    
+@routes.route('/api/job/<job_id>/status')
+def job_status(job_id):
+    """Get job status as JSON."""
+    job = job_manager.get_job(job_id)
+    if not job:
+        return jsonify({'error': 'Job not found'}), 404
+    
+    # Mark job as active to prevent cleanup
+    job_manager.mark_job_as_active(job_id)
+    
+    # Extract relevant status information
+    status_data = {
+        'id': job_id,
+        'status': job.get('status'),
+        'progress': job.get('progress', 0),
+        'created_at': job.get('created_at'),
+        'completed_at': job.get('completed_at'),
+        'duration': job.get('duration'),
+        'error': job.get('error')
+    }
+    
+    return jsonify(status_data)
