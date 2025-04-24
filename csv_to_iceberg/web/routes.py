@@ -404,8 +404,17 @@ def jobs():
         # Format file size
         file_size = job.get('file_size', 0)
         job['file_size_formatted'] = format_size(file_size) if file_size else 'N/A'
-        
-    return render_template('jobs.html', jobs=jobs_sorted)
+    
+    # Pass utility functions to the template
+    return render_template(
+        'jobs.html', 
+        jobs=jobs_sorted,
+        format_duration=format_duration,
+        format_datetime=format_datetime,
+        format_status=format_status,
+        format_size=format_size,
+        now=datetime.now()
+    )
 
 @routes.route('/profiles')
 def profiles():
@@ -557,7 +566,16 @@ def job_detail(job_id):
             if isinstance(v, (str, int, float, bool)) or v is None:
                 params[k] = v
     
-    return render_template('job_detail.html', job=job, params=params)
+    return render_template(
+        'job_detail.html', 
+        job=job, 
+        params=params,
+        format_duration=format_duration,
+        format_datetime=format_datetime,
+        format_status=format_status,
+        format_size=format_size,
+        now=datetime.now()
+    )
     
 @routes.route('/api/job/<job_id>/status')
 def job_status(job_id):
