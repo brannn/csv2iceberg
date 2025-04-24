@@ -103,18 +103,30 @@ class JobManager:
         Returns:
             Job data dictionary or None if not found
         """
+        logger = logging.getLogger(__name__)
+        logger.info(f"get_job called for job_id: {job_id}")
+        
         # Try memory first (faster)
         if job_id in self.memory_jobs:
+            logger.info(f"Job {job_id} found in memory cache")
             return self.memory_jobs[job_id]
             
         # Try LMDB if enabled and not in memory
         if self.use_lmdb and self.lmdb_store:
+            logger.info(f"Job {job_id} not in memory, trying LMDB")
             job_data = self.lmdb_store.get_job(job_id)
             if job_data:
+                logger.info(f"Job {job_id} found in LMDB")
                 # Cache in memory for faster access
                 self.memory_jobs[job_id] = job_data
                 return job_data
-                
+            else:
+                logger.info(f"Job {job_id} not found in LMDB")
+        
+        # List all jobs in memory for debugging
+        memory_job_ids = list(self.memory_jobs.keys())
+        logger.info(f"All job IDs in memory: {memory_job_ids}")
+        
         return None
         
     def update_job(self, job_id: str, updates: Dict[str, Any]) -> Optional[Dict[str, Any]]:

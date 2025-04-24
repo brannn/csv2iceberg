@@ -612,12 +612,21 @@ def schema_apply():
 @app.route('/job/<job_id>')
 def job_status(job_id):
     """Show the status of a conversion job."""
+    logger.info(f"Job status requested for job ID: {job_id}")
+    
     # Clean up old jobs from memory
     job_manager.cleanup_old_jobs()
     
     # Get job from job manager
     job = job_manager.get_job(job_id)
+    logger.info(f"Job retrieval result: {'Found' if job else 'Not found'}")
+    
     if not job:
+        # Get list of all available job IDs for debugging
+        all_jobs = job_manager.get_all_jobs(include_test_jobs=True)
+        job_ids = [j.get('id', '') for j in all_jobs]
+        logger.info(f"Available job IDs: {job_ids}")
+        
         flash('Job not found or has been archived', 'info')
         return redirect(url_for('jobs'))
     
