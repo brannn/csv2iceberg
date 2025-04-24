@@ -719,6 +719,7 @@ def job_status(job_id):
         'created_at': job.get('created_at'),
         'completed_at': job.get('completed_at'),
         'duration': job.get('duration'),
+        'rows_processed': job.get('rows_processed'),
         'error': job.get('error')
     }
     
