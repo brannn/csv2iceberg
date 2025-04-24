@@ -20,14 +20,18 @@ def create_app(test_config=None):
         Configured Flask application
     """
     # Create and configure the app
+    template_dir = os.path.join(os.path.dirname(__file__), "templates")
+    static_dir = os.path.join(os.path.dirname(__file__), "static")
+    
+    # Ensure we're using the package templates, not root level ones
     app = Flask(__name__, 
-                template_folder=os.path.join(os.path.dirname(__file__), "templates"),
-                static_folder=os.path.join(os.path.dirname(__file__), "static"))
+                template_folder=template_dir,
+                static_folder=static_dir)
     
     # Set default configuration
     app.config.from_mapping(
         SECRET_KEY=os.environ.get("FLASK_SECRET_KEY", "dev"),
-        UPLOAD_FOLDER=os.path.join(os.getcwd(), "uploads"),
+        UPLOAD_FOLDER=os.path.join(os.path.dirname(__file__), "uploads"),
         MAX_CONTENT_LENGTH=500 * 1024 * 1024,  # 500MB upload limit
     )
     
