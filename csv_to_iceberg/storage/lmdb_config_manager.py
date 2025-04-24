@@ -4,8 +4,8 @@ LMDB-based configuration management module for CSV to Iceberg conversion
 import os
 import logging
 from typing import Dict, List, Optional, Any
-from lmdb_store import LMDBProfileStore
-from config_manager import DEFAULT_PROFILE
+from csv_to_iceberg.storage.lmdb_store import LMDBProfileStore
+from csv_to_iceberg.storage.config_manager import DEFAULT_PROFILE
 
 # Default LMDB directory location
 DEFAULT_LMDB_PATH = os.path.expanduser("~/.csv_to_iceberg/lmdb_config")
