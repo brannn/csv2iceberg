@@ -28,15 +28,12 @@
 <body>
     <nav class="navbar navbar-expand-lg navbar-dark bg-primary mb-4">
         <div class="container">
-            <a class="navbar-brand me-0" href="{{ url_for('index') }}">CSV to Iceberg</a>
-            <span class="navbar-text text-light small ms-2 d-none d-lg-inline">
-                Running version: <code>f4cb1b92c995</code>
-            </span>
-            <button class="navbar-toggler ms-auto" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+            <a class="navbar-brand" href="{{ url_for('index') }}">CSV to Iceberg</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
                 <span class="navbar-toggler-icon"></span>
             </button>
             <div class="collapse navbar-collapse" id="navbarNav">
-                <ul class="navbar-nav ms-auto">
+                <ul class="navbar-nav me-auto">
                     <li class="nav-item">
                         <a class="nav-link {% if request.path == '/' %}active{% endif %}" href="{{ url_for('index') }}">Home</a>
                     </li>
@@ -49,10 +46,10 @@
                     <li class="nav-item">
                         <a class="nav-link {% if request.path.startswith('/profiles') %}active{% endif %}" href="{{ url_for('profiles') }}">Profiles</a>
                     </li>
-                    <li class="nav-item d-lg-none">
-                        <span class="nav-link text-light-emphasis">Running version: <code>f4cb1b92c995</code></span>
-                    </li>
                 </ul>
+                <span class="navbar-text text-white small">
+                    Running version: <span class="text-white">f4cb1b92c995</span>
+                </span>
             </div>
         </div>
     </nav>
