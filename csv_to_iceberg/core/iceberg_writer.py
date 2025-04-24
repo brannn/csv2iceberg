@@ -195,7 +195,7 @@ class IcebergWriter:
     
     def _write_batch_to_iceberg(self, batch_data, mode: str) -> None:
         """
-        Write a batch of data to an Iceberg table using Trino.
+        Write a batch of data to an Iceberg table using Trino with PyArrow conversion.
         
         Args:
             batch_data: Batch of data to write (Polars DataFrame or any compatible DataFrame with columns attribute)
@@ -210,9 +210,24 @@ class IcebergWriter:
             logger.info(f"Writing batch to {self.catalog}.{self.schema}.{self.table} in {mode} mode")
         
         try:
+            # Ensure we're working with a Polars DataFrame for consistency
+            if not isinstance(batch_data, pl.DataFrame):
+                try:
+                    # Try to convert to Polars if it's another DataFrame type
+                    if hasattr(batch_data, 'to_dict') and callable(batch_data.to_dict):
+                        # Convert from Pandas
+                        logger.info("Converting Pandas DataFrame to Polars")
+                        batch_data = pl.DataFrame(batch_data.to_dict('list'))
+                    else:
+                        logger.warning("Unknown DataFrame type, attempting to convert to Polars")
+                        # Generic fallback
+                        batch_data = pl.DataFrame(batch_data)
+                except Exception as e:
+                    logger.error(f"Failed to convert to Polars DataFrame: {str(e)}")
+                    raise RuntimeError(f"Unsupported DataFrame type: {type(batch_data)}")
+            
             # Get column names from the dataframe
-            # Works with both Polars and Pandas DataFrames
-            columns = batch_data.columns.tolist() if hasattr(batch_data.columns, 'tolist') else list(batch_data.columns)
+            columns = batch_data.columns
             
             # Clean column names to replace spaces with underscores
             cleaned_columns = []
@@ -221,7 +236,14 @@ class IcebergWriter:
                 clean_col = col.replace(' ', '_') if isinstance(col, str) else str(col).replace(' ', '_')
                 cleaned_columns.append(clean_col)
             
-            # Update the columns list with cleaned names
+            # Update the batch DataFrame with cleaned column names if needed
+            if any(orig != cleaned for orig, cleaned in zip(columns, cleaned_columns)):
+                # Create a mapping from original to cleaned column names
+                column_mapping = {orig: cleaned for orig, cleaned in zip(columns, cleaned_columns)}
+                batch_data = batch_data.rename(column_mapping)
+                logger.debug(f"Renamed DataFrame columns for SQL compatibility")
+                
+            # Update column references
             columns = cleaned_columns
             quoted_columns = [f'"{col}"' for col in columns]
             column_names_str = ", ".join(quoted_columns)
