@@ -6,12 +6,10 @@ import logging
 import time
 import csv
 from typing import Dict, List, Any, Optional, Callable, Tuple
-import tempfile
 import datetime
 
 # Use Polars for data processing
 import polars as pl
-import pyarrow as pa
 
 # Import PyIceberg schema
 from pyiceberg.schema import Schema
@@ -195,7 +193,7 @@ class IcebergWriter:
     
     def _write_batch_to_iceberg(self, batch_data, mode: str) -> None:
         """
-        Write a batch of data to an Iceberg table using Trino with PyArrow conversion.
+        Write a batch of data to an Iceberg table using direct SQL INSERT statements.
         
         Args:
             batch_data: Batch of data to write (Polars DataFrame or any compatible DataFrame with columns attribute)
@@ -348,48 +346,55 @@ class IcebergWriter:
                 # Create batch slice
                 batch_slice = batch_data.slice(i, min(max_rows_per_batch, total_rows - i))
                 
-                # Create a temporary file for the batch data
-                with tempfile.NamedTemporaryFile(suffix='.parquet', delete=False) as temp_file:
-                    temp_path = temp_file.name
-                    try:
-                        # Convert Polars DataFrame to PyArrow table and write to Parquet
-                        logger.info(f"Converting batch of {len(batch_slice)} rows to PyArrow table")
-                        arrow_table = batch_slice.to_arrow()
+                # Create SQL VALUES clause for direct insertion
+                values_list = []
+                
+                # Iterate through the rows of the batch to build VALUES lists
+                for row_idx, row in enumerate(batch_slice.rows(named=True)):
+                    row_values = []
+                    for col in columns:
+                        val = row[col]
                         
-                        # Write the Arrow table to a Parquet file
-                        pa.parquet.write_table(arrow_table, temp_path)
-                        logger.debug(f"Wrote {len(batch_slice)} rows to temporary Parquet file: {temp_path}")
-                        
-                        # Load the Parquet file into Trino
-                        load_sql = f"""
-                        INSERT INTO {self.catalog}.{self.schema}.{self.table}
-                        SELECT {column_names_str} FROM parquet.default.'{temp_path}'
-                        """
-                        
-                        logger.debug(f"Executing SQL to load data from Parquet file")
-                        self.trino_client.execute_query(load_sql)
-                        logger.info(f"Successfully loaded batch of {len(batch_slice)} rows from Parquet file")
-                        
-                    except Exception as e:
-                        logger.error(f"Error during Parquet conversion or loading: {str(e)}", exc_info=True)
-                        
-                        # Provide more detailed error information
-                        error_msg = str(e).lower()
-                        if "type mismatch" in error_msg:
-                            logger.error("Type mismatch detected - column types may not match target table schema")
-                        elif "table not found" in error_msg:
-                            logger.error("Table not found - the target table may have been dropped during the operation")
-                        
-                        raise RuntimeError(f"Failed to write data to Iceberg table: {str(e)}")
+                        if val is None:
+                            row_values.append("NULL")
+                        elif isinstance(val, bool):
+                            row_values.append("TRUE" if val else "FALSE")
+                        elif isinstance(val, (int, float)):
+                            row_values.append(str(val))
+                        elif isinstance(val, datetime.datetime):
+                            # Format timestamp properly for Trino
+                            row_values.append(f"TIMESTAMP '{val}'")
+                        elif isinstance(val, datetime.date):
+                            row_values.append(f"DATE '{val}'")
+                        else:
+                            # Handle string values with proper escaping
+                            str_val = str(val).replace("'", "''")
+                            row_values.append(f"'{str_val}'")
                     
-                    finally:
-                        # Clean up the temporary file
-                        try:
-                            if os.path.exists(temp_path):
-                                os.unlink(temp_path)
-                                logger.debug(f"Deleted temporary Parquet file: {temp_path}")
-                        except Exception as e:
-                            logger.warning(f"Failed to delete temporary Parquet file: {str(e)}")
+                    values_list.append(f"({', '.join(row_values)})")
+                
+                # Build the full INSERT statement
+                insert_sql = f"""
+                INSERT INTO {self.catalog}.{self.schema}.{self.table} ({column_names_str})
+                VALUES {', '.join(values_list)}
+                """
+                
+                # Execute the SQL statement
+                try:
+                    logger.debug(f"Executing SQL INSERT with {len(values_list)} rows of data")
+                    self.trino_client.execute_query(insert_sql)
+                    logger.info(f"Successfully inserted batch of {len(batch_slice)} rows")
+                except Exception as e:
+                    logger.error(f"Error during SQL INSERT: {str(e)}", exc_info=True)
+                    
+                    # Provide more detailed error information
+                    error_msg = str(e).lower()
+                    if "type mismatch" in error_msg:
+                        logger.error("Type mismatch detected - column types may not match target table schema")
+                    elif "table not found" in error_msg:
+                        logger.error("Table not found - the target table may have been dropped during the operation")
+                    
+                    raise RuntimeError(f"Failed to write data to Iceberg table: {str(e)}")
             
             logger.info(f"Successfully wrote {len(batch_data)} rows to {self.catalog}.{self.schema}.{self.table}")
             
