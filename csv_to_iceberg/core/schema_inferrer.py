@@ -4,7 +4,8 @@ Schema inference module for CSV to Iceberg conversion using Polars
 import os
 import logging
 import datetime
-from typing import Dict, List, Any, Optional, Tuple
+import re
+from typing import Dict, List, Any, Optional, Tuple, Set
 
 import polars as pl
 import pyarrow as pa
