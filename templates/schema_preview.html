@@ -35,6 +35,7 @@
                                     <th>Inferred Type</th>
                                     <th>Edit Type</th>
                                     <th>Required</th>
+                                    <th>Comment</th>
                                     <th>Sample Values</th>
                                 </tr>
                             </thead>
@@ -69,6 +70,12 @@
                                                    value="true"
                                                    {% if field.required %}checked{% endif %}>
                                         </div>
+                                    </td>
+                                    <td>
+                                        <input type="text" class="form-control" 
+                                               name="comment_{{ field.id }}" 
+                                               value="{{ field.comment|default('') }}"
+                                               placeholder="Optional description...">
                                     </td>
                                     <td>
                                         <div class="sample-values">
