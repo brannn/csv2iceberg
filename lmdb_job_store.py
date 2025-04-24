@@ -119,8 +119,11 @@ class LMDBJobStore:
             job_value = json.dumps(serialized).encode('utf-8')
             
             # Calculate timestamp for index (latest jobs first)
+            # Reverse the timestamp so we can get newest jobs first when iterating normally
             timestamp = int(time.time())
-            index_key = f"{timestamp:012d}:{job_id}".encode('utf-8')
+            reverse_timestamp = 2147483647 - timestamp  # Use max 32-bit signed integer
+            index_key = f"{reverse_timestamp:012d}:{job_id}".encode('utf-8')
+            logger.debug(f"Adding job {job_id} to LMDB with index key {index_key.decode('utf-8')}")
             
             # Store job data and update index
             with self.env.begin(write=True) as txn:
@@ -149,9 +152,12 @@ class LMDBJobStore:
             True if successful, False otherwise
         """
         try:
+            logger.debug(f"LMDB store update_job called for job_id: {job_id}")
+            
             # Get existing job to preserve any fields not in the update
             existing_job = self.get_job(job_id)
             if not existing_job:
+                logger.warning(f"Job {job_id} not found in update_job, creating new job")
                 return self.add_job(job_id, job_data)
                 
             # Merge existing data with updates
@@ -164,11 +170,51 @@ class LMDBJobStore:
             job_key = job_id.encode('utf-8')
             job_value = json.dumps(serialized).encode('utf-8')
             
-            # Store updated job data
-            with self.env.begin(write=True) as txn:
-                txn.put(job_key, job_value)
+            # If status is changing from pending to running or completed, 
+            # we want to update the timestamp in the index as well
+            update_index = False
+            if ('status' in job_data and 
+                existing_job.get('status') == 'pending' and 
+                job_data['status'] in ['running', 'completed', 'failed']):
+                update_index = True
                 
-            logger.debug(f"Updated job {job_id} in LMDB")
+            if update_index:
+                # First find and remove old index key
+                old_index_key = None
+                with self.env.begin() as txn:
+                    cursor = txn.cursor(db=self.index_db)
+                    if cursor.first():
+                        while True:
+                            current_key = cursor.key()
+                            current_value = cursor.value()
+                            
+                            if current_value == job_key:
+                                old_index_key = current_key
+                                break
+                                
+                            if not cursor.next():
+                                break
+                
+                # Calculate new timestamp for index
+                timestamp = int(time.time())
+                reverse_timestamp = 2147483647 - timestamp
+                new_index_key = f"{reverse_timestamp:012d}:{job_id}".encode('utf-8')
+                
+                # Update both job data and index
+                with self.env.begin(write=True) as txn:
+                    txn.put(job_key, job_value)
+                    if old_index_key:
+                        txn.delete(old_index_key, db=self.index_db)
+                    txn.put(new_index_key, job_key, db=self.index_db)
+                    
+                logger.debug(f"Updated job {job_id} in LMDB with new index key")
+            else:
+                # Just update the job data
+                with self.env.begin(write=True) as txn:
+                    txn.put(job_key, job_value)
+                    
+                logger.debug(f"Updated job {job_id} in LMDB (data only)")
+                
             return True
             
         except Exception as e:
@@ -185,15 +231,31 @@ class LMDBJobStore:
             Job data dictionary or None if not found
         """
         try:
+            logger.debug(f"LMDB store get_job called for job_id: {job_id}")
             job_key = job_id.encode('utf-8')
             
             with self.env.begin() as txn:
                 job_value = txn.get(job_key)
                 
             if job_value:
+                logger.debug(f"Found job {job_id} in LMDB, deserializing")
                 job_data = json.loads(job_value.decode('utf-8'))
-                return self.deserialize_job(job_data)
+                deserialized = self.deserialize_job(job_data)
+                logger.debug(f"Job status: {deserialized.get('status')}, created_at: {deserialized.get('created_at')}")
+                return deserialized
             else:
+                logger.warning(f"Job {job_id} not found in LMDB")
+                # Try to list all jobs to see if we can find it in a different way
+                all_job_keys = []
+                with self.env.begin() as txn:
+                    cursor = txn.cursor()
+                    if cursor.first():
+                        while True:
+                            all_job_keys.append(cursor.key().decode('utf-8'))
+                            if not cursor.next():
+                                break
+                
+                logger.debug(f"All job keys in LMDB: {all_job_keys}")
                 return None
                 
         except Exception as e:
@@ -210,36 +272,63 @@ class LMDBJobStore:
         Returns:
             List of job data dictionaries
         """
+        logger.debug(f"LMDB store get_all_jobs called (limit={limit}, include_test_jobs={include_test_jobs})")
         try:
             jobs = []
             count = 0
+            
+            # First, check how many jobs we have in total
+            all_job_keys = []
+            with self.env.begin() as txn:
+                cursor = txn.cursor()
+                if cursor.first():
+                    while True:
+                        all_job_keys.append(cursor.key().decode('utf-8'))
+                        if not cursor.next():
+                            break
+            
+            logger.debug(f"LMDB store contains {len(all_job_keys)} total jobs: {all_job_keys}")
             
             with self.env.begin() as txn:
                 # Use the sorted index to get jobs by timestamp (newest first)
                 cursor = txn.cursor(db=self.index_db)
                 
-                # Position at the last record (newest timestamp)
+                # With our reverse timestamp index (2147483647 - timestamp),
+                # the oldest job is now first and newest is last in the natural order
+                
+                # Start at last record (newest job) and move through them
                 if cursor.last():
                     while count < limit:
-                        # Get the job key from index entry
-                        index_key = cursor.key()
-                        job_key = cursor.value()
-                        
-                        # Get the actual job data
-                        job_value = txn.get(job_key)
-                        
-                        if job_value:
-                            job_data = json.loads(job_value.decode('utf-8'))
-                            job_data = self.deserialize_job(job_data)
+                        try:
+                            # Get the job key from index entry
+                            index_key = cursor.key()
+                            index_str = index_key.decode('utf-8')
+                            job_key = cursor.value()
                             
-                            # Skip test jobs if not included
-                            is_test_job = job_data.get('is_test', False)
-                            if not is_test_job or include_test_jobs:
-                                jobs.append(job_data)
-                                count += 1
+                            logger.debug(f"Found job index entry: {index_str} -> {job_key.decode('utf-8')}")
+                            
+                            # Get the actual job data
+                            job_value = txn.get(job_key)
+                            
+                            if job_value:
+                                job_data = json.loads(job_value.decode('utf-8'))
+                                job_data = self.deserialize_job(job_data)
                                 
-                        # Move to previous (older) job
-                        if not cursor.prev():
+                                logger.debug(f"Retrieved job from LMDB: {job_data.get('id')} (status: {job_data.get('status')})")
+                                
+                                # Skip test jobs if not included
+                                is_test_job = job_data.get('is_test', False)
+                                if not is_test_job or include_test_jobs:
+                                    jobs.append(job_data)
+                                    count += 1
+                            else:
+                                logger.warning(f"Index points to missing job data: {job_key.decode('utf-8')}")
+                                
+                        except Exception as e:
+                            logger.error(f"Error processing job during get_all_jobs: {str(e)}")
+                            
+                        # Move to next job in the index
+                        if not cursor.next():
                             break
             
             return jobs
@@ -315,13 +404,16 @@ class LMDBJobStore:
                         # Count total
                         jobs_count += 1
                         
-                        # Parse timestamp from index key
+                        # Parse timestamp from index key (remember we use reverse timestamps)
                         index_key = cursor.key().decode('utf-8')
                         parts = index_key.split(':', 1)
                         if len(parts) == 2:
                             try:
-                                timestamp = int(parts[0])
-                                if timestamp < cutoff_time:
+                                reverse_timestamp = int(parts[0])
+                                # Convert back to real timestamp: 2147483647 - reverse_timestamp
+                                real_timestamp = 2147483647 - reverse_timestamp
+                                # If job is older than cutoff time, mark for deletion
+                                if real_timestamp < cutoff_time:
                                     jobs_to_delete.append(index_key)
                             except ValueError:
                                 pass
