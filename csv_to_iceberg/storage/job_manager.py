@@ -254,6 +254,9 @@ class JobManager:
         if not job_data:
             return False
             
+        # Preserve important values from the job data
+        rows_processed = job_data.get('rows_processed')
+            
         updates = {
             'status': 'completed' if success else 'failed',
             'completed_at': datetime.datetime.now()
@@ -262,6 +265,10 @@ class JobManager:
         # Set progress to 100% when completed successfully
         if success:
             updates['progress'] = 100
+        
+        # Preserve rows_processed if it exists
+        if rows_processed is not None:
+            updates['rows_processed'] = rows_processed
             
         # Add optional fields if provided
         if stdout is not None:

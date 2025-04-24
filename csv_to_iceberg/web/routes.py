@@ -382,19 +382,26 @@ def convert():
                     
                     # Handle the result
                     if result['success']:
+                        # Get the row count 
+                        rows_processed = result.get('rows_processed', 0)
+                        stdout = result.get('stdout', '')
+                        
                         # Update job with row count and stdout
                         updates = {
-                            'rows_processed': result['rows_processed'],
-                            'stdout': result.get('stdout', '')
+                            'rows_processed': rows_processed,
+                            'stdout': stdout
                         }
                         job_manager.update_job(job_id, updates)
                         
-                        # Mark job as completed with success and stdout
+                        # Mark job as completed with success, stdout, and ensure rows_processed stays
                         job_manager.mark_job_completed(
                             job_id, 
                             success=True,
-                            stdout=result.get('stdout', '')
+                            stdout=stdout
                         )
+                        
+                        # Make a final update to ensure rows_processed is preserved
+                        job_manager.update_job(job_id, {'rows_processed': rows_processed})
                     else:
                         # Mark job as failed with error and traceback if available
                         error = result['error']
