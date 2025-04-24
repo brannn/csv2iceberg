@@ -4,7 +4,7 @@ A command-line tool for converting CSV files to Apache Iceberg tables.
 
 ## Overview
 
-This tool allows data engineers to easily convert CSV data files to Apache Iceberg tables with automatic schema inference, batch processing, and progress tracking. It connects to a Trino server for SQL operations and optionally to a Hive metastore for metadata management when required by specific query engines like Spark.
+This tool allows data engineers to easily convert CSV data files to Apache Iceberg tables with automatic schema inference, batch processing, and progress tracking. It connects to a Trino server for SQL operations and includes placeholder support for future Hive metastore integration, which is currently not enabled.
 
 ## Features
 
@@ -30,8 +30,8 @@ This tool allows data engineers to easily convert CSV data files to Apache Icebe
   - rich (for progress display)
   - lmdb (for storing configuration and job data)
 
-Optional:
-- Hive metastore (only required when using query engines like Spark that need direct Hive metastore access)
+Optional Features (Future Support):
+- Direct Hive metastore connection (currently disabled but code structure maintained for future implementation)
 
 ## Installation
 
@@ -60,19 +60,12 @@ python csv_to_iceberg.py convert \
   --trino-schema default
 ```
 
-If you need to use a Hive metastore connection (optional):
+Note: Direct Hive metastore connection is currently disabled but may be supported in future versions. The following parameters exist in the codebase but are not active:
 
 ```bash
+# Future support - not currently implemented
 python csv_to_iceberg.py convert \
-  --csv-file sample_data.csv \
-  --table-name catalog.schema.table \
-  --trino-host localhost \
-  --trino-port 443 \
-  --trino-user admin \
-  --trino-password your_password \
-  --http-scheme https \
-  --trino-catalog iceberg \
-  --trino-schema default \
+  # ... standard parameters as above ...
   --hive-metastore-uri localhost:9083 \
   --use-hive-metastore
 ```
@@ -118,14 +111,14 @@ python csv_to_iceberg.py convert \
   --csv-file data.csv \
   --delimiter ";" \
   --quote-char "'" \
-  --table-name hive.default.my_table \
+  --table-name iceberg.default.my_table \
   --trino-host localhost \
-  --trino-port 8080 \
+  --trino-port 443 \
   --trino-user admin \
   --trino-password your_password \
-  --trino-catalog hive \
-  --trino-schema default \
-  --hive-metastore-uri localhost:9083
+  --http-scheme https \
+  --trino-catalog iceberg \
+  --trino-schema default
 ```
 
 ### Overwrite an existing table
@@ -133,14 +126,14 @@ python csv_to_iceberg.py convert \
 ```bash
 python csv_to_iceberg.py convert \
   --csv-file updated_data.csv \
-  --table-name hive.default.existing_table \
+  --table-name iceberg.default.existing_table \
   --trino-host localhost \
-  --trino-port 8080 \
+  --trino-port 443 \
   --trino-user admin \
   --trino-password your_password \
-  --trino-catalog hive \
+  --http-scheme https \
+  --trino-catalog iceberg \
   --trino-schema default \
-  --hive-metastore-uri localhost:9083 \
   --mode overwrite
 ```
 
@@ -150,14 +143,14 @@ python csv_to_iceberg.py convert \
 python csv_to_iceberg.py convert \
   --csv-file large_data.csv \
   --batch-size 50000 \
-  --table-name hive.default.large_table \
+  --table-name iceberg.default.large_table \
   --trino-host localhost \
-  --trino-port 8080 \
+  --trino-port 443 \
   --trino-user admin \
   --trino-password your_password \
-  --trino-catalog hive \
-  --trino-schema default \
-  --hive-metastore-uri localhost:9083
+  --http-scheme https \
+  --trino-catalog iceberg \
+  --trino-schema default
 ```
 
 ## Troubleshooting
@@ -165,11 +158,12 @@ python csv_to_iceberg.py convert \
 If you encounter issues:
 
 1. Use the `--verbose` flag to enable detailed logging
-2. Ensure Trino server is running and accessible
-3. If using direct Hive metastore connection, verify it's running and accessible
-4. Verify connection parameters (host, port, URI)
-5. Check CSV file format and encoding
-6. For authentication errors, verify Trino username and password are correct
+2. Ensure Trino server is running and accessible 
+3. Verify connection parameters (host, port)
+4. Check CSV file format and encoding
+5. For authentication errors, verify Trino username and password are correct
+
+Note: Direct Hive metastore connection is not currently active in this version but the code structure is maintained for future implementation.
 
 ### Authentication Issues
 
@@ -179,15 +173,14 @@ If you receive a "Cannot use authentication with HTTP" error:
    ```bash
    python csv_to_iceberg.py convert \
      --csv-file data.csv \
-     --table-name hive.default.my_table \
+     --table-name iceberg.default.my_table \
      --trino-host trino-server.example.com \
      --trino-port 8443 \
      --trino-user admin \
      --trino-password your_password \
      --http-scheme https \   # Use HTTPS for authentication
-     --trino-catalog hive \
-     --trino-schema default \
-     --hive-metastore-uri metastore.example.com:9083
+     --trino-catalog iceberg \
+     --trino-schema default
    ```
 
 2. If you cannot use HTTPS:
@@ -203,15 +196,14 @@ This tool supports Trino's role-based authorization system using the `--trino-ro
 ```bash
 python csv_to_iceberg.py convert \
   --csv-file data.csv \
-  --table-name hive.default.my_table \
+  --table-name iceberg.default.my_table \
   --trino-host trino-server.example.com \
   --trino-user admin \
   --trino-password your_password \
   --http-scheme https \
   --trino-role my_role \   # Specifies a custom role
-  --trino-catalog hive \
-  --trino-schema default \
-  --hive-metastore-uri metastore.example.com:9083
+  --trino-catalog iceberg \
+  --trino-schema default
 ```
 
 By default, the tool uses the `sysadmin` role if no role is specified. You may need to adjust this based on your Trino server's security configuration:
