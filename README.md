@@ -55,10 +55,10 @@ To start the web interface:
 python main.py
 
 # Or use Gunicorn for production deployment
-gunicorn --bind 0.0.0.0:5000 --reuse-port --reload main:app
+gunicorn --bind 0.0.0.0:5001 --reuse-port --reload main:app
 ```
 
-Then open your browser to http://localhost:5000 to access the web interface.
+Then open your browser to http://localhost:5001 to access the web interface.
 
 ## CLI Usage
 
