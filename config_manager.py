@@ -21,7 +21,7 @@ DEFAULT_PROFILE = {
     "trino_catalog": "iceberg",
     "trino_schema": "default",
     "hive_metastore_uri": "localhost:9083",
-    "use_hive_metastore": True,
+    "use_hive_metastore": False,
     "description": "Default connection profile"
 }
 
