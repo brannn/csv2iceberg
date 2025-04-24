@@ -10,15 +10,15 @@ from werkzeug.utils import secure_filename
 from collections import OrderedDict
 
 # Import helper modules
-from utils import setup_logging
-from config_manager import ConfigManager
+from csv_to_iceberg.utils import setup_logging
+from csv_to_iceberg.storage.config_manager import ConfigManager
 
 # LMDB is our permanent storage solution
 USE_LMDB = True
 LMDB_IMPORTED = False
 
 try:
-    from lmdb_config_manager import LMDBConfigManager
+    from csv_to_iceberg.storage.lmdb_config_manager import LMDBConfigManager
     LMDB_IMPORTED = True
     logger = logging.getLogger("csv_to_iceberg")
     logger.info("Using LMDB for configuration storage")
@@ -56,7 +56,7 @@ app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB limit
 
 # Import job manager for job storage with LMDB support
-from job_manager import job_manager
+from csv_to_iceberg.storage.job_manager import job_manager
 
 # Utility function for job duration
 def format_duration(start_time, end_time):
