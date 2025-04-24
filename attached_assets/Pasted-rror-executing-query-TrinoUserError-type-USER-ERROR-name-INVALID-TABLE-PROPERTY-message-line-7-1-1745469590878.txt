@@ -1,0 +1,76 @@
+rror executing query: TrinoUserError(type=USER_ERROR, name=INVALID_TABLE_PROPERTY, message="line 7:17: Catalog 'iceberg' table property 'comment_storage' does not exist", query_id=20250424_043830_29490_uvvzu)
+Traceback (most recent call last):
+  File "/usr/src/app/feature-branches/csv2iceberg/trino_client.py", line 159, in execute_query
+    cursor.execute(query)
+  File "/usr/src/app/feature-branches/csv2iceberg/lib/python3.12/site-packages/trino/dbapi.py", line 614, in execute
+    self._iterator = iter(self._query.execute())
+                          ^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/src/app/feature-branches/csv2iceberg/lib/python3.12/site-packages/trino/client.py", line 900, in execute
+    self._result.rows += self.fetch()
+                         ^^^^^^^^^^^^
+  File "/usr/src/app/feature-branches/csv2iceberg/lib/python3.12/site-packages/trino/client.py", line 920, in fetch
+    status = self._request.process(response)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/src/app/feature-branches/csv2iceberg/lib/python3.12/site-packages/trino/client.py", line 689, in process
+    raise self._process_error(response["error"], response.get("id"))
+trino.exceptions.TrinoUserError: TrinoUserError(type=USER_ERROR, name=INVALID_TABLE_PROPERTY, message="line 7:17: Catalog 'iceberg' table property 'comment_storage' does not exist", query_id=20250424_043830_29490_uvvzu)
+Error creating table: Failed to execute query: TrinoUserError(type=USER_ERROR, name=INVALID_TABLE_PROPERTY, message="line 7:17: Catalog 'iceberg' table property 'comment_storage' does not exist", query_id=20250424_043830_29490_uvvzu)
+Traceback (most recent call last):
+  File "/usr/src/app/feature-branches/csv2iceberg/trino_client.py", line 159, in execute_query
+    cursor.execute(query)
+  File "/usr/src/app/feature-branches/csv2iceberg/lib/python3.12/site-packages/trino/dbapi.py", line 614, in execute
+    self._iterator = iter(self._query.execute())
+                          ^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/src/app/feature-branches/csv2iceberg/lib/python3.12/site-packages/trino/client.py", line 900, in execute
+    self._result.rows += self.fetch()
+                         ^^^^^^^^^^^^
+  File "/usr/src/app/feature-branches/csv2iceberg/lib/python3.12/site-packages/trino/client.py", line 920, in fetch
+    status = self._request.process(response)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/src/app/feature-branches/csv2iceberg/lib/python3.12/site-packages/trino/client.py", line 689, in process
+    raise self._process_error(response["error"], response.get("id"))
+trino.exceptions.TrinoUserError: TrinoUserError(type=USER_ERROR, name=INVALID_TABLE_PROPERTY, message="line 7:17: Catalog 'iceberg' table property 'comment_storage' does not exist", query_id=20250424_043830_29490_uvvzu)
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/usr/src/app/feature-branches/csv2iceberg/trino_client.py", line 321, in create_iceberg_table
+    self.execute_query(create_table_sql)
+  File "/usr/src/app/feature-branches/csv2iceberg/trino_client.py", line 173, in execute_query
+    raise RuntimeError(f"Failed to execute query: {str(e)}")
+RuntimeError: Failed to execute query: TrinoUserError(type=USER_ERROR, name=INVALID_TABLE_PROPERTY, message="line 7:17: Catalog 'iceberg' table property 'comment_storage' does not exist", query_id=20250424_043830_29490_uvvzu)
+ERROR: Error during conversion: Failed to create table: Failed to execute query: TrinoUserError(type=USER_ERROR, name=INVALID_TABLE_PROPERTY, message="line 7:17: Catalog 'iceberg' table property 'comment_storage' does not exist", query_id=20250424_043830_29490_uvvzu)
+Traceback (most recent call last):
+  File "/usr/src/app/feature-branches/csv2iceberg/trino_client.py", line 159, in execute_query
+    cursor.execute(query)
+  File "/usr/src/app/feature-branches/csv2iceberg/lib/python3.12/site-packages/trino/dbapi.py", line 614, in execute
+    self._iterator = iter(self._query.execute())
+                          ^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/src/app/feature-branches/csv2iceberg/lib/python3.12/site-packages/trino/client.py", line 900, in execute
+    self._result.rows += self.fetch()
+                         ^^^^^^^^^^^^
+  File "/usr/src/app/feature-branches/csv2iceberg/lib/python3.12/site-packages/trino/client.py", line 920, in fetch
+    status = self._request.process(response)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/src/app/feature-branches/csv2iceberg/lib/python3.12/site-packages/trino/client.py", line 689, in process
+    raise self._process_error(response["error"], response.get("id"))
+trino.exceptions.TrinoUserError: TrinoUserError(type=USER_ERROR, name=INVALID_TABLE_PROPERTY, message="line 7:17: Catalog 'iceberg' table property 'comment_storage' does not exist", query_id=20250424_043830_29490_uvvzu)
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/usr/src/app/feature-branches/csv2iceberg/trino_client.py", line 321, in create_iceberg_table
+    self.execute_query(create_table_sql)
+  File "/usr/src/app/feature-branches/csv2iceberg/trino_client.py", line 173, in execute_query
+    raise RuntimeError(f"Failed to execute query: {str(e)}")
+RuntimeError: Failed to execute query: TrinoUserError(type=USER_ERROR, name=INVALID_TABLE_PROPERTY, message="line 7:17: Catalog 'iceberg' table property 'comment_storage' does not exist", query_id=20250424_043830_29490_uvvzu)
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/usr/src/app/feature-branches/csv2iceberg/csv_to_iceberg.py", line 234, in convert
+    trino_client.create_iceberg_table(catalog, schema, table, iceberg_schema, table_properties=table_props)
+  File "/usr/src/app/feature-branches/csv2iceberg/trino_client.py", line 329, in create_iceberg_table
+    raise RuntimeError(f"Failed to create table: {str(e)}")
+RuntimeError: Failed to create table: Failed to execute query: TrinoUserError(type=USER_ERROR, name=INVALID_TABLE_PROPERTY, message="line 7:17: Catalog 'iceberg' table property 'comment_storage' does not exist", query_id=20250424_043830_29490_uvvzu)
+Error: Failed to create table: Failed to execute query: TrinoUserError(type=USER_ERROR, name=INVALID_TABLE_PROPERTY, message="line 7:17: Catalog 'iceberg' table property 'comment_storage' does not exist", query_id=20250424_043830_29490_uvvzu)

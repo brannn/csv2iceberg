@@ -299,8 +299,7 @@ class TrinoClient:
                 {columns_clause}
             )
             WITH (
-                format = 'PARQUET',
-                comment_storage = 'PROPERTY'"""
+                format = 'PARQUET'"""
             
             # Add table properties if provided
             if table_properties and len(table_properties) > 0:
