@@ -103,7 +103,7 @@ def analyze_csv():
             columns.append({
                 'name': field.name,
                 'type': str(field.field_type),
-                'required': not field.is_optional,
+                'required': field.required,
             })
             
         return jsonify({'schema': columns}), 200
