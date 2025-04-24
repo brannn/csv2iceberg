@@ -46,6 +46,9 @@
                     <li class="nav-item">
                         <a class="nav-link {% if request.path.startswith('/profiles') %}active{% endif %}" href="{{ url_for('profiles') }}">Profiles</a>
                     </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.path == '/storage-status' %}active{% endif %}" href="{{ url_for('storage_status') }}">Storage Status</a>
+                    </li>
                 </ul>
                 <span class="navbar-text text-white small">
                     Running version: <span class="text-white">f4cb1b92c995</span>
