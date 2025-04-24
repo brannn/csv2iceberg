@@ -230,8 +230,23 @@ document.addEventListener('DOMContentLoaded', function() {
     // Function to update elapsed time
     function updateElapsedTime() {
         const now = new Date();
-        const elapsed = now - startTime;
-        elapsedTimeElement.textContent = formatElapsedTime(elapsed);
+        
+        // Fix potential date parsing issues by ensuring valid timestamp
+        try {
+            // Fix for negative time issue by ensuring valid dates
+            if (isNaN(startTime.getTime())) {
+                // If the start time is invalid, use current time as fallback
+                startTime = new Date();
+                console.error("Invalid start time detected, using current time as fallback");
+            }
+            
+            // Calculate elapsed time (ensuring it's never negative)
+            const elapsed = Math.max(0, now - startTime);
+            elapsedTimeElement.textContent = formatElapsedTime(elapsed);
+        } catch (error) {
+            console.error("Error updating elapsed time:", error);
+            elapsedTimeElement.textContent = "00:00:00";
+        }
     }
     
     // Update elapsed time immediately and then every second

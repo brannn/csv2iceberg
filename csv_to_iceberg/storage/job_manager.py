@@ -69,6 +69,7 @@ class JobManager:
         Returns:
             Job data dictionary
         """
+        # Extract and move important fields up to the root level for easier access in templates
         job_data = {
             'id': job_id,
             'params': params,
@@ -81,7 +82,12 @@ class JobManager:
             'stderr': None,
             'returncode': None,
             'error': None,
-            'is_test': params.get('is_test', False)
+            'is_test': params.get('is_test', False),
+            # Move these fields up to the root level from params
+            'table_name': params.get('table_name', ''),
+            'file_size': params.get('file_size', 0),
+            'original_filename': params.get('original_filename', ''),
+            'mode': params.get('mode', '')
         }
         
         # Store in memory first (for immediate access)

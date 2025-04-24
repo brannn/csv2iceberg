@@ -611,9 +611,11 @@ def job_detail(job_id):
     job['created_at_formatted'] = format_datetime(created_at) if created_at else 'N/A'
     job['completed_at_formatted'] = format_datetime(completed_at) if completed_at else 'N/A'
     
-    # Add ISO format for JavaScript timer
+    # Add ISO format for JavaScript timer with timezone info for better compatibility
     if created_at and isinstance(created_at, datetime):
-        job['created_at_iso'] = created_at.isoformat()
+        # Format with explicit timezone info to ensure proper client-side parsing
+        # Use UTC format with Z suffix for better JavaScript compatibility
+        job['created_at_iso'] = created_at.strftime('%Y-%m-%dT%H:%M:%S.%fZ')
     
     # Format status
     status = job.get('status')
@@ -623,12 +625,37 @@ def job_detail(job_id):
     file_size = job.get('file_size', 0)
     job['file_size_formatted'] = format_size(file_size) if file_size else 'N/A'
     
-    # Format parameters
+    # Ensure core job fields are present (even if empty)
+    if not job.get('table_name'):
+        job['table_name'] = job.get('params', {}).get('table_name', '')
+    
+    if not job.get('original_filename'):
+        job['original_filename'] = job.get('params', {}).get('original_filename', '')
+    
+    if not job.get('mode'):
+        job['mode'] = job.get('params', {}).get('mode', '')
+    
+    # Format parameters for the connection details table
     params = {}
     for k, v in job.items():
-        if k not in ('created_at', 'completed_at', 'duration', 'status', 'progress', 'error', 'stdout', 'stderr'):
+        if k not in ('created_at', 'completed_at', 'duration', 'status', 'progress', 
+                     'error', 'stdout', 'stderr', 'table_name', 'file_size', 
+                     'original_filename', 'mode'):
             if isinstance(v, (str, int, float, bool)) or v is None:
                 params[k] = v
+    
+    # Include important connection parameters from the params dictionary
+    job_params = job.get('params', {})
+    params.update({
+        'trino_host': job_params.get('trino_host', ''),
+        'trino_port': job_params.get('trino_port', ''),
+        'trino_user': job_params.get('trino_user', ''),
+        'trino_role': job_params.get('trino_role', ''),
+        'trino_catalog': job_params.get('trino_catalog', ''),
+        'trino_schema': job_params.get('trino_schema', ''),
+        'use_hive_metastore': job_params.get('use_hive_metastore', False),
+        'hive_metastore_uri': job_params.get('hive_metastore_uri', '')
+    })
     
     return render_template(
         'job_detail.html', 
