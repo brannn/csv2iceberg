@@ -1219,14 +1219,61 @@ def storage_status():
     """Show the current storage status."""
     global config_manager, USE_LMDB
     
+    # Get profile names for comparison
+    profile_names = [p['name'] for p in config_manager.get_profiles()]
+    
+    # Get session info
+    session_storage = "LMDB" if session.get('USE_LMDB', False) else "JSON"
+    
+    # Get information about temp and cache directories
+    temp_dir = tempfile.gettempdir()
+    home_dir = os.path.expanduser("~")
+    
+    # Check both storage backends if LMDB is available
+    other_storage_profiles = []
+    if LMDB_IMPORTED:
+        # Create a temporary instance of the other storage type
+        if USE_LMDB:
+            # We're using LMDB, so check JSON
+            other_storage = ConfigManager()
+            other_type = "JSON"
+        else:
+            # We're using JSON, so check LMDB
+            other_storage = LMDBConfigManager()
+            other_type = "LMDB"
+            
+        # Get profiles from other storage
+        try:
+            other_profiles = other_storage.get_profiles()
+            other_storage_profiles = [p['name'] for p in other_profiles]
+        except Exception as e:
+            other_storage_profiles = [f"Error: {str(e)}"]
+    
+    # Get path constants from appropriate modules
+    if LMDB_IMPORTED:
+        from lmdb_config_manager import DEFAULT_LMDB_PATH
+        default_lmdb_path = DEFAULT_LMDB_PATH
+    else:
+        default_lmdb_path = "~/.csv_to_iceberg/lmdb_config"
+    
+    # Get JSON config path from ConfigManager module
+    from config_manager import DEFAULT_CONFIG_FILE as JSON_CONFIG_FILE
+    
     status = {
         "storage_type": "LMDB" if USE_LMDB else "JSON",
+        "session_storage_type": session_storage,
         "lmdb_available": LMDB_IMPORTED,
-        "current_profiles_count": len(config_manager.get_profiles()),
-        "environment_variable": os.environ.get("USE_LMDB_STORAGE", "false")
+        "current_profiles": profile_names,
+        "current_profiles_count": len(profile_names),
+        "other_storage_profiles": other_storage_profiles,
+        "environment_variable": os.environ.get("USE_LMDB_STORAGE", "false"),
+        "temp_directory": temp_dir,
+        "home_directory": home_dir,
+        "lmdb_config_path": os.path.expanduser(default_lmdb_path),
+        "json_config_path": os.path.expanduser(JSON_CONFIG_FILE)
     }
     
-    return jsonify(status)
+    return render_template('storage_status.html', status=status)
 
 @app.route('/admin/storage/<mode>')
 def toggle_storage_mode(mode):
@@ -1248,6 +1295,8 @@ def toggle_storage_mode(mode):
         USE_LMDB = True
         os.environ["USE_LMDB_STORAGE"] = "true"
         session['USE_LMDB'] = True
+        # Force session update
+        session.modified = True
         
         # Save current config manager to keep reference open for migration
         old_config_manager = config_manager
@@ -1286,6 +1335,8 @@ def toggle_storage_mode(mode):
         USE_LMDB = False
         os.environ["USE_LMDB_STORAGE"] = "false"
         session['USE_LMDB'] = False
+        # Force session update
+        session.modified = True
         
         # Save current config manager to keep reference open for migration
         old_config_manager = config_manager

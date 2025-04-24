@@ -12,11 +12,17 @@
             <div class="d-flex gap-2">
                 <div class="dropdown">
                     <button class="btn btn-outline-secondary dropdown-toggle btn-sm" type="button" id="storageDropdown" data-bs-toggle="dropdown" aria-expanded="false">
-                        Storage: {{ 'LMDB' if session.get('USE_LMDB', False) else 'JSON' }}
+                        {% if session.get('USE_LMDB', False) %}
+                            Storage: <span class="badge bg-info">LMDB</span>
+                        {% else %}
+                            Storage: <span class="badge bg-secondary">JSON</span>
+                        {% endif %}
                     </button>
                     <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="storageDropdown">
                         <li><a class="dropdown-item {% if not session.get('USE_LMDB', False) %}active{% endif %}" href="{{ url_for('toggle_storage_mode', mode='json') }}">JSON</a></li>
                         <li><a class="dropdown-item {% if session.get('USE_LMDB', False) %}active{% endif %}" href="{{ url_for('toggle_storage_mode', mode='lmdb') }}">LMDB</a></li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li><a class="dropdown-item" href="{{ url_for('storage_status') }}">Storage Status</a></li>
                     </ul>
                 </div>
                 <a href="{{ url_for('profile_add') }}" class="btn btn-primary"><i class="bi bi-plus-circle"></i> Add Profile</a>
