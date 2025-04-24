@@ -420,7 +420,45 @@ document.addEventListener('DOMContentLoaded', function() {
     // Profile selector dynamic target fields
     const profileSelect = document.getElementById('profile');
     
-    // We could add further dynamic behavior here to populate target fields based on profile selection
+    // Auto-populate table name prefix based on profile selection
+    profileSelect.addEventListener('change', function() {
+        // Get the selected profile
+        const selectedProfileName = this.value;
+        if (!selectedProfileName) return;
+        
+        // Make a request to get the profile details
+        fetch(`/profiles/get/${selectedProfileName}`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    console.error('Error fetching profile:', data.error);
+                    return;
+                }
+                
+                // Get the catalog and schema from the profile
+                const catalog = data.profile.trino_catalog;
+                const schema = data.profile.trino_schema;
+                
+                // Update the table name input with catalog.schema prefix
+                if (catalog && schema) {
+                    // If the user has already entered a name, check if it has a prefix
+                    const currentTableName = tableNameInput.value;
+                    
+                    // If the table name doesn't already have a catalog/schema prefix
+                    if (!currentTableName.includes('.')) {
+                        // Set the new format: catalog.schema.tablename
+                        if (currentTableName) {
+                            tableNameInput.value = `${catalog}.${schema}.${currentTableName}`;
+                        } else {
+                            tableNameInput.value = `${catalog}.${schema}.`;
+                        }
+                    }
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+            });
+    });
 });
 </script>
 {% endblock %}
