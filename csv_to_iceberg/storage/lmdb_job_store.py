@@ -120,10 +120,17 @@ class LMDBJobStore:
             # Try to parse as datetime if it has the right format
             # Check if it might be an ISO datetime string (simple heuristic)
             try:
-                if 'T' in value and ('+' in value or 'Z' in value or '-' in value[10:]):
-                    return datetime.datetime.fromisoformat(value.replace('Z', '+00:00'))
-            except (ValueError, TypeError):
-                pass
+                # Check if it looks like an ISO datetime string
+                if 'T' in value and value.count('-') >= 2:
+                    # Handle Z timezone designator (UTC)
+                    if value.endswith('Z'):
+                        value = value.replace('Z', '+00:00')
+                    # Handle missing timezone - assume UTC
+                    elif '+' not in value and value.rfind('-') < 10:
+                        value = value + '+00:00'
+                    return datetime.datetime.fromisoformat(value)
+            except (ValueError, TypeError) as e:
+                logger.debug(f"Failed to parse datetime: {value} - {str(e)}")
             return value
         elif isinstance(value, dict):
             return {k: self._deserialize_value(v) for k, v in value.items()}
