@@ -18,6 +18,7 @@ from pyiceberg.schema import Schema
 from connectors.trino_client import TrinoClient
 from core.schema_inferrer import infer_schema_from_df
 from connectors.hive_client import HiveMetastoreClient
+from core.query_collector import QueryCollector
 
 # Configure logger
 logger = logging.getLogger(__name__)
@@ -74,7 +75,8 @@ class IcebergWriter:
         batch_size: int = 20000,  # Increased batch size for better performance
         include_columns: Optional[List[str]] = None,
         exclude_columns: Optional[List[str]] = None,
-        progress_callback: Optional[Callable[[int], None]] = None
+        progress_callback: Optional[Callable[[int], None]] = None,
+        dry_run: bool = False
     ) -> int:
         """
         Write CSV data to an Iceberg table using Polars.
@@ -89,8 +91,15 @@ class IcebergWriter:
             include_columns: List of column names to include (if None, include all except excluded)
             exclude_columns: List of column names to exclude (if None, no exclusions)
             progress_callback: Callback function to report progress
+            dry_run: If True, collect and log queries that would be executed without actually running them
         """
         try:
+            # Initialize query collector for dry run mode
+            query_collector = None
+            if dry_run:
+                query_collector = QueryCollector()
+                logger.info("Running in DRY RUN mode - queries will be collected but not executed")
+                
             # Get total row count for progress reporting
             total_rows = count_csv_rows(csv_file, delimiter, quote_char, has_header)
             logger.info(f"CSV file has {total_rows} rows")
@@ -169,7 +178,7 @@ class IcebergWriter:
                     first_batch = False
                 
                 # Write the batch to the Iceberg table directly using Polars DataFrame
-                self._write_batch_to_iceberg(batch, current_mode)
+                self._write_batch_to_iceberg(batch, current_mode, dry_run, query_collector)
                 
                 # Update progress
                 processed_rows += len(batch)
@@ -185,9 +194,18 @@ class IcebergWriter:
             if last_progress < 100 and progress_callback:
                 progress_callback(100)
                 logger.info("Progress: 100%")
-                
-            logger.info(f"Successfully wrote {processed_rows} rows to {self.catalog}.{self.schema}.{self.table}")
-            return processed_rows
+            
+            # For dry run mode, store the query_collector results and log a summary
+            if dry_run and query_collector:
+                query_collector.log_summary()
+                # Store the query collector for later access
+                self.dry_run_results = query_collector.get_full_report()
+                # In dry run mode, return the total number of rows that would have been processed
+                logger.info(f"DRY RUN completed - would have processed {processed_rows} rows")
+                return processed_rows
+            else:
+                logger.info(f"Successfully wrote {processed_rows} rows to {self.catalog}.{self.schema}.{self.table}")
+                return processed_rows
             
         except Exception as e:
             logger.error(f"Error writing CSV to Iceberg: {str(e)}", exc_info=True)
@@ -196,13 +214,15 @@ class IcebergWriter:
             raise RuntimeError(f"Failed to write CSV to Iceberg: {str(e)}")
             return 0  # Will never reach here due to the raise
     
-    def _write_batch_to_iceberg(self, batch_data, mode: str) -> None:
+    def _write_batch_to_iceberg(self, batch_data, mode: str, dry_run: bool = False, query_collector = None) -> None:
         """
         Write a batch of data to an Iceberg table using optimized SQL INSERT statements.
         
         Args:
             batch_data: Batch of data to write (Polars DataFrame or any compatible DataFrame with columns attribute)
             mode: Write mode (append or overwrite)
+            dry_run: If True, collect queries without executing them
+            query_collector: QueryCollector instance for storing queries in dry run mode
         """
         start_time = time.time()
         try:
@@ -264,8 +284,15 @@ class IcebergWriter:
                 try:
                     # If table exists and we're in overwrite mode, truncate it
                     truncate_sql = f"DELETE FROM {self.catalog}.{self.schema}.{self.table}"
-                    self.trino_client.execute_query(truncate_sql)
-                    logger.debug(f"Truncated target table {self.table} for overwrite mode")
+                    
+                    if dry_run and query_collector:
+                        # In dry run mode, just collect the query
+                        query_collector.add_query(truncate_sql, "DDL", 0, f"{self.catalog}.{self.schema}.{self.table}")
+                        logger.debug(f"[DRY RUN] Would execute: {truncate_sql}")
+                    else:
+                        # Normal execution
+                        self.trino_client.execute_query(truncate_sql)
+                        logger.debug(f"Truncated target table {self.table} for overwrite mode")
                     
                     # Invalidate schema cache after table truncation in case of schema changes
                     self.invalidate_schema_cache()
@@ -283,9 +310,19 @@ class IcebergWriter:
                 # Infer schema from batch data
                 iceberg_schema = infer_schema_from_df(batch_data)
                 
-                # Create the table
-                self.trino_client.create_iceberg_table(self.catalog, self.schema, self.table, iceberg_schema)
-                logger.info(f"Created table {self.catalog}.{self.schema}.{self.table}")
+                # Create the table (or collect the DDL in dry run mode)
+                if dry_run and query_collector:
+                    # Get the create table SQL without executing it
+                    create_table_sql = self.trino_client.get_create_table_sql(
+                        self.catalog, self.schema, self.table, iceberg_schema
+                    )
+                    query_collector.add_query(create_table_sql, "DDL", 0, f"{self.catalog}.{self.schema}.{self.table}")
+                    logger.info(f"[DRY RUN] Would create table: {self.catalog}.{self.schema}.{self.table}")
+                    logger.debug(f"[DRY RUN] Would execute: {create_table_sql}")
+                else:
+                    # Normal execution
+                    self.trino_client.create_iceberg_table(self.catalog, self.schema, self.table, iceberg_schema)
+                    logger.info(f"Created table {self.catalog}.{self.schema}.{self.table}")
                 
                 # Set empty schema to force dynamic inference for the first batch
                 self._cached_target_schema = []
@@ -332,13 +369,15 @@ class IcebergWriter:
             
             raise RuntimeError(f"Failed to write batch to Iceberg: {str(e)}")
             
-    def _write_batch_to_iceberg_sql(self, batch_data, mode: str) -> None:
+    def _write_batch_to_iceberg_sql(self, batch_data, mode: str, dry_run: bool = False, query_collector = None) -> None:
         """
         High-performance method to write batch data using optimized SQL INSERT statements.
         
         Args:
             batch_data: Batch of data to write (Polars DataFrame)
             mode: Write mode (append or overwrite)
+            dry_run: If True, collect queries without executing them
+            query_collector: QueryCollector instance for storing queries in dry run mode
         """
         logger.info(f"Using optimized SQL INSERT method for batch of {len(batch_data)} rows")
         
@@ -420,13 +459,20 @@ class IcebergWriter:
                     # Process all rows in a single batch
                     insert_sql = f"{base_sql}{', '.join(formatted_rows)}"
                     
-                    try:
-                        self.trino_client.execute_query(insert_sql)
+                    if dry_run and query_collector:
+                        # In dry run mode, just collect the query
+                        query_collector.add_query(insert_sql, "DML", len(formatted_rows), f"{self.catalog}.{self.schema}.{self.table}")
+                        logger.info(f"[DRY RUN] Would insert {len(formatted_rows)} rows")
                         rows_processed += len(formatted_rows)
-                        logger.info(f"Successfully inserted batch of {len(formatted_rows)} rows (within query length limit)")
-                    except Exception as e:
-                        logger.error(f"Error during SQL INSERT: {str(e)}", exc_info=True)
-                        raise RuntimeError(f"Failed to write data to Iceberg table: {str(e)}")
+                    else:
+                        # Normal execution
+                        try:
+                            self.trino_client.execute_query(insert_sql)
+                            rows_processed += len(formatted_rows)
+                            logger.info(f"Successfully inserted batch of {len(formatted_rows)} rows (within query length limit)")
+                        except Exception as e:
+                            logger.error(f"Error during SQL INSERT: {str(e)}", exc_info=True)
+                            raise RuntimeError(f"Failed to write data to Iceberg table: {str(e)}")
                 else:
                     # Need to split into smaller chunks due to query length limit
                     logger.info(f"Batch too large for single query ({estimated_total_length} chars), splitting into smaller chunks")
@@ -449,13 +495,20 @@ class IcebergWriter:
                             # Execute current mini-batch
                             insert_sql = f"{base_sql}{', '.join(current_chunk)}"
                             
-                            try:
-                                self.trino_client.execute_query(insert_sql)
+                            if dry_run and query_collector:
+                                # In dry run mode, just collect the query
+                                query_collector.add_query(insert_sql, "DML", len(current_chunk), f"{self.catalog}.{self.schema}.{self.table}")
+                                logger.info(f"[DRY RUN] Would insert mini-batch of {len(current_chunk)} rows")
                                 rows_processed += len(current_chunk)
-                                logger.info(f"Successfully inserted mini-batch of {len(current_chunk)} rows (query length limit)")
-                            except Exception as e:
-                                logger.error(f"Error during SQL INSERT: {str(e)}", exc_info=True)
-                                raise RuntimeError(f"Failed to write data to Iceberg table: {str(e)}")
+                            else:
+                                # Normal execution
+                                try:
+                                    self.trino_client.execute_query(insert_sql)
+                                    rows_processed += len(current_chunk)
+                                    logger.info(f"Successfully inserted mini-batch of {len(current_chunk)} rows (query length limit)")
+                                except Exception as e:
+                                    logger.error(f"Error during SQL INSERT: {str(e)}", exc_info=True)
+                                    raise RuntimeError(f"Failed to write data to Iceberg table: {str(e)}")
                             
                             # Reset for next mini-batch
                             current_chunk = []
@@ -469,13 +522,20 @@ class IcebergWriter:
                 if current_chunk:
                     insert_sql = f"{base_sql}{', '.join(current_chunk)}"
                     
-                    try:
-                        self.trino_client.execute_query(insert_sql)
+                    if dry_run and query_collector:
+                        # In dry run mode, just collect the query
+                        query_collector.add_query(insert_sql, "DML", len(current_chunk), f"{self.catalog}.{self.schema}.{self.table}")
+                        logger.info(f"[DRY RUN] Would insert remaining {len(current_chunk)} rows")
                         rows_processed += len(current_chunk)
-                        logger.info(f"Successfully inserted batch of {len(current_chunk)} rows")
-                    except Exception as e:
-                        logger.error(f"Error during SQL INSERT: {str(e)}", exc_info=True)
-                        raise RuntimeError(f"Failed to write data to Iceberg table: {str(e)}")
+                    else:
+                        # Normal execution
+                        try:
+                            self.trino_client.execute_query(insert_sql)
+                            rows_processed += len(current_chunk)
+                            logger.info(f"Successfully inserted batch of {len(current_chunk)} rows")
+                        except Exception as e:
+                            logger.error(f"Error during SQL INSERT: {str(e)}", exc_info=True)
+                            raise RuntimeError(f"Failed to write data to Iceberg table: {str(e)}")
             
             logger.info(f"Successfully wrote {rows_processed} rows to {self.catalog}.{self.schema}.{self.table} using SQL INSERT method")
         except Exception as e:
