@@ -649,20 +649,49 @@ def profile_add():
     logger.debug("Profile add route called")
     if request.method == 'POST':
         # Process the form submission
+        connection_type = request.form.get('connection_type', 'trino')
+        
+        # Start with common fields
         profile = {
             'name': request.form.get('name'),
             'description': request.form.get('description'),
-            'trino_host': request.form.get('trino_host'),
-            'trino_port': int(request.form.get('trino_port', 443)),
-            'trino_user': request.form.get('trino_user'),
-            'trino_password': request.form.get('trino_password', ''),
-            'http_scheme': request.form.get('http_scheme', 'https'),
-            'trino_role': request.form.get('trino_role', 'sysadmin'),
-            'trino_catalog': request.form.get('trino_catalog', 'iceberg'),
-            'trino_schema': request.form.get('trino_schema', 'default'),
-            'use_hive_metastore': request.form.get('use_hive_metastore') == 'true',
-            'hive_metastore_uri': request.form.get('hive_metastore_uri', 'localhost:9083')
+            'connection_type': connection_type
         }
+        
+        # Add connection-specific fields based on connection type
+        if connection_type == 'trino':
+            # Trino connection fields
+            profile.update({
+                'trino_host': request.form.get('trino_host'),
+                'trino_port': int(request.form.get('trino_port', 443)),
+                'trino_user': request.form.get('trino_user'),
+                'trino_password': request.form.get('trino_password', ''),
+                'http_scheme': request.form.get('http_scheme', 'https'),
+                'trino_role': request.form.get('trino_role', 'sysadmin'),
+                'trino_catalog': request.form.get('trino_catalog', 'iceberg'),
+                'trino_schema': request.form.get('trino_schema', 'default'),
+                'use_hive_metastore': request.form.get('use_hive_metastore') == 'true',
+                'hive_metastore_uri': request.form.get('hive_metastore_uri', 'localhost:9083')
+            })
+        elif connection_type == 's3_rest':
+            # S3 Tables REST API fields
+            profile.update({
+                's3_rest_uri': request.form.get('s3_rest_uri'),
+                's3_warehouse_location': request.form.get('s3_warehouse_location'),
+                's3_namespace': request.form.get('s3_namespace', 'default'),
+                # Authentication options
+                's3_client_id': request.form.get('s3_client_id', ''),
+                's3_client_secret': request.form.get('s3_client_secret', ''),
+                's3_token': request.form.get('s3_token', ''),
+                # AWS credentials
+                'aws_access_key_id': request.form.get('aws_access_key_id', ''),
+                'aws_secret_access_key': request.form.get('aws_secret_access_key', ''),
+                'aws_session_token': request.form.get('aws_session_token', ''),
+                'aws_region': request.form.get('aws_region', 'us-east-1')
+            })
+        else:
+            flash(f'Unsupported connection type: {connection_type}', 'error')
+            return render_template('profile_form.html', profile=None, mode='add')
         
         success = config_manager.add_profile(profile)
         if success:
@@ -686,20 +715,49 @@ def profile_edit(name):
     
     if request.method == 'POST':
         # Process the form submission
+        connection_type = request.form.get('connection_type', 'trino')
+        
+        # Start with common fields
         updated_profile = {
             'name': request.form.get('name'),
             'description': request.form.get('description'),
-            'trino_host': request.form.get('trino_host'),
-            'trino_port': int(request.form.get('trino_port', 443)),
-            'trino_user': request.form.get('trino_user'),
-            'trino_password': request.form.get('trino_password', ''),
-            'http_scheme': request.form.get('http_scheme', 'https'),
-            'trino_role': request.form.get('trino_role', 'sysadmin'),
-            'trino_catalog': request.form.get('trino_catalog', 'iceberg'),
-            'trino_schema': request.form.get('trino_schema', 'default'),
-            'use_hive_metastore': request.form.get('use_hive_metastore') == 'true',
-            'hive_metastore_uri': request.form.get('hive_metastore_uri', 'localhost:9083')
+            'connection_type': connection_type
         }
+        
+        # Add connection-specific fields based on connection type
+        if connection_type == 'trino':
+            # Trino connection fields
+            updated_profile.update({
+                'trino_host': request.form.get('trino_host'),
+                'trino_port': int(request.form.get('trino_port', 443)),
+                'trino_user': request.form.get('trino_user'),
+                'trino_password': request.form.get('trino_password', ''),
+                'http_scheme': request.form.get('http_scheme', 'https'),
+                'trino_role': request.form.get('trino_role', 'sysadmin'),
+                'trino_catalog': request.form.get('trino_catalog', 'iceberg'),
+                'trino_schema': request.form.get('trino_schema', 'default'),
+                'use_hive_metastore': request.form.get('use_hive_metastore') == 'true',
+                'hive_metastore_uri': request.form.get('hive_metastore_uri', 'localhost:9083')
+            })
+        elif connection_type == 's3_rest':
+            # S3 Tables REST API fields
+            updated_profile.update({
+                's3_rest_uri': request.form.get('s3_rest_uri'),
+                's3_warehouse_location': request.form.get('s3_warehouse_location'),
+                's3_namespace': request.form.get('s3_namespace', 'default'),
+                # Authentication options
+                's3_client_id': request.form.get('s3_client_id', ''),
+                's3_client_secret': request.form.get('s3_client_secret', ''),
+                's3_token': request.form.get('s3_token', ''),
+                # AWS credentials
+                'aws_access_key_id': request.form.get('aws_access_key_id', ''),
+                'aws_secret_access_key': request.form.get('aws_secret_access_key', ''),
+                'aws_session_token': request.form.get('aws_session_token', ''),
+                'aws_region': request.form.get('aws_region', 'us-east-1')
+            })
+        else:
+            flash(f'Unsupported connection type: {connection_type}', 'error')
+            return render_template('profile_form.html', profile=profile, mode='edit')
         
         success = config_manager.update_profile(name, updated_profile)
         if success:
@@ -812,16 +870,35 @@ def job_detail(job_id):
     
     # Include important connection parameters from the params dictionary
     job_params = job.get('params', {})
-    params.update({
-        'trino_host': job_params.get('trino_host', ''),
-        'trino_port': job_params.get('trino_port', ''),
-        'trino_user': job_params.get('trino_user', ''),
-        'trino_role': job_params.get('trino_role', ''),
-        'trino_catalog': job_params.get('trino_catalog', ''),
-        'trino_schema': job_params.get('trino_schema', ''),
-        'use_hive_metastore': job_params.get('use_hive_metastore', False),
-        'hive_metastore_uri': job_params.get('hive_metastore_uri', '')
-    })
+    connection_type = job_params.get('connection_type', 'trino')
+    
+    # Common parameters
+    connection_params = {
+        'connection_type': connection_type,
+    }
+    
+    # Add connection-specific parameters
+    if connection_type == 'trino':
+        connection_params.update({
+            'trino_host': job_params.get('trino_host', ''),
+            'trino_port': job_params.get('trino_port', ''),
+            'trino_user': job_params.get('trino_user', ''),
+            'trino_role': job_params.get('trino_role', ''),
+            'trino_catalog': job_params.get('trino_catalog', ''),
+            'trino_schema': job_params.get('trino_schema', ''),
+            'use_hive_metastore': job_params.get('use_hive_metastore', False),
+            'hive_metastore_uri': job_params.get('hive_metastore_uri', '')
+        })
+    elif connection_type == 's3_rest':
+        connection_params.update({
+            's3_rest_uri': job_params.get('s3_rest_uri', ''),
+            's3_warehouse_location': job_params.get('s3_warehouse_location', ''),
+            's3_namespace': job_params.get('s3_namespace', 'default'),
+            # Don't include sensitive credentials in the params display
+            'aws_region': job_params.get('aws_region', '')
+        })
+    
+    params.update(connection_params)
     
     return render_template(
         'job_detail.html', 
