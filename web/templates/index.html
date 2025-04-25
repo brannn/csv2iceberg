@@ -7,9 +7,7 @@
     <div class="container-fluid py-5">
         <h1 class="display-5 fw-bold">
             Milton
-            <span class="ms-3">
-              <i class="bi bi-file-earmark-text-fill text-danger fs-3"></i>
-            </span>
+            <img src="{{ url_for('static', filename='red-stapler.png') }}" alt="Red Stapler" class="ms-3" style="height: 40px; vertical-align: middle;">
         </h1>
         <p class="col-md-8 fs-4">Convert CSV files to Apache Iceberg tables with Trino</p>
         <a href="{{ url_for('routes.convert') }}" class="btn btn-primary btn-lg">Start Converting</a>
