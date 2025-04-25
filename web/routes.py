@@ -401,7 +401,7 @@ def job_detail(job_id):
 @routes.route('/jobs')
 def jobs():
     """Show all jobs."""
-    all_jobs = job_manager.get_jobs()
+    all_jobs = job_manager.get_all_jobs()
     
     # Sort jobs by creation date (descending)
     sorted_jobs = sorted(all_jobs, key=lambda j: j.get('created', ''), reverse=True)

@@ -396,6 +396,26 @@ class JobManager:
         if jobs_to_remove:
             logger.info(f"Cleaned up {len(jobs_to_remove)} old jobs from memory")
             
+    def delete_job(self, job_id: str) -> bool:
+        """
+        Delete a job by ID.
+        
+        Args:
+            job_id: Job ID
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        # Remove from memory
+        if job_id in self.memory_jobs:
+            del self.memory_jobs[job_id]
+            
+        # Remove from LMDB if enabled
+        if self.use_lmdb and self.lmdb_store:
+            return self.lmdb_store.delete_job(job_id)
+            
+        return True
+        
     def close(self) -> None:
         """Close the job manager and any open resources."""
         if self.lmdb_store:
