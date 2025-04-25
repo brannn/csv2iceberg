@@ -287,4 +287,3 @@ class S3RestClient:
         """Close any resources being used by the REST client"""
         # Currently no resources to close with REST catalog
         pass
-"""

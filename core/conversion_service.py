@@ -252,6 +252,12 @@ def convert_csv_to_iceberg(
             add_log(f"Using write mode: {mode}")
             
             # Create S3 Iceberg writer
+            if s3_client is None:
+                error_msg = "Failed to create S3 REST client"
+                add_log(error_msg)
+                result['error'] = error_msg
+                return result
+                
             writer = S3IcebergWriter(
                 s3_rest_client=s3_client,
                 namespace=s3_namespace,

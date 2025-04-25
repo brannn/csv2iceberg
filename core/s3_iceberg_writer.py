@@ -341,7 +341,7 @@ class S3IcebergWriter:
             delimiter=delimiter,
             has_header=has_header,
             quote_char=quote_char,
-            max_rows=sample_size,
+            sample_size=sample_size,
             include_columns=include_columns,
             exclude_columns=exclude_columns
         )
