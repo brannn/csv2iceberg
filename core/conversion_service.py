@@ -9,11 +9,11 @@ import time
 from typing import Dict, List, Any, Optional, Callable, Tuple, Union
 import traceback
 
-from csv_to_iceberg.core.iceberg_writer import IcebergWriter
-from csv_to_iceberg.core.schema_inferrer import infer_schema_from_csv
-from csv_to_iceberg.connectors.trino_client import TrinoClient
-from csv_to_iceberg.connectors.hive_client import HiveMetastoreClient
-from csv_to_iceberg.utils import clean_column_name
+from core.iceberg_writer import IcebergWriter
+from core.schema_inferrer import infer_schema_from_csv
+from connectors.trino_client import TrinoClient
+from connectors.hive_client import HiveMetastoreClient
+from utils import clean_column_name
 
 # Configure logging
 logger = logging.getLogger(__name__)
