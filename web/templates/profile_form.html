@@ -25,10 +25,21 @@
                         <input type="text" class="form-control" id="description" name="description" value="{{ profile.description if profile else '' }}">
                         <div class="form-text">Optional description to help identify this profile.</div>
                     </div>
-                    
+
                     <div class="mb-3">
-                        <h5>Trino Connection</h5>
+                        <label for="connection_type" class="form-label">Connection Type</label>
+                        <select class="form-select" id="connection_type" name="connection_type">
+                            <option value="trino" {% if profile and profile.connection_type == 'trino' %}selected{% elif not profile %}selected{% endif %}>Trino/Starburst</option>
+                            <option value="s3_rest" {% if profile and profile.connection_type == 's3_rest' %}selected{% endif %}>Amazon S3 Tables (Iceberg REST)</option>
+                        </select>
+                        <div class="form-text">Select the type of Iceberg connection to use</div>
                     </div>
+                    
+                    <!-- Trino Connection Section -->
+                    <div id="trino_section">
+                        <div class="mb-3">
+                            <h5>Trino Connection</h5>
+                        </div>
                     
                     <div class="mb-3">
                         <label for="trino_host" class="form-label">Trino Host</label>
@@ -91,6 +102,80 @@
                         <input type="text" class="form-control" id="hive_metastore_uri" name="hive_metastore_uri" value="{{ profile.hive_metastore_uri if profile else 'localhost:9083' }}">
                         <div class="form-text">Format: host:port</div>
                     </div>
+                    </div>
+                    
+                    <!-- S3 Tables REST API Section -->
+                    <div id="s3_rest_section" style="display:none;">
+                        <div class="mb-3">
+                            <h5>Amazon S3 Tables Connection (Iceberg REST API)</h5>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="s3_rest_uri" class="form-label">S3 Tables REST Endpoint URI</label>
+                            <input type="text" class="form-control" id="s3_rest_uri" name="s3_rest_uri" value="{{ profile.s3_rest_uri if profile else '' }}">
+                            <div class="form-text">The S3 Tables REST API endpoint URL</div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="s3_warehouse_location" class="form-label">S3 Warehouse Location</label>
+                            <input type="text" class="form-control" id="s3_warehouse_location" name="s3_warehouse_location" value="{{ profile.s3_warehouse_location if profile else '' }}">
+                            <div class="form-text">S3 location for storing Iceberg tables (e.g., s3://bucket/path)</div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="s3_namespace" class="form-label">S3 Tables Namespace</label>
+                            <input type="text" class="form-control" id="s3_namespace" name="s3_namespace" value="{{ profile.s3_namespace if profile else 'default' }}">
+                            <div class="form-text">Default namespace/schema name for S3 Tables</div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <h5>Authentication Options</h5>
+                        </div>
+                        
+                        <!-- OAuth Authentication -->
+                        <div class="mb-3">
+                            <label for="s3_client_id" class="form-label">OAuth Client ID</label>
+                            <input type="text" class="form-control" id="s3_client_id" name="s3_client_id" value="{{ profile.s3_client_id if profile else '' }}">
+                            <div class="form-text">OAuth client ID (if using OAuth for S3 Tables authentication)</div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="s3_client_secret" class="form-label">OAuth Client Secret</label>
+                            <input type="password" class="form-control" id="s3_client_secret" name="s3_client_secret" value="{{ profile.s3_client_secret if profile else '' }}">
+                            <div class="form-text">OAuth client secret (if using OAuth)</div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="s3_token" class="form-label">Bearer Token</label>
+                            <input type="password" class="form-control" id="s3_token" name="s3_token" value="{{ profile.s3_token if profile else '' }}">
+                            <div class="form-text">Bearer token for authentication (if not using OAuth)</div>
+                        </div>
+                        
+                        <!-- AWS Authentication -->
+                        <div class="mb-3">
+                            <label for="aws_access_key_id" class="form-label">AWS Access Key ID</label>
+                            <input type="text" class="form-control" id="aws_access_key_id" name="aws_access_key_id" value="{{ profile.aws_access_key_id if profile else '' }}">
+                            <div class="form-text">AWS access key ID for S3 access</div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="aws_secret_access_key" class="form-label">AWS Secret Access Key</label>
+                            <input type="password" class="form-control" id="aws_secret_access_key" name="aws_secret_access_key" value="{{ profile.aws_secret_access_key if profile else '' }}">
+                            <div class="form-text">AWS secret access key for S3 access</div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="aws_session_token" class="form-label">AWS Session Token</label>
+                            <input type="password" class="form-control" id="aws_session_token" name="aws_session_token" value="{{ profile.aws_session_token if profile else '' }}">
+                            <div class="form-text">AWS session token (if using temporary credentials)</div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="aws_region" class="form-label">AWS Region</label>
+                            <input type="text" class="form-control" id="aws_region" name="aws_region" value="{{ profile.aws_region if profile else 'us-east-1' }}">
+                            <div class="form-text">AWS region (default: us-east-1)</div>
+                        </div>
+                    </div>
                     
                     <div class="d-flex gap-2">
                         <button type="submit" class="btn btn-primary">Save Profile</button>
@@ -105,6 +190,46 @@
 {% block scripts %}
 <script>
 document.addEventListener('DOMContentLoaded', function() {
+    // Toggle sections based on connection type
+    const connectionTypeSelect = document.getElementById('connection_type');
+    const trinoSection = document.getElementById('trino_section');
+    const s3RestSection = document.getElementById('s3_rest_section');
+    
+    // Function to show/hide sections based on connection type
+    function toggleConnectionSections() {
+        const connectionType = connectionTypeSelect.value;
+        
+        if (connectionType === 'trino') {
+            trinoSection.style.display = 'block';
+            s3RestSection.style.display = 'none';
+            
+            // Make Trino required fields actually required
+            document.getElementById('trino_host').required = true;
+            document.getElementById('trino_port').required = true;
+            
+            // Make S3 required fields not required
+            document.getElementById('s3_rest_uri').required = false;
+            document.getElementById('s3_warehouse_location').required = false;
+        } else if (connectionType === 's3_rest') {
+            trinoSection.style.display = 'none';
+            s3RestSection.style.display = 'block';
+            
+            // Make Trino required fields not required
+            document.getElementById('trino_host').required = false;
+            document.getElementById('trino_port').required = false;
+            
+            // Make S3 required fields actually required
+            document.getElementById('s3_rest_uri').required = true;
+            document.getElementById('s3_warehouse_location').required = true;
+        }
+    }
+    
+    // Initial toggle state
+    toggleConnectionSections();
+    
+    // Toggle on connection type change
+    connectionTypeSelect.addEventListener('change', toggleConnectionSections);
+    
     // Function to toggle Hive Metastore URI field based on checkbox
     const useHiveMetastoreCheckbox = document.getElementById('use_hive_metastore');
     const hiveMetastoreUriField = document.getElementById('hive_metastore_uri');
