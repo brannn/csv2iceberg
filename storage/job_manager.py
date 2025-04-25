@@ -58,6 +58,31 @@ class JobManager:
                 
         logger.info(f"Job manager initialized with storage type: {'LMDB' if self.use_lmdb else 'Memory'}")
         
+    def add_job(self, job: Dict[str, Any]) -> bool:
+        """
+        Add a job to the job store.
+        
+        Args:
+            job: Job data dictionary
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        # Get the job ID
+        job_id = job.get('id')
+        if not job_id:
+            logger.error("Cannot add job: missing job ID")
+            return False
+            
+        # Store in memory
+        self.memory_jobs[job_id] = job
+        
+        # Store in LMDB if enabled
+        if self.use_lmdb and self.lmdb_store:
+            return self.lmdb_store.add_job(job_id, job)
+            
+        return True
+        
     def create_job(self, job_id: str, params: Dict[str, Any]) -> Dict[str, Any]:
         """
         Create a new job.

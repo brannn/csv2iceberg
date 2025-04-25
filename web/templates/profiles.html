@@ -56,7 +56,7 @@
                                 <td class="text-end">
                                     <div class="btn-group" role="group">
                                         <a href="{{ url_for('routes.profile_edit', name=profile.name) }}" class="btn btn-sm btn-outline-secondary">Edit</a>
-                                        <a href="{{ url_for('routes.profile_use', name=profile.name) }}" class="btn btn-sm btn-outline-primary">Use</a>
+                                        <a href="{{ url_for('routes.convert') }}?profile={{ profile.name }}" class="btn btn-sm btn-outline-primary">Use</a>
                                         <button type="button" class="btn btn-sm btn-outline-danger" 
                                                 data-bs-toggle="modal" 
                                                 data-bs-target="#deleteModal" 

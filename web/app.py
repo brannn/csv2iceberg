@@ -49,6 +49,10 @@ def create_app(test_config=None):
         branch = git_info.get('branch', 'unknown')
         commit = git_info.get('commit', 'unknown')
         return {'git_version': f"{branch}@{commit}"}
+        
+    # Add format_datetime filter
+    from web.routes import format_datetime_filter
+    app.jinja_env.filters['format_datetime'] = format_datetime_filter
     
     # Log application startup
     logger.info("Application initialized")
