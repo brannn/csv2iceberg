@@ -70,7 +70,7 @@ class IcebergWriter:
         delimiter: str = ',',
         has_header: bool = True,
         quote_char: str = '"',
-        batch_size: int = 20000,  # Increased default batch size from 10000 to 20000
+        batch_size: int = 5000,  # Reduced default batch size to avoid query text size limits
         include_columns: Optional[List[str]] = None,
         exclude_columns: Optional[List[str]] = None,
         progress_callback: Optional[Callable[[int], None]] = None
@@ -342,15 +342,37 @@ class IcebergWriter:
             
             # Process data in batches to optimize memory usage
             total_rows = len(batch_data)
+            
+            # Define maximum SQL query size (in characters) - Trino has a limit of 1,000,000
+            MAX_QUERY_LENGTH = 900000  # Setting a bit below the limit for safety
+            
+            # Define maximum rows per INSERT statement based on column count
+            MAX_ROWS_PER_INSERT = max(100, min(1000, int(5000 / column_count)))
+            logger.info(f"Using maximum of {MAX_ROWS_PER_INSERT} rows per INSERT statement")
+            
             for i in range(0, total_rows, max_rows_per_batch):
                 # Create batch slice
                 batch_slice = batch_data.slice(i, min(max_rows_per_batch, total_rows - i))
+                sub_batch_size = len(batch_slice)
                 
-                # Create SQL VALUES clause for direct insertion
-                values_list = []
+                if sub_batch_size == 0:
+                    logger.warning("Empty batch slice encountered, skipping")
+                    continue
                 
-                # Iterate through the rows of the batch to build VALUES lists
-                for row_idx, row in enumerate(batch_slice.rows(named=True)):
+                logger.info(f"Processing sub-batch of {sub_batch_size} rows")
+                
+                # Process this batch slice in smaller chunks to avoid query length limits
+                rows_to_process = list(batch_slice.rows(named=True))
+                current_chunk = []
+                current_query_length = 0
+                rows_processed = 0
+                
+                # Base SQL part (INSERT INTO statement without VALUES)
+                base_sql = f"INSERT INTO {self.catalog}.{self.schema}.{self.table} ({column_names_str}) VALUES "
+                base_length = len(base_sql)
+                
+                for row in rows_to_process:
+                    # Convert row to SQL values format
                     row_values = []
                     for col in columns:
                         val = row[col]
@@ -371,30 +393,71 @@ class IcebergWriter:
                             str_val = str(val).replace("'", "''")
                             row_values.append(f"'{str_val}'")
                     
-                    values_list.append(f"({', '.join(row_values)})")
-                
-                # Build the full INSERT statement
-                insert_sql = f"""
-                INSERT INTO {self.catalog}.{self.schema}.{self.table} ({column_names_str})
-                VALUES {', '.join(values_list)}
-                """
-                
-                # Execute the SQL statement
-                try:
-                    logger.debug(f"Executing SQL INSERT with {len(values_list)} rows of data")
-                    self.trino_client.execute_query(insert_sql)
-                    logger.info(f"Successfully inserted batch of {len(batch_slice)} rows")
-                except Exception as e:
-                    logger.error(f"Error during SQL INSERT: {str(e)}", exc_info=True)
+                    row_sql = f"({', '.join(row_values)})"
+                    row_length = len(row_sql) + (2 if current_chunk else 0)  # +2 for comma and space
                     
-                    # Provide more detailed error information
-                    error_msg = str(e).lower()
-                    if "type mismatch" in error_msg:
-                        logger.error("Type mismatch detected - column types may not match target table schema")
-                    elif "table not found" in error_msg:
-                        logger.error("Table not found - the target table may have been dropped during the operation")
+                    # Check if adding this row would exceed query limits
+                    new_query_length = current_query_length + row_length
                     
-                    raise RuntimeError(f"Failed to write data to Iceberg table: {str(e)}")
+                    # Execute current batch if:
+                    # 1. Adding this row would exceed query length limit, OR
+                    # 2. We've reached the maximum rows per INSERT, OR
+                    # 3. This is the last row and we have accumulated rows
+                    if ((new_query_length + base_length > MAX_QUERY_LENGTH or 
+                         len(current_chunk) >= MAX_ROWS_PER_INSERT) and current_chunk):
+                        
+                        # Build and execute the current chunk
+                        insert_sql = f"{base_sql}{', '.join(current_chunk)}"
+                        
+                        try:
+                            logger.debug(f"Executing SQL INSERT with {len(current_chunk)} rows (query length: {len(insert_sql)})")
+                            self.trino_client.execute_query(insert_sql)
+                            rows_processed += len(current_chunk)
+                            logger.info(f"Successfully inserted chunk of {len(current_chunk)} rows")
+                        except Exception as e:
+                            logger.error(f"Error during SQL INSERT: {str(e)}", exc_info=True)
+                            
+                            # Provide more detailed error information
+                            error_msg = str(e).lower()
+                            if "type mismatch" in error_msg:
+                                logger.error("Type mismatch detected - column types may not match target table schema")
+                            elif "table not found" in error_msg:
+                                logger.error("Table not found - the target table may have been dropped during the operation")
+                            elif "query_text_too_large" in error_msg:
+                                logger.error(f"Query text too large ({len(insert_sql)} chars) - reducing chunk size further")
+                            
+                            raise RuntimeError(f"Failed to write data to Iceberg table: {str(e)}")
+                        
+                        # Reset for next batch
+                        current_chunk = []
+                        current_query_length = 0
+                    
+                    # Add the current row to the chunk
+                    current_chunk.append(row_sql)
+                    current_query_length = new_query_length
+                
+                # Process any remaining rows in the final chunk
+                if current_chunk:
+                    insert_sql = f"{base_sql}{', '.join(current_chunk)}"
+                    
+                    try:
+                        logger.debug(f"Executing final SQL INSERT with {len(current_chunk)} rows (query length: {len(insert_sql)})")
+                        self.trino_client.execute_query(insert_sql)
+                        rows_processed += len(current_chunk)
+                        logger.info(f"Successfully inserted final chunk of {len(current_chunk)} rows")
+                    except Exception as e:
+                        logger.error(f"Error during SQL INSERT: {str(e)}", exc_info=True)
+                        
+                        # Provide more detailed error information
+                        error_msg = str(e).lower()
+                        if "type mismatch" in error_msg:
+                            logger.error("Type mismatch detected - column types may not match target table schema")
+                        elif "table not found" in error_msg:
+                            logger.error("Table not found - the target table may have been dropped during the operation")
+                        elif "query_text_too_large" in error_msg:
+                            logger.error(f"Query text too large ({len(insert_sql)} chars) - try reducing batch size further")
+                        
+                        raise RuntimeError(f"Failed to write data to Iceberg table: {str(e)}")
             
             logger.info(f"Successfully wrote {len(batch_data)} rows to {self.catalog}.{self.schema}.{self.table}")
             
