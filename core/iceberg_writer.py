@@ -19,6 +19,7 @@ from connectors.trino_client import TrinoClient
 from core.schema_inferrer import infer_schema_from_df
 from connectors.hive_client import HiveMetastoreClient
 from core.query_collector import QueryCollector
+from core.sql_batcher import SQLBatcher
 
 # Configure logger
 logger = logging.getLogger(__name__)
