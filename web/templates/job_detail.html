@@ -45,6 +45,19 @@
                         <td>{{ job.mode }}</td>
                     </tr>
                     <tr>
+                        <th>Dry Run Mode</th>
+                        <td colspan="3">
+                            {% if job.params.dry_run %}
+                                <span class="badge bg-info">
+                                    <i class="fas fa-check-circle me-1"></i> Enabled
+                                </span>
+                                <small class="text-muted ms-2">No actual database operations were performed. This was a simulation only.</small>
+                            {% else %}
+                                <span class="badge bg-secondary">Disabled</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr>
                         <th>CSV Properties</th>
                         <td colspan="3">
                             <ul class="list-inline mb-0">

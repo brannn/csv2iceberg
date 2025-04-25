@@ -48,6 +48,9 @@ def convert_csv_to_iceberg(
     exclude_columns: Optional[List[str]] = None,
     custom_schema: Optional[str] = None,
     
+    # Dry run mode
+    dry_run: bool = False,
+    
     # Callback function
     progress_callback: Optional[Callable[[int], None]] = None
 ) -> Dict[str, Any]:
@@ -106,24 +109,39 @@ def convert_csv_to_iceberg(
     
     try:
         # Create Trino client
-        add_log(f"Connecting to Trino server at {http_scheme}://{trino_host}:{trino_port}")
-        add_log(f"Using Trino user: {trino_user} with role: {trino_role}")
+        if dry_run:
+            add_log(f"Running in DRY RUN mode - simulating operations without connecting to Trino")
+            add_log(f"Would connect to: {http_scheme}://{trino_host}:{trino_port}")
+            add_log(f"Would use Trino user: {trino_user} with role: {trino_role}")
+        else:
+            add_log(f"Connecting to Trino server at {http_scheme}://{trino_host}:{trino_port}")
+            add_log(f"Using Trino user: {trino_user} with role: {trino_role}")
+            
         trino_client = TrinoClient(
             host=trino_host,
             port=trino_port,
             user=trino_user,
             password=trino_password,
             http_scheme=http_scheme,
-            role=trino_role
+            role=trino_role,
+            dry_run=dry_run
         )
-        add_log("Trino client created successfully")
+        
+        if dry_run:
+            add_log("Trino client created in dry run mode - no actual connection will be made")
+        else:
+            add_log("Trino client created successfully")
         
         # Create Hive client if needed
         hive_client = None
         if use_hive_metastore:
-            add_log(f"Connecting to Hive metastore at {hive_metastore_uri}")
-            hive_client = HiveMetastoreClient(hive_metastore_uri)
-            add_log("Hive metastore client created successfully")
+            if dry_run:
+                add_log(f"Dry run mode: Would connect to Hive metastore at {hive_metastore_uri}")
+                add_log("Skipping actual Hive metastore connection in dry run mode")
+            else:
+                add_log(f"Connecting to Hive metastore at {hive_metastore_uri}")
+                hive_client = HiveMetastoreClient(hive_metastore_uri)
+                add_log("Hive metastore client created successfully")
         else:
             add_log("Direct Hive metastore connection disabled, using Trino metadata APIs only")
         

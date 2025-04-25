@@ -394,7 +394,8 @@ def convert():
                 'original_filename': secure_filename(csv_file.filename),
                 'include_columns': include_cols_list,
                 'exclude_columns': exclude_cols_list,
-                'custom_schema': custom_schema if custom_schema.strip() else None
+                'custom_schema': custom_schema if custom_schema.strip() else None,
+                'dry_run': dry_run
             }
             
             # Create the job
@@ -447,6 +448,9 @@ def convert():
                         include_columns=job_params['include_columns'],
                         exclude_columns=job_params['exclude_columns'],
                         custom_schema=job_params['custom_schema'],
+                        
+                        # Dry run option
+                        dry_run=job_params['dry_run'],
                         
                         # Progress callback
                         progress_callback=update_progress
