@@ -1,0 +1,1 @@
+@routes.route('/profiles/edit/<name>', methods=['GET', 'POST'])

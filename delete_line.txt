@@ -1,0 +1,1 @@
+@routes.route('/profiles/delete/<name>')

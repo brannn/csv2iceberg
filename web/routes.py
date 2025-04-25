@@ -152,7 +152,7 @@ def profile_add():
     return render_template('profile_form.html', profile=None, mode='add')
 
 @routes.route('/profiles/edit/<name>', methods=['GET', 'POST'])
-def profile_edit(name):
+def profile_edit(n):
     """Edit an existing profile."""
     logger.debug(f"Profile edit route called for {name}")
     profile = config_manager.get_profile(name)
@@ -215,7 +215,7 @@ def profile_edit(name):
     return render_template('profile_form.html', profile=profile, mode='edit')
 
 @routes.route('/profiles/delete/<name>')
-def profile_delete(name):
+def profile_delete(n):
     """Delete a profile."""
     if config_manager.delete_profile(name):
         flash(f'Profile {name} deleted successfully', 'success')
