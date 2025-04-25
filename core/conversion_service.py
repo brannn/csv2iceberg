@@ -51,6 +51,9 @@ def convert_csv_to_iceberg(
     # Dry run mode
     dry_run: bool = False,
     
+    # SQL batcher options
+    max_query_size: int = 700000,
+    
     # Callback function
     progress_callback: Optional[Callable[[int], None]] = None
 ) -> Dict[str, Any]:
@@ -82,6 +85,8 @@ def convert_csv_to_iceberg(
         include_columns: List of column names to include
         exclude_columns: List of column names to exclude
         custom_schema: JSON string containing a custom schema definition
+        dry_run: Run in dry-run mode without actually modifying data
+        max_query_size: Maximum SQL query size in bytes (default: 700000, 70% of Trino's 1MB limit)
         progress_callback: Callback function to report progress
         
     Returns:
@@ -169,6 +174,7 @@ def convert_csv_to_iceberg(
         add_log(f"Processing CSV file: {csv_file}")
         add_log(f"CSV delimiter: '{delimiter}', quote character: '{quote_char}', has header: {has_header}")
         add_log(f"Using batch size: {batch_size}")
+        add_log(f"Using max query size: {max_query_size} bytes ({max_query_size/1000:.0f}KB)")
         
         if include_columns:
             add_log(f"Including only these columns: {include_columns}")
@@ -186,7 +192,9 @@ def convert_csv_to_iceberg(
             batch_size=batch_size,
             include_columns=include_columns,
             exclude_columns=exclude_columns,
-            progress_callback=progress_callback
+            progress_callback=progress_callback,
+            dry_run=dry_run,
+            max_query_size=max_query_size
         )
         add_log(f"Conversion completed successfully! Processed {rows_written} rows.")
         

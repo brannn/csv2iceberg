@@ -81,7 +81,8 @@ class IcebergWriter:
         include_columns: Optional[List[str]] = None,
         exclude_columns: Optional[List[str]] = None,
         progress_callback: Optional[Callable[[int], None]] = None,
-        dry_run: bool = False
+        dry_run: bool = False,
+        max_query_size: int = 700000  # Default 700KB (70% of Trino's 1MB limit)
     ) -> int:
         """
         Write CSV data to an Iceberg table using Polars.
