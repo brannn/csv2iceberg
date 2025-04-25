@@ -52,6 +52,17 @@ class S3RestClient:
             aws_session_token: AWS session token
             region: AWS region
         """
+        # Ensure the REST URI has a scheme (http:// or https://)
+        if rest_uri and not rest_uri.startswith(('http://', 'https://')):
+            # Default to HTTPS if no scheme is provided
+            rest_uri = f"https://{rest_uri}"
+            logger.info(f"Added HTTPS scheme to REST URI: {rest_uri}")
+        
+        # Ensure warehouse location starts with s3://
+        if warehouse_location and not warehouse_location.startswith('s3://'):
+            warehouse_location = f"s3://{warehouse_location}"
+            logger.info(f"Added s3:// prefix to warehouse location: {warehouse_location}")
+            
         self.rest_uri = rest_uri
         self.warehouse_location = warehouse_location
         self.catalog_name = catalog_name
