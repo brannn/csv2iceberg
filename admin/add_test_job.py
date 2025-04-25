@@ -53,8 +53,22 @@ def create_test_job():
         error=None
     )
     
-    # Update with rows processed
-    job_manager.update_job(job_id, {"rows_processed": 1000})
+    # Update with rows processed and performance metrics
+    performance_metrics = {
+        "total_rows": 1000,
+        "total_batches": 5,
+        "total_processing_time": 2.5,
+        "avg_batch_size": 200.0,
+        "avg_batch_time": 0.5,
+        "processing_rate": 400.0,  # rows per second
+        "batch_sizes": [200, 200, 200, 200, 200],
+        "batch_times": [0.5, 0.48, 0.52, 0.49, 0.51]
+    }
+    
+    job_manager.update_job(job_id, {
+        "rows_processed": 1000,
+        "performance_metrics": performance_metrics
+    })
     
     # Verify that the job was added
     job = job_manager.get_job(job_id)
