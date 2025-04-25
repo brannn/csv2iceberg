@@ -58,13 +58,15 @@ def cli():
 @click.option('--custom-schema', help='Path to a JSON file containing a custom schema definition')
 @click.option('--include-columns', help='Comma-separated list of column names to include (overrides exclude-columns)')
 @click.option('--exclude-columns', help='Comma-separated list of column names to exclude')
+@click.option('--max-query-size', default=700000, type=int, help='Maximum SQL query size in bytes (default: 700000, 70% of Trino\'s 1MB limit)')
 @click.option('--dry-run', is_flag=True, help='Run in dry run mode - report queries without executing them')
 @click.option('--verbose', '-v', is_flag=True, help='Enable verbose logging')
 def convert(csv_file: str, delimiter: str, has_header: bool, quote_char: str, batch_size: int,
             table_name: str, trino_host: str, trino_port: int, trino_user: str, trino_password: Optional[str],
             http_scheme: str, trino_role: str, trino_catalog: str, trino_schema: str, hive_metastore_uri: str,
             use_hive_metastore: bool, mode: str, sample_size: int, custom_schema: Optional[str], 
-            include_columns: Optional[str], exclude_columns: Optional[str], dry_run: bool, verbose: bool):
+            include_columns: Optional[str], exclude_columns: Optional[str], max_query_size: int,
+            dry_run: bool, verbose: bool):
     """
     Convert a CSV file to an Iceberg table.
     
@@ -253,7 +255,8 @@ def convert(csv_file: str, delimiter: str, has_header: bool, quote_char: str, ba
             include_columns=include_cols,
             exclude_columns=exclude_cols,
             progress_callback=progress_update,
-            dry_run=dry_run
+            dry_run=dry_run,
+            max_query_size=max_query_size
         )
         
         if dry_run:
