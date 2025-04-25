@@ -115,7 +115,8 @@ def infer_schema_from_csv(
                 "null_values": ["", "NULL", "null", "NA", "N/A", "na", "n/a", "None", "none"],
                 "try_parse_dates": True,  # Try to parse date/datetime columns
                 "low_memory": True,
-                "ignore_errors": True  # Skip rows with parsing errors
+                "ignore_errors": True,  # Skip rows with parsing errors
+                "truncate_ragged_lines": True  # Handle CSV files with inconsistent numbers of fields
             }
             
             # Add n_rows and infer_schema_length only if sample_size is specified

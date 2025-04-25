@@ -124,6 +124,7 @@ class IcebergWriter:
                 try_parse_dates=True,
                 low_memory=True,
                 ignore_errors=True,
+                truncate_ragged_lines=True,  # Handle CSV files with inconsistent numbers of fields
                 n_rows=None,  # Process all rows
                 rechunk=True,  # Rechunk for better memory layout
                 row_count_name=None,  # No need for row count column
@@ -579,6 +580,7 @@ def count_csv_rows(
                 null_values=["", "NULL", "null", "NA", "N/A", "na", "n/a", "None", "none"],
                 low_memory=True,
                 ignore_errors=True,
+                truncate_ragged_lines=True,  # Handle CSV files with inconsistent numbers of fields
                 rechunk=True
             ).select(pl.count()).collect().item()
             
