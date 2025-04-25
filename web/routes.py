@@ -357,21 +357,42 @@ def convert():
             # Get file size
             file_size = os.path.getsize(file_path)
             
-            # Get catalog and schema from the profile
-            catalog = profile.get('trino_catalog')
-            schema = profile.get('trino_schema')
+            # Get the connection type from the profile
+            connection_type = profile.get('connection_type', 'trino')
             
-            # Construct the fully qualified table name if needed
-            # If the user entered a bare table name (no dots), prepend catalog and schema
-            if table_name and '.' not in table_name:
-                full_table_name = f"{catalog}.{schema}.{table_name}"
-                logger.info(f"Constructing full table name: {full_table_name} from catalog: {catalog}, schema: {schema}, table: {table_name}")
+            # Create a unique table name based on the connection type
+            if connection_type == 'trino':
+                # For Trino, use catalog.schema.table format
+                catalog = profile.get('trino_catalog')
+                schema = profile.get('trino_schema')
+                
+                # Construct the fully qualified table name if needed
+                # If the user entered a bare table name (no dots), prepend catalog and schema
+                if table_name and '.' not in table_name:
+                    full_table_name = f"{catalog}.{schema}.{table_name}"
+                    logger.info(f"Constructing full Trino table name: {full_table_name} from catalog: {catalog}, schema: {schema}, table: {table_name}")
+                else:
+                    # User provided a qualified name already, use as-is
+                    full_table_name = table_name
+                    logger.info(f"Using user-provided qualified table name: {full_table_name}")
+            elif connection_type == 's3_rest':
+                # For S3 Tables REST API, use namespace.table format or just table name
+                namespace = profile.get('s3_namespace', 'default')
+                
+                # If user entered a bare table name (no dots), prepend namespace
+                if table_name and '.' not in table_name:
+                    full_table_name = f"{namespace}.{table_name}"
+                    logger.info(f"Constructing S3 Tables name: {full_table_name} from namespace: {namespace}, table: {table_name}")
+                else:
+                    # User provided a qualified name already, use as-is
+                    full_table_name = table_name
+                    logger.info(f"Using user-provided qualified S3 table name: {full_table_name}")
             else:
-                # User provided a qualified name already, use as-is
+                # Unknown connection type, use the table name as-is
                 full_table_name = table_name
-                logger.info(f"Using user-provided qualified table name: {full_table_name}")
+                logger.warning(f"Unknown connection type: {connection_type}, using raw table name: {full_table_name}")
             
-            # Create job parameters
+            # Start with common job parameters
             job_params = {
                 'csv_file': file_path,
                 'delimiter': delimiter,
@@ -379,16 +400,7 @@ def convert():
                 'quote_char': quote_char,
                 'batch_size': batch_size,
                 'table_name': full_table_name,
-                'trino_host': profile.get('trino_host'),
-                'trino_port': profile.get('trino_port'),
-                'trino_user': profile.get('trino_user'),
-                'trino_password': profile.get('trino_password'),
-                'http_scheme': profile.get('http_scheme'),
-                'trino_role': profile.get('trino_role'),
-                'trino_catalog': profile.get('trino_catalog'),
-                'trino_schema': profile.get('trino_schema'),
-                'hive_metastore_uri': profile.get('hive_metastore_uri'),
-                'use_hive_metastore': profile.get('use_hive_metastore'),
+                'connection_type': connection_type,
                 'mode': write_mode,
                 'sample_size': sample_size,
                 'file_size': file_size,
@@ -399,6 +411,39 @@ def convert():
                 'dry_run': dry_run,
                 'max_query_size': max_query_size
             }
+            
+            # Add connection-specific parameters based on connection type
+            if connection_type == 'trino':
+                # Add Trino parameters
+                job_params.update({
+                    'trino_host': profile.get('trino_host'),
+                    'trino_port': profile.get('trino_port'),
+                    'trino_user': profile.get('trino_user'),
+                    'trino_password': profile.get('trino_password'),
+                    'http_scheme': profile.get('http_scheme'),
+                    'trino_role': profile.get('trino_role'),
+                    'trino_catalog': profile.get('trino_catalog'),
+                    'trino_schema': profile.get('trino_schema'),
+                    'hive_metastore_uri': profile.get('hive_metastore_uri'),
+                    'use_hive_metastore': profile.get('use_hive_metastore')
+                })
+            elif connection_type == 's3_rest':
+                # Add S3 Tables REST API parameters
+                job_params.update({
+                    's3_rest_uri': profile.get('s3_rest_uri'),
+                    's3_warehouse_location': profile.get('s3_warehouse_location'),
+                    's3_namespace': profile.get('s3_namespace'),
+                    # Authentication options
+                    's3_client_id': profile.get('s3_client_id'),
+                    's3_client_secret': profile.get('s3_client_secret'),
+                    's3_token': profile.get('s3_token'),
+                    # AWS credentials
+                    'aws_access_key_id': profile.get('aws_access_key_id'),
+                    'aws_secret_access_key': profile.get('aws_secret_access_key'),
+                    'aws_session_token': profile.get('aws_session_token'),
+                    'aws_region': profile.get('aws_region')
+                })
+            # For other connection types, add specific parameters here
             
             # Create the job
             job = job_manager.create_job(job_id, job_params)
@@ -421,45 +466,72 @@ def convert():
                         job_manager.update_job_progress(job_id, percent)
                     
                     # Run the conversion using our centralized service
-                    result = convert_csv_to_iceberg(
+                    # Common parameters for any connection type
+                    conversion_args = {
                         # File parameters
-                        csv_file=job_params['csv_file'],
-                        table_name=job_params['table_name'],
+                        'csv_file': job_params['csv_file'],
+                        'table_name': job_params['table_name'],
                         
-                        # Connection parameters
-                        trino_host=job_params['trino_host'],
-                        trino_port=job_params['trino_port'],
-                        trino_user=job_params['trino_user'],
-                        trino_password=job_params['trino_password'],
-                        http_scheme=job_params['http_scheme'],
-                        trino_role=job_params['trino_role'],
-                        trino_catalog=job_params['trino_catalog'],
-                        trino_schema=job_params['trino_schema'],
-                        use_hive_metastore=job_params['use_hive_metastore'],
-                        hive_metastore_uri=job_params['hive_metastore_uri'],
+                        # Connection type
+                        'connection_type': job_params['connection_type'],
                         
                         # CSV handling parameters
-                        delimiter=job_params['delimiter'],
-                        quote_char=job_params['quote_char'],
-                        has_header=job_params['has_header'],
-                        batch_size=job_params['batch_size'],
+                        'delimiter': job_params['delimiter'],
+                        'quote_char': job_params['quote_char'],
+                        'has_header': job_params['has_header'],
+                        'batch_size': job_params['batch_size'],
                         
                         # Schema/data parameters
-                        mode=job_params['mode'],
-                        sample_size=job_params['sample_size'],
-                        include_columns=job_params['include_columns'],
-                        exclude_columns=job_params['exclude_columns'],
-                        custom_schema=job_params['custom_schema'],
+                        'mode': job_params['mode'],
+                        'sample_size': job_params['sample_size'],
+                        'include_columns': job_params['include_columns'],
+                        'exclude_columns': job_params['exclude_columns'],
+                        'custom_schema': job_params['custom_schema'],
                         
                         # Dry run option
-                        dry_run=job_params['dry_run'],
+                        'dry_run': job_params['dry_run'],
                         
                         # SQL batcher options
-                        max_query_size=job_params['max_query_size'],
+                        'max_query_size': job_params['max_query_size'],
                         
                         # Progress callback
-                        progress_callback=update_progress
-                    )
+                        'progress_callback': update_progress
+                    }
+                    
+                    # Add connection-specific parameters based on connection type
+                    if job_params['connection_type'] == 'trino':
+                        # Add Trino-specific parameters
+                        conversion_args.update({
+                            'trino_host': job_params['trino_host'],
+                            'trino_port': job_params['trino_port'],
+                            'trino_user': job_params['trino_user'],
+                            'trino_password': job_params['trino_password'],
+                            'http_scheme': job_params['http_scheme'],
+                            'trino_role': job_params['trino_role'],
+                            'trino_catalog': job_params['trino_catalog'],
+                            'trino_schema': job_params['trino_schema'],
+                            'use_hive_metastore': job_params['use_hive_metastore'],
+                            'hive_metastore_uri': job_params['hive_metastore_uri']
+                        })
+                    elif job_params['connection_type'] == 's3_rest':
+                        # Add S3 Tables REST API parameters
+                        conversion_args.update({
+                            's3_rest_uri': job_params['s3_rest_uri'],
+                            's3_warehouse_location': job_params['s3_warehouse_location'],
+                            's3_namespace': job_params['s3_namespace'],
+                            # Authentication options
+                            's3_client_id': job_params['s3_client_id'],
+                            's3_client_secret': job_params['s3_client_secret'],
+                            's3_token': job_params['s3_token'],
+                            # AWS credentials
+                            'aws_access_key_id': job_params['aws_access_key_id'],
+                            'aws_secret_access_key': job_params['aws_secret_access_key'],
+                            'aws_session_token': job_params['aws_session_token'],
+                            'aws_region': job_params['aws_region']
+                        })
+                    
+                    # Run the conversion with all parameters
+                    result = convert_csv_to_iceberg(**conversion_args)
                     
                     # Handle the result
                     if result['success']:
