@@ -52,7 +52,7 @@
                         <a class="nav-link {% if request.path.startswith('/profiles') %}active{% endif %}" href="{{ url_for('routes.profiles') }}">Profiles</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link {% if request.path == '/storage-status' %}active{% endif %}" href="{{ url_for('routes.storage_status') }}">Storage Status</a>
+                        <a class="nav-link {% if request.path == '/storage-stats' %}active{% endif %}" href="{{ url_for('routes.storage_stats') }}">Storage Status</a>
                     </li>
                 </ul>
                 <span class="navbar-text text-white small">
