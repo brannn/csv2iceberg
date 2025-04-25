@@ -493,14 +493,15 @@ class IcebergWriter:
                 formatted_rows.append(f"({', '.join(row_values)})")
             
             # Prepare SQL INSERT statements with a reduced max size
-            # Calculate average row size to determine batch size
-            MAX_ROWS_PER_INSERT = 500  # Start with a safe limit
+            # Use a much more conservative batch size for better monitoring and to prevent issues
+            # Large batches can be harder to track progress on
+            MAX_ROWS_PER_INSERT = 250  # More conservative default limit
             
             if formatted_rows:
                 # Calculate average row size
                 avg_row_size = sum(len(row.encode('utf-8')) for row in formatted_rows) / len(formatted_rows)
-                # 500KB max query size for safety (half of Trino's limit)
-                max_safe_query_size = 500000
+                # 400KB max query size for safety (less than half of Trino's limit)
+                max_safe_query_size = 400000
                 # Base SQL part size 
                 base_sql_size = len(base_sql.encode('utf-8'))
                 # Calculate how many rows we can safely fit
@@ -509,7 +510,14 @@ class IcebergWriter:
                 batch_size = min(max_safe_rows, MAX_ROWS_PER_INSERT)
                 batch_size = max(batch_size, 1)  # Ensure at least 1 row per batch
                 
+                # Force smaller batches for large data sets for better progress tracking
+                # For large datasets (>1000 rows), use smaller batches
+                if len(formatted_rows) > 1000:
+                    # Further limit batch size for better progress tracking
+                    batch_size = min(batch_size, 250)
+                
                 logger.info(f"Calculated batch size: {batch_size} rows per INSERT (avg row size: {avg_row_size:.0f} bytes)")
+                logger.info(f"Will create {math.ceil(len(formatted_rows) / batch_size)} separate INSERT statements")
             else:
                 batch_size = MAX_ROWS_PER_INSERT
             
