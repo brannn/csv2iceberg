@@ -29,6 +29,7 @@ class SQLBatcher:
         self.max_bytes = max_bytes
         self.delimiter = delimiter
         self.dry_run = dry_run
+        self.total_statements_processed = 0
         self.reset()
         logger.debug(f"Initialized SQLBatcher with max_bytes={max_bytes}, "
                     f"delimiter='{delimiter}', dry_run={dry_run}")
@@ -37,7 +38,6 @@ class SQLBatcher:
         """Reset the current batch."""
         self.current_batch = []
         self.current_size = 0
-        self.total_statements_processed = 0
     
     def add_statement(self, sql: str) -> bool:
         """
