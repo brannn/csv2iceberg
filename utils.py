@@ -388,16 +388,17 @@ def clean_column_name(name: str) -> str:
     if not name:
         return "unnamed_column"
         
-    # Replace whitespace with underscores
-    cleaned = name.strip().replace(" ", "_")
+    # Replace all special characters (including parentheses) with underscores
+    cleaned = "".join(c if c.isalnum() or c == '_' else '_' for c in str(name).strip())
     
-    # Remove special characters
-    cleaned = ''.join(c for c in cleaned if c.isalnum() or c == "_")
+    # Ensure name starts with a letter or underscore
+    if cleaned and not (cleaned[0].isalpha() or cleaned[0] == '_'):
+        cleaned = 'col_' + cleaned
     
-    # Make sure it doesn't start with a number
-    if cleaned and cleaned[0].isdigit():
-        cleaned = "col_" + cleaned
-        
+    # Handle special cases (SQL reserved words)
+    if not cleaned or cleaned.lower() in ('table', 'column', 'select', 'where', 'from', 'order', 'group', 'by'):
+        cleaned = 'col_' + cleaned
+    
     # If the name is empty after cleaning, use a default
     if not cleaned:
         return "unnamed_column"

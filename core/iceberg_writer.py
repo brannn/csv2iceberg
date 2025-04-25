@@ -233,11 +233,14 @@ class IcebergWriter:
             # Get column names from the dataframe
             columns = batch_data.columns
             
-            # Clean column names to replace spaces with underscores
+            # Import clean_column_name function from utils for consistent cleaning
+            from utils import clean_column_name
+            
+            # Clean column names for SQL compatibility
             cleaned_columns = []
             for col in columns:
-                # Replace spaces with underscores for SQL compatibility
-                clean_col = col.replace(' ', '_') if isinstance(col, str) else str(col).replace(' ', '_')
+                # Apply consistent column name cleaning
+                clean_col = clean_column_name(col)
                 cleaned_columns.append(clean_col)
             
             # Update the batch DataFrame with cleaned column names if needed
@@ -245,7 +248,7 @@ class IcebergWriter:
                 # Create a mapping from original to cleaned column names
                 column_mapping = {orig: cleaned for orig, cleaned in zip(columns, cleaned_columns)}
                 batch_data = batch_data.rename(column_mapping)
-                logger.debug(f"Renamed DataFrame columns for SQL compatibility")
+                logger.debug(f"Renamed DataFrame columns for SQL compatibility: {column_mapping}")
                 
             # Update column references
             columns = cleaned_columns
