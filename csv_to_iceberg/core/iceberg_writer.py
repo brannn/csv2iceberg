@@ -406,40 +406,61 @@ class IcebergWriter:
                     
                     formatted_rows.append(f"({', '.join(row_values)})")
                 
-                # Check if we need to split this batch due to query size limits
-                # Trino has a query length limit, so we might need to split large batches
-                # into smaller chunks to stay within that limit
-                MAX_QUERY_LENGTH = 900000  # Setting a bit below Trino's limit of 1,000,000 for safety
+                # Check estimated total query length for this batch
+                # Trino has a query length limit of 1,000,000 characters
                 
-                # First check if a single batch is too big (usual case)
-                # If so, create mini-batches based on query length
-                current_chunk = []
-                current_query_length = 0
+                # Calculate total length of all rows together (plus commas)
+                estimated_total_length = len(base_sql) + sum(len(row) for row in formatted_rows) + (2 * (len(formatted_rows) - 1))
                 
-                for row_sql in formatted_rows:
-                    row_length = len(row_sql) + (2 if current_chunk else 0)  # +2 for comma and space
-                    new_query_length = current_query_length + row_length
+                # If estimated total length is within limit, send all rows at once
+                if estimated_total_length <= MAX_QUERY_LENGTH:
+                    # Process all rows in a single batch
+                    insert_sql = f"{base_sql}{', '.join(formatted_rows)}"
                     
-                    # If adding this row would exceed the query limit, execute current chunk
-                    if new_query_length + len(base_sql) > MAX_QUERY_LENGTH and current_chunk:
-                        # Execute current mini-batch
-                        insert_sql = f"{base_sql}{', '.join(current_chunk)}"
-                        
-                        try:
-                            self.trino_client.execute_query(insert_sql)
-                            rows_processed += len(current_chunk)
-                            logger.info(f"Successfully inserted mini-batch of {len(current_chunk)} rows (query length limit)")
-                        except Exception as e:
-                            logger.error(f"Error during SQL INSERT: {str(e)}", exc_info=True)
-                            raise RuntimeError(f"Failed to write data to Iceberg table: {str(e)}")
-                        
-                        # Reset for next mini-batch
-                        current_chunk = []
-                        current_query_length = 0
+                    try:
+                        self.trino_client.execute_query(insert_sql)
+                        rows_processed += len(formatted_rows)
+                        logger.info(f"Successfully inserted batch of {len(formatted_rows)} rows (within query length limit)")
+                    except Exception as e:
+                        logger.error(f"Error during SQL INSERT: {str(e)}", exc_info=True)
+                        raise RuntimeError(f"Failed to write data to Iceberg table: {str(e)}")
+                else:
+                    # Need to split into smaller chunks due to query length limit
+                    logger.info(f"Batch too large for single query ({estimated_total_length} chars), splitting into smaller chunks")
                     
-                    # Add the current row to the chunk
-                    current_chunk.append(row_sql)
-                    current_query_length = new_query_length
+                    # Process in chunks
+                    current_chunk = []
+                    current_query_length = len(base_sql)
+                    
+                    # Target at least 100 rows per mini-batch if possible
+                    min_rows_per_chunk = min(100, len(formatted_rows))
+                    
+                    for row_sql in formatted_rows:
+                        # Calculate length with this row added (plus comma if not first row)
+                        row_length = len(row_sql) + (2 if current_chunk else 0)  # +2 for comma and space
+                        new_query_length = current_query_length + row_length
+                        
+                        # If adding this row would exceed the query limit, execute current chunk
+                        # Only if we have some minimum number of rows already
+                        if new_query_length > MAX_QUERY_LENGTH and len(current_chunk) >= min_rows_per_chunk:
+                            # Execute current mini-batch
+                            insert_sql = f"{base_sql}{', '.join(current_chunk)}"
+                            
+                            try:
+                                self.trino_client.execute_query(insert_sql)
+                                rows_processed += len(current_chunk)
+                                logger.info(f"Successfully inserted mini-batch of {len(current_chunk)} rows (query length limit)")
+                            except Exception as e:
+                                logger.error(f"Error during SQL INSERT: {str(e)}", exc_info=True)
+                                raise RuntimeError(f"Failed to write data to Iceberg table: {str(e)}")
+                            
+                            # Reset for next mini-batch
+                            current_chunk = []
+                            current_query_length = len(base_sql)
+                        
+                        # Add the current row to the chunk
+                        current_chunk.append(row_sql)
+                        current_query_length = new_query_length
                 
                 # Process any remaining rows in this batch
                 if current_chunk:
