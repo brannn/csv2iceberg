@@ -292,6 +292,20 @@ def format_duration(duration=None, start_time=None, end_time=None) -> str:
     """
     logger = logging.getLogger("csv_to_iceberg")
     
+    # Handle if we're given datetime objects directly
+    if isinstance(duration, datetime):
+        if end_time is None:
+            end_time = datetime.now()
+        if isinstance(end_time, datetime):
+            try:
+                duration = (end_time - duration).total_seconds()
+            except Exception as e:
+                logger.error(f"Error calculating duration from datetime: {e}")
+                return "00:00:00"
+        else:
+            logger.error(f"If duration is a datetime, end_time must also be a datetime, not {type(end_time)}")
+            return "00:00:00"
+    
     # Calculate duration if not provided but we have start and end times
     if duration is None and start_time and end_time:
         try:
@@ -313,8 +327,17 @@ def format_duration(duration=None, start_time=None, end_time=None) -> str:
         return "N/A"
     
     try:
+        # Ensure duration is a number
+        if isinstance(duration, str):
+            duration = float(duration)
+        elif isinstance(duration, (int, float)):
+            duration = float(duration)
+        else:
+            logger.error(f"Unexpected duration type: {type(duration)}")
+            return "00:00:00"
+            
         # Ensure duration is positive
-        duration = max(0, float(duration))
+        duration = max(0, duration)
         
         # Format as HH:MM:SS for UI display
         hours = int(duration // 3600)
