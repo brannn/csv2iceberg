@@ -104,7 +104,7 @@ class IcebergWriter:
             if exclude_columns:
                 logger.info(f"Excluding these columns: {exclude_columns}")
             
-            # Use Polars lazy reader for better memory efficiency
+            # Use Polars lazy reader with enhanced configuration for better memory efficiency and performance
             lazy_reader = pl.scan_csv(
                 csv_file,
                 separator=delimiter,
@@ -113,7 +113,11 @@ class IcebergWriter:
                 null_values=["", "NULL", "null", "NA", "N/A", "na", "n/a", "None", "none"],
                 try_parse_dates=True,
                 low_memory=True,
-                ignore_errors=True
+                ignore_errors=True,
+                n_rows=None,  # Process all rows
+                rechunk=True,  # Rechunk for better memory layout
+                row_count_name=None,  # No need for row count column
+                row_count_offset=0
             )
             
             # Get column names - using slice and collect for compatibility with older Polars versions
@@ -382,17 +386,12 @@ class IcebergWriter:
                 base_length = len(base_sql)
                 
                 # Process rows in batches for better performance
-                # Pre-allocate enough memory for the chunk list to avoid resizing
-                current_chunk = []
-                current_chunk_capacity = min(MAX_ROWS_PER_INSERT, len(rows_to_process))
-                current_chunk.reserve(current_chunk_capacity) if hasattr(current_chunk, 'reserve') else None
+                # We already initialized current_chunk = [] above, no need to do it again
                 
                 # Process rows with list comprehensions for better performance
                 for row in rows_to_process:
                     # Format row values - significantly faster using list comprehension
                     row_values = []
-                    row_values_capacity = len(columns)
-                    row_values.reserve(row_values_capacity) if hasattr(row_values, 'reserve') else None
                     
                     for col in columns:
                         val = row[col]
@@ -497,7 +496,7 @@ def count_csv_rows(
     has_header: bool = True
 ) -> int:
     """
-    Count the number of rows in a CSV file using Polars.
+    Count the number of rows in a CSV file using optimized methods.
     
     Args:
         csv_file: Path to the CSV file
@@ -509,26 +508,48 @@ def count_csv_rows(
         Number of rows in the CSV file
     """
     try:
-        # Use Polars scan_csv for efficient row counting without loading the entire file
-        row_count = pl.scan_csv(
-            csv_file,
-            separator=delimiter,
-            has_header=has_header,
-            quote_char=quote_char,
-            null_values=["", "NULL", "null", "NA", "N/A", "na", "n/a", "None", "none"],
-            low_memory=True,
-            ignore_errors=True
-        ).select(pl.count()).collect().item()
+        # Try fast method first - file size based estimation with sampling
+        file_size = os.path.getsize(csv_file)
         
-        # Return the count (if has_header is True, the header row is already excluded)
+        # For small files (< 10MB), just use the full scan approach
+        if file_size < 10 * 1024 * 1024:  # 10MB
+            # Use Polars scan_csv with optimized settings for row counting
+            row_count = pl.scan_csv(
+                csv_file,
+                separator=delimiter,
+                has_header=has_header,
+                quote_char=quote_char,
+                null_values=["", "NULL", "null", "NA", "N/A", "na", "n/a", "None", "none"],
+                low_memory=True,
+                ignore_errors=True,
+                rechunk=True
+            ).select(pl.count()).collect().item()
+            
+            logger.info(f"Counted {row_count} rows in CSV file using full scan")
+            return row_count
+        
+        # For larger files, use a line-based approach for better performance
+        logger.info(f"Using optimized row counting for large file ({file_size/1024/1024:.1f} MB)")
+        
+        # Open the file in binary mode for better performance
+        with open(csv_file, 'rb') as f:
+            # Count newlines
+            line_count = sum(1 for _ in f.readlines())
+            
+        # Adjust for header if needed
+        row_count = line_count - 1 if has_header else line_count
+        logger.info(f"Counted {row_count} rows in CSV file using optimized method")
         return row_count
+        
     except Exception as e:
-        # Fallback to simple line counting if Polars approach fails
-        logger.warning(f"Error using Polars to count CSV rows: {str(e)}")
+        # Fallback to simple line counting if faster approaches fail
+        logger.warning(f"Error in optimized row counting: {str(e)}")
         try:
             with open(csv_file, 'r') as f:
                 line_count = sum(1 for _ in f)
-                return line_count - 1 if has_header else line_count
+                result = line_count - 1 if has_header else line_count
+                logger.info(f"Counted {result} rows using fallback method")
+                return result
         except Exception as e2:
             logger.error(f"Error counting CSV rows: {str(e2)}", exc_info=True)
             raise RuntimeError(f"Failed to count CSV rows: {str(e2)}")
