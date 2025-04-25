@@ -185,7 +185,8 @@ def convert(csv_file: str, delimiter: str, has_header: bool, quote_char: str, ba
                 catalog=trino_catalog,
                 schema=trino_schema,
                 http_scheme=http_scheme,
-                role=trino_role
+                role=trino_role,
+                dry_run=dry_run
             )
         console.print(f"[bold green]✓[/bold green] Connected to Trino")
         

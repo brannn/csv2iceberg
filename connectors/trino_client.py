@@ -205,6 +205,13 @@ class TrinoClient:
             
             logger.info(f"Checking if table exists: {catalog}.{schema}.{table}")
             
+            # In dry run mode, assume the table doesn't exist
+            if self.dry_run:
+                logger.info(f"[DRY RUN] Would check if table {catalog}.{schema}.{table} exists")
+                # Assume table doesn't exist in dry run mode for simplicity
+                self._table_existence_cache[cache_key] = False
+                return False
+            
             if self.connection is None:
                 error_msg = "No active Trino connection"
                 logger.error(error_msg)
@@ -380,6 +387,13 @@ class TrinoClient:
                 
             logger.info(f"Fetching schema for {catalog}.{schema}.{table}")
             
+            # In dry run mode, return an empty schema
+            if self.dry_run:
+                logger.info(f"[DRY RUN] Would fetch schema for {catalog}.{schema}.{table}")
+                empty_schema: List[Tuple[str, str]] = []
+                self._schema_cache[cache_key] = empty_schema
+                return empty_schema
+            
             query = f"""
             SELECT column_name, data_type 
             FROM {catalog}.information_schema.columns 
@@ -420,6 +434,11 @@ class TrinoClient:
             True if the schemas are compatible
         """
         try:
+            # In dry run mode, assume schemas are compatible
+            if self.dry_run:
+                logger.info(f"[DRY RUN] Would validate schema compatibility for {catalog}.{schema}.{table}")
+                return True
+                
             existing_schema = self.get_table_schema(catalog, schema, table)
             
             # Create a map of column name to type for the existing schema
