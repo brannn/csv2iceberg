@@ -5,11 +5,11 @@
 {% block content %}
 <div class="p-5 mb-4 border rounded-3">
     <div class="container-fluid py-5">
-        <div class="text-center mb-3">
-            <img src="{{ url_for('static', filename='icons8-stapler-100.png') }}" alt="Red Stapler" height="50">
-        </div>
         <h1 class="display-5 fw-bold">
-            Milton
+            <span style="display: flex; align-items: center;">
+                Milton
+                <img src="{{ url_for('static', filename='icons8-stapler-100.png') }}" alt="Red Stapler" height="42" class="ms-3">
+            </span>
         </h1>
         <p class="col-md-8 fs-4">Convert CSV files to Apache Iceberg tables with Trino</p>
         <a href="{{ url_for('routes.convert') }}" class="btn btn-primary btn-lg">Start Converting</a>
