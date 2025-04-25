@@ -559,41 +559,100 @@ def analyze_column_cardinality(
                              'time' in col_type or date_match)
                 
                 if is_datetime:
-                    # Date/time columns are excellent for partitioning - highest priority
-                    suitability_score = 90
-                    recommendation['recommendations'].append({
-                        'transform': 'year',
-                        'description': 'Partition by year',
-                        'example': f"PARTITION BY year({col_name})"
-                    })
-                    recommendation['recommendations'].append({
-                        'transform': 'month',
-                        'description': 'Partition by month',
-                        'example': f"PARTITION BY month({col_name})"
-                    })
-                    if cardinality_ratio < 0.1:  # Lower cardinality favors day partitioning
+                    # Date/time columns are generally excellent for partitioning,
+                    # but we still need to consider their cardinality
+                    
+                    # Calculate recommendations based on cardinality
+                    if cardinality_ratio >= 0.9:
+                        # Extremely high cardinality - likely timestamps with precision
+                        # Not ideal for direct partitioning, too many partitions
+                        suitability_score = 70
+                        recommendation['recommendations'].append({
+                            'transform': 'year',
+                            'description': 'Partition by year (high cardinality column)',
+                            'example': f"PARTITION BY year({col_name})"
+                        })
+                    elif cardinality_ratio >= 0.3:
+                        # High cardinality - good for year/month partitioning
+                        suitability_score = 90
+                        recommendation['recommendations'].append({
+                            'transform': 'year',
+                            'description': 'Partition by year',
+                            'example': f"PARTITION BY year({col_name})"
+                        })
+                        recommendation['recommendations'].append({
+                            'transform': 'month',
+                            'description': 'Partition by month',
+                            'example': f"PARTITION BY month({col_name})"
+                        })
+                    elif cardinality_ratio >= 0.05:
+                        # Moderate cardinality - perfect for year/month/day partitioning
+                        suitability_score = 95
+                        recommendation['recommendations'].append({
+                            'transform': 'year',
+                            'description': 'Partition by year',
+                            'example': f"PARTITION BY year({col_name})"
+                        })
+                        recommendation['recommendations'].append({
+                            'transform': 'month',
+                            'description': 'Partition by month',
+                            'example': f"PARTITION BY month({col_name})"
+                        })
                         recommendation['recommendations'].append({
                             'transform': 'day',
                             'description': 'Partition by day',
                             'example': f"PARTITION BY day({col_name})"
                         })
+                    else:
+                        # Low cardinality dates - could be sparse dates or low-res dates
+                        # Still good but check the exact cardinality
+                        if unique_values >= 10:
+                            suitability_score = 85
+                            recommendation['recommendations'].append({
+                                'transform': 'identity',
+                                'description': 'Partition directly by date (low cardinality)',
+                                'example': f"PARTITION BY {col_name}"
+                            })
+                        elif unique_values >= 3:
+                            suitability_score = 75
+                            recommendation['recommendations'].append({
+                                'transform': 'identity',
+                                'description': 'Partition directly by date (very low cardinality)',
+                                'example': f"PARTITION BY {col_name}"
+                            })
+                        else:
+                            # Too few unique dates to be useful
+                            suitability_score = 60
+                            recommendation['recommendations'].append({
+                                'transform': 'identity',
+                                'description': 'Limited partitioning value (extremely low cardinality)',
+                                'example': f"PARTITION BY {col_name} -- Warning: Very few unique values"
+                            })
                 
                 # Integer/numeric types with moderate cardinality
                 elif ('int' in col_type or 'long' in col_type or 'float' in col_type or 
                       'double' in col_type or 'decimal' in col_type):
                     
-                    # Perfect cardinality is between 0.001 and 0.1 (0.1% to 10% unique values)
-                    if 0.001 <= cardinality_ratio <= 0.1:
+                    # For numeric columns, we want a moderate number of unique values that's not too low or too high
+                    # Ideal range: 0.05-0.5 (5%-50% unique values)
+                    # This balances having enough distinct values to make partitioning useful
+                    # but not so many that we create too many small partitions
+                    
+                    # Perfect cardinality is between 0.05 and 0.15 (5% to 15% unique values)
+                    if 0.05 <= cardinality_ratio <= 0.15:
+                        suitability_score = 85
+                    # Very good cardinality is between 0.15 and 0.3 (15% to 30% unique values)
+                    elif 0.15 < cardinality_ratio <= 0.3:
                         suitability_score = 80
-                    # Good cardinality is between 0.0001 and 0.001 or between 0.1 and 0.3
-                    elif (0.0001 <= cardinality_ratio < 0.001) or (0.1 < cardinality_ratio <= 0.3):
-                        suitability_score = 60
-                    # Acceptable cardinality is between 0.3 and 0.5
+                    # Good cardinality is between 0.3 and 0.5 (30% to 50% unique values)
                     elif 0.3 < cardinality_ratio <= 0.5:
-                        suitability_score = 40
-                    # Poor cardinality is > 0.5 (too many unique values) or < 0.0001 (too few)
+                        suitability_score = 75
+                    # Acceptable cardinality is between 0.01 and 0.05 (1% to 5% unique values)
+                    elif 0.01 <= cardinality_ratio < 0.05:
+                        suitability_score = 60
+                    # Poor cardinality is > 0.5 (too many unique values) or < 0.01 (too few)
                     else:
-                        suitability_score = 20
+                        suitability_score = 30
                     
                     # Recommend bucketing for numeric columns with moderate to high cardinality
                     if cardinality_ratio > 0.01:
@@ -611,7 +670,7 @@ def analyze_column_cardinality(
                             'example': f"PARTITION BY {col_name}"
                         })
                 
-                # String types with low to moderate cardinality are good candidates
+                # String types with appropriate cardinality can be good candidates
                 elif 'string' in col_type or 'str' in col_type:
                     # Check for value distribution to identify skewed distributions
                     value_distribution = df[col_name].value_counts().to_dict()
@@ -622,48 +681,88 @@ def analyze_column_cardinality(
                     # Low score means one value dominates (like "California" in state field)
                     evenness_score = 1.0 - distribution_ratio
                     
-                    # Low cardinality strings (e.g., status codes, categories) are good for partitioning
-                    # BUT only if the values are well distributed
-                    # Using 0.01 as threshold (1% unique values)
-                    if cardinality_ratio < 0.01 and unique_values < 100:
+                    # For strings, the ideal is to have enough unique values (5-20%) 
+                    # that are evenly distributed to create useful partitions
+                    
+                    # Moderate cardinality strings (5-20% unique) with good distribution
+                    if 0.05 <= cardinality_ratio <= 0.2:
                         # Adjust score based on distribution evenness
-                        if evenness_score < 0.2:  # Highly skewed (one value dominates)
-                            suitability_score = 20  # Poor candidate
+                        if evenness_score >= 0.7:  # Very even distribution
+                            suitability_score = 85  # Perfect candidate
                             recommendation['recommendations'].append({
                                 'transform': 'identity',
-                                'description': 'Not recommended due to skewed distribution',
-                                'example': f"PARTITION BY {col_name} -- Warning: Skewed distribution"
-                            })
-                        elif evenness_score < 0.5:  # Moderately skewed
-                            suitability_score = 40  # Fair candidate
-                            recommendation['recommendations'].append({
-                                'transform': 'identity',
-                                'description': 'Partition directly by this column (note: distribution is uneven)',
+                                'description': 'Partition directly by this column (excellent distribution)',
                                 'example': f"PARTITION BY {col_name}"
                             })
-                        else:  # Fairly even distribution
-                            suitability_score = 75  # Good candidate
+                        elif evenness_score >= 0.5:  # Good distribution
+                            suitability_score = 80  # Very good candidate
                             recommendation['recommendations'].append({
                                 'transform': 'identity',
                                 'description': 'Partition directly by this column (good distribution)',
                                 'example': f"PARTITION BY {col_name}"
                             })
-                    # Moderate cardinality strings
-                    elif cardinality_ratio < 0.1 and unique_values < 1000:
-                        # Adjust score based on distribution evenness
-                        if evenness_score < 0.3:  # Significantly skewed
-                            suitability_score = 30  # Less suitable
+                        else:  # Uneven distribution
+                            suitability_score = 50  # Less suitable due to skew
+                            recommendation['recommendations'].append({
+                                'transform': 'bucket',
+                                'description': 'Hash into 10 buckets to counter uneven distribution',
+                                'example': f"PARTITION BY bucket(10, {col_name})"
+                            })
+                    
+                    # Low cardinality strings (2-5% unique values)
+                    # Can be good if values are evenly distributed
+                    elif 0.02 <= cardinality_ratio < 0.05 and unique_values < 200:
+                        if evenness_score >= 0.6:  # Even distribution
+                            suitability_score = 75  # Good candidate
+                            recommendation['recommendations'].append({
+                                'transform': 'identity',
+                                'description': 'Partition directly by this column',
+                                'example': f"PARTITION BY {col_name}"
+                            })
+                        else:  # Uneven distribution
+                            suitability_score = 40  # Poor due to skew
+                            recommendation['recommendations'].append({
+                                'transform': 'identity',
+                                'description': 'Not recommended due to uneven distribution',
+                                'example': f"PARTITION BY {col_name} -- Warning: Uneven distribution"
+                            })
+                    
+                    # Very low cardinality strings (<2% unique)
+                    elif cardinality_ratio < 0.02:
+                        # Very low cardinality is generally poor for partitioning
+                        # unless exceptionally well-distributed
+                        if evenness_score >= 0.8 and unique_values >= 5:
+                            suitability_score = 60  # Acceptable only with perfect distribution
+                            recommendation['recommendations'].append({
+                                'transform': 'identity',
+                                'description': 'Partition directly by this column',
+                                'example': f"PARTITION BY {col_name}"
+                            })
                         else:
-                            suitability_score = 50  # Moderately suitable
-                            
+                            suitability_score = 20  # Generally poor
+                            recommendation['recommendations'].append({
+                                'transform': 'identity',
+                                'description': 'Not recommended: too few unique values',
+                                'example': f"PARTITION BY {col_name} -- Warning: Too few unique values"
+                            })
+                    
+                    # Higher cardinality strings (20-40% unique)
+                    elif 0.2 < cardinality_ratio <= 0.4:
+                        suitability_score = 70
                         recommendation['recommendations'].append({
                             'transform': 'truncate',
                             'description': 'Truncate to first 5 characters',
                             'example': f"PARTITION BY truncate({col_name}, 5)"
                         })
-                    # High cardinality strings
+                        recommendation['recommendations'].append({
+                            'transform': 'bucket',
+                            'description': 'Hash into 20 buckets',
+                            'example': f"PARTITION BY bucket(20, {col_name})"
+                        })
+                    
+                    # Very high cardinality strings (>40% unique)
                     else:
-                        suitability_score = 20
+                        suitability_score = 30  # Not ideal for direct partitioning
                         recommendation['recommendations'].append({
                             'transform': 'bucket',
                             'description': 'Hash into 50 buckets',
