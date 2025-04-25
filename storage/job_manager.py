@@ -82,7 +82,8 @@ class JobManager:
             'stderr': None,
             'returncode': None,
             'error': None,
-            'is_test': params.get('is_test', False),
+            # Mark as test job if is_test is True OR if dry_run is True
+            'is_test': params.get('is_test', False) or params.get('dry_run', False),
             # Move these fields up to the root level from params
             'table_name': params.get('table_name', ''),
             'file_size': params.get('file_size', 0),
