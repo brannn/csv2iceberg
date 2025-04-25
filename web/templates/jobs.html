@@ -84,19 +84,15 @@
                                 </td>
                                 <td>
                                     {% if job.completed_at %}
-                                        {{ format_datetime(job.completed_at) }}
+                                        {{ job.completed_at }}
                                     {% else %}
                                         -
                                     {% endif %}
                                 </td>
                                 <td>
-                                    {% if job.started_at and job.status != 'running' %}
-                                        {% if job.completed_at %}
-                                            {{ format_duration(job.started_at, job.completed_at) }}
-                                        {% else %}
-                                            {{ format_duration(job.started_at, now) }}
-                                        {% endif %}
-                                    {% elif job.status == 'running' and job.started_at %}
+                                    {% if job.duration %}
+                                        {{ job.duration }} seconds
+                                    {% elif job.status == 'running' %}
                                         In progress...
                                     {% else %}
                                         N/A
