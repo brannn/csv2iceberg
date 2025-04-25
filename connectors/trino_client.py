@@ -42,7 +42,8 @@ class TrinoClient:
         catalog: str = 'hive',
         schema: str = 'default',
         http_scheme: str = 'https',
-        role: str = 'sysadmin'
+        role: str = 'sysadmin',
+        dry_run: bool = False
     ):
         """
         Initialize Trino client.
@@ -56,6 +57,7 @@ class TrinoClient:
             schema: Default schema
             http_scheme: HTTP scheme (http or https)
             role: Trino role to use (e.g., 'sysadmin')
+            dry_run: Whether to operate in dry run mode (without actual connections)
         """
         self.host = host
         self.port = port
@@ -65,6 +67,7 @@ class TrinoClient:
         self.schema = schema
         self.http_scheme = http_scheme
         self.role = role
+        self.dry_run = dry_run
         
         # Schema cache dict: {(catalog, schema, table): [(column_name, column_type), ...]}
         self._schema_cache = {}
@@ -72,7 +75,12 @@ class TrinoClient:
         # Table existence cache dict: {(catalog, schema, table): bool}
         self._table_existence_cache = {}
         
-        self.connection = self._create_connection()
+        # Only create a real connection if not in dry run mode
+        if not dry_run:
+            self.connection = self._create_connection()
+        else:
+            self.connection = None
+            logger.info("Operating in dry run mode - no actual connection to Trino will be made")
         
     def _create_connection(self):
         """Create a connection to Trino"""
@@ -146,6 +154,11 @@ class TrinoClient:
         """
         try:
             logger.info(f"Executing query on Trino: {query}")
+            
+            # Handle dry run mode
+            if self.dry_run:
+                logger.info(f"[DRY RUN] Would execute query: {query}")
+                return []
             
             if self.connection is None:
                 error_msg = "No active Trino connection"

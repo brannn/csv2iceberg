@@ -238,6 +238,10 @@ def convert(csv_file: str, delimiter: str, has_header: bool, quote_char: str, ba
         def progress_update(percent):
             console.print(f"[bold blue]Writing data: {percent}% complete[/bold blue]")
             
+        if dry_run:
+            console.print("[bold blue]Running in DRY RUN mode...[/bold blue]")
+            console.print("Queries will be collected but not executed against the database.")
+            
         writer.write_csv_to_iceberg(
             csv_file=csv_file,
             mode=mode,
@@ -247,8 +251,21 @@ def convert(csv_file: str, delimiter: str, has_header: bool, quote_char: str, ba
             batch_size=batch_size,
             include_columns=include_cols,
             exclude_columns=exclude_cols,
-            progress_callback=progress_update
+            progress_callback=progress_update,
+            dry_run=dry_run
         )
+        
+        if dry_run:
+            console.print("[bold green]✓[/bold green] Dry run completed successfully")
+            console.print("[bold blue]Summary of operations that would be performed:[/bold blue]")
+            if hasattr(writer, 'dry_run_results'):
+                stats = writer.dry_run_results.get('stats', {})
+                console.print(f"  - Total rows that would be processed: {stats.get('total_rows', 0)}")
+                console.print(f"  - Number of batches: {stats.get('batches', 0)}")
+                console.print(f"  - Tables that would be created: {stats.get('tables_created', 0)}")
+                console.print(f"  - Tables that would be modified: {stats.get('tables_modified', 0)}")
+                console.print(f"  - Estimated execution time: {stats.get('estimated_execution_time', 0):.2f} seconds")
+            return
         
         console.print(f"[bold green]✓[/bold green] Data written successfully to {table_name}")
         

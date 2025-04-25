@@ -2,7 +2,7 @@
 Query collector module for dry run mode in CSV to Iceberg conversion
 """
 import logging
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Union
 
 logger = logging.getLogger(__name__)
 
@@ -16,17 +16,18 @@ class QueryCollector:
     
     def __init__(self):
         """Initialize a new query collector"""
-        self.queries = []
-        self.ddl_statements = []
-        self.stats = {
+        self.queries: List[Dict[str, Any]] = []
+        self.ddl_statements: List[Dict[str, Any]] = []
+        # Use Dict[str, Union[int, float]] to allow mixed types
+        self.stats: Dict[str, Union[int, float]] = {
             "total_rows": 0,
             "batches": 0,
-            "estimated_execution_time": 0,  # In seconds
+            "estimated_execution_time": 0.0,  # In seconds (using float to avoid int conversion issues)
             "tables_created": 0,
             "tables_modified": 0
         }
     
-    def add_query(self, query: str, query_type: str = "DML", row_count: int = 0, table_name: str = None):
+    def add_query(self, query: str, query_type: str = "DML", row_count: int = 0, table_name: Optional[str] = None):
         """
         Add a query to the collector
         
