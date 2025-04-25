@@ -521,8 +521,9 @@ class IcebergWriter:
                         current_chunk.append(row_sql)
                         current_query_length = new_query_length
                 
-                # Process any remaining rows in this batch
-                if current_chunk:
+                # Process any remaining rows in this batch, but only if we entered the else block above
+                # If estimated_total_length <= MAX_QUERY_LENGTH, we didn't initialize current_chunk
+                if 'current_chunk' in locals() and current_chunk:
                     insert_sql = f"{base_sql}{', '.join(current_chunk)}"
                     
                     if dry_run and query_collector:
