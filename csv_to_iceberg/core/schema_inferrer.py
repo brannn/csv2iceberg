@@ -624,6 +624,7 @@ def analyze_column_cardinality(
                     
                     # Low cardinality strings (e.g., status codes, categories) are good for partitioning
                     # BUT only if the values are well distributed
+                    # Using 0.01 as threshold (1% unique values)
                     if cardinality_ratio < 0.01 and unique_values < 100:
                         # Adjust score based on distribution evenness
                         if evenness_score < 0.2:  # Highly skewed (one value dominates)
