@@ -38,8 +38,8 @@
                         {% for job in jobs %}
                             <tr>
                                 <td>{{ job.id }}</td>
-                                <td>{{ job.filename }}</td>
-                                <td>{{ job.params.table_name }}</td>
+                                <td>{{ job.original_filename if job.original_filename else job.params.original_filename }}</td>
+                                <td>{{ job.table_name if job.table_name else job.params.table_name }}</td>
                                 <td>
                                     {% if job.status == 'running' %}
                                         <span class="badge bg-info">Running</span>
@@ -49,10 +49,14 @@
                                         <span class="badge bg-danger">Failed</span>
                                     {% endif %}
                                 </td>
-                                <td>{{ job.params.mode }}</td>
+                                <td>{{ job.mode if job.mode else job.params.mode }}</td>
                                 <td>
                                     {% if job.completed_at %}
-                                        {{ job.completed_at.strftime('%Y-%m-%d %H:%M:%S') }}
+                                        {% if job.completed_at is string %}
+                                            {{ job.completed_at }}
+                                        {% else %}
+                                            {{ job.completed_at.strftime('%Y-%m-%d %H:%M:%S') }}
+                                        {% endif %}
                                     {% else %}
                                         -
                                     {% endif %}
