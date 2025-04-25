@@ -1,28 +1,15 @@
 """
-Iceberg writer module for CSV to Iceberg conversion using Polars
+Iceberg writer module for CSV to Iceberg conversion using Polars and optimized SQL INSERTs
 """
 import os
 import logging
 import time
 import csv
-import tempfile
 from typing import Dict, List, Any, Optional, Callable, Tuple
 import datetime
 
 # Use Polars for data processing
 import polars as pl
-
-# Import PyArrow and PyArrow Parquet modules
-try:
-    import pyarrow as pa
-    import pyarrow.parquet as pq
-    PYARROW_AVAILABLE = True
-    logger = logging.getLogger(__name__)
-    logger.info("PyArrow is available for Parquet-based data loading")
-except ImportError:
-    PYARROW_AVAILABLE = False
-    logger = logging.getLogger(__name__)
-    logger.warning("PyArrow is not available, falling back to SQL-based data loading")
 
 # Import PyIceberg schema
 from pyiceberg.schema import Schema
@@ -210,12 +197,13 @@ class IcebergWriter:
     
     def _write_batch_to_iceberg(self, batch_data, mode: str) -> None:
         """
-        Write a batch of data to an Iceberg table, using PyArrow/Parquet if available or SQL INSERT as fallback.
+        Write a batch of data to an Iceberg table using optimized SQL INSERT statements.
         
         Args:
             batch_data: Batch of data to write (Polars DataFrame or any compatible DataFrame with columns attribute)
             mode: Write mode (append or overwrite)
         """
+        start_time = time.time()
         try:
             batch_size = len(batch_data) if hasattr(batch_data, '__len__') else 'unknown'
             logger.info(f"Writing batch of {batch_size} rows to {self.catalog}.{self.schema}.{self.table} in {mode} mode")
@@ -299,57 +287,36 @@ class IcebergWriter:
                 self._cached_target_schema = []
                 self._cached_column_types_dict = {}
             
-            # Check if we should use PyArrow method (using the module flag from imports)
-            if PYARROW_AVAILABLE:
-                logger.info("Using PyArrow/Parquet method for high-performance data loading")
-                try:
-                    # Use a temporary directory for the parquet file
-                    with tempfile.TemporaryDirectory() as temp_dir:
-                        # Create temporary parquet file path with timestamp to ensure uniqueness
-                        parquet_file = os.path.join(temp_dir, f"batch_{int(time.time())}.parquet")
-                        
-                        # Convert Polars DataFrame to PyArrow Table
-                        logger.debug("Converting Polars DataFrame to PyArrow Table")
-                        arrow_table = batch_data.to_arrow()
-                        
-                        # Write the PyArrow Table to Parquet with compression
-                        logger.debug(f"Writing PyArrow Table to temporary Parquet file: {parquet_file}")
-                        pq.write_table(
-                            arrow_table, 
-                            parquet_file,
-                            compression='snappy'  # Use snappy for good compression/speed balance
-                        )
-                        
-                        # Get the absolute path for the Parquet file
-                        abs_parquet_path = os.path.abspath(parquet_file)
-                        file_size_mb = os.path.getsize(parquet_file) / 1024 / 1024
-                        logger.info(f"Created temporary Parquet file ({file_size_mb:.2f} MB)")
-                        
-                        # Build and execute the SQL query to load data from Parquet file
-                        copy_sql = f"""
-                        INSERT INTO {self.catalog}.{self.schema}.{self.table}
-                        SELECT * FROM read_parquet('{abs_parquet_path}')
-                        """
-                        
-                        # Execute the query
-                        logger.info(f"Executing Parquet load query for {len(batch_data)} rows")
-                        self.trino_client.execute_query(copy_sql)
-                        logger.info(f"Successfully loaded {len(batch_data)} rows from Parquet file to {self.catalog}.{self.schema}.{self.table}")
-                        
-                        # Success! No need to use SQL fallback
-                        return
-                
-                except Exception as e:
-                    # Log the error and fall back to SQL method
-                    logger.error(f"Error using PyArrow/Parquet method: {str(e)}", exc_info=True)
-                    logger.warning("Falling back to SQL INSERT method")
-                    # Continue to SQL method below
-            else:
-                logger.info("PyArrow not available, using SQL INSERT method")
-                
-            # If we get here, either PyArrow failed or is not available - use SQL method
-            logger.info("Using SQL INSERT method for data loading")
+            # Use optimized SQL INSERT method
+            logger.info("Using optimized SQL INSERT method for data loading")
+            
+            # Get the target table schema for improved data type handling
+            try:
+                # Check if schema is already cached
+                if self._cached_target_schema is None:
+                    logger.info(f"Fetching and caching schema for {self.catalog}.{self.schema}.{self.table}")
+                    self._cached_target_schema = self.trino_client.get_table_schema(self.catalog, self.schema, self.table)
+                    
+                    # Create dictionary only if we got valid schema results
+                    if self._cached_target_schema is not None and len(self._cached_target_schema) > 0:
+                        self._cached_column_types_dict = {col_name: col_type for col_name, col_type in self._cached_target_schema}
+                        logger.debug(f"Cached schema with types: {self._cached_column_types_dict}")
+                    else:
+                        # If schema retrieval returned empty result, initialize empty dict
+                        self._cached_column_types_dict = {}
+                        logger.warning(f"Retrieved empty schema for {self.catalog}.{self.schema}.{self.table}")
+                else:
+                    logger.debug(f"Using cached schema for {self.catalog}.{self.schema}.{self.table}")
+            except Exception as e:
+                logger.warning(f"Failed to retrieve schema: {str(e)}")
+                self._cached_column_types_dict = {}
+            
+            # Process in optimized batches
             self._write_batch_to_iceberg_sql(batch_data, mode)
+            
+            # Log execution time for this batch
+            elapsed_time = time.time() - start_time
+            logger.info(f"SQL INSERT batch processing completed in {elapsed_time:.2f} seconds")
             
         except Exception as e:
             logger.error(f"Error in _write_batch_to_iceberg: {str(e)}", exc_info=True)
@@ -369,7 +336,7 @@ class IcebergWriter:
             batch_data: Batch of data to write (Polars DataFrame)
             mode: Write mode (append or overwrite)
         """
-        logger.info(f"Using SQL INSERT fallback method for batch of {len(batch_data)} rows")
+        logger.info(f"Using optimized SQL INSERT method for batch of {len(batch_data)} rows")
         
         try:
             # Get column names from the dataframe
