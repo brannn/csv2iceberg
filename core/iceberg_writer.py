@@ -451,7 +451,7 @@ class IcebergWriter:
             column_names_str = ", ".join(quoted_columns)
             
             # Define maximum SQL query size (in characters) - Trino has a limit of 1,000,000
-            MAX_QUERY_LENGTH = 900000  # Setting a bit below the limit for safety
+            MAX_QUERY_LENGTH = 500000  # Set to 500KB (half of Trino's limit) for extra safety
             
             # Initialize row processing counter
             rows_processed = 0
@@ -459,8 +459,7 @@ class IcebergWriter:
             # Base SQL part
             base_sql = f"INSERT INTO {self.catalog}.{self.schema}.{self.table} ({column_names_str}) VALUES "
             
-            # Create a SQL batcher instance - Trino has a limit of ~1,000,000 characters
-            # Use 900,000 as a safe limit (same as MAX_QUERY_LENGTH)
+            # Create a SQL batcher instance with a safer limit
             sql_batcher = SQLBatcher(max_bytes=MAX_QUERY_LENGTH, dry_run=dry_run)
             
             # Define a callback function for the SQL batcher to execute queries
@@ -493,13 +492,34 @@ class IcebergWriter:
                 
                 formatted_rows.append(f"({', '.join(row_values)})")
             
-            # Prepare SQL INSERT statements
-            insert_statements = []
+            # Prepare SQL INSERT statements with a reduced max size
+            # Calculate average row size to determine batch size
+            MAX_ROWS_PER_INSERT = 500  # Start with a safe limit
             
-            # Prepare a single INSERT with multiple rows using VALUES (...), (...), ...
-            values_sql = ", ".join(formatted_rows)
-            complete_insert_sql = f"{base_sql}{values_sql}"
-            insert_statements.append(complete_insert_sql)
+            if formatted_rows:
+                # Calculate average row size
+                avg_row_size = sum(len(row.encode('utf-8')) for row in formatted_rows) / len(formatted_rows)
+                # 500KB max query size for safety (half of Trino's limit)
+                max_safe_query_size = 500000
+                # Base SQL part size 
+                base_sql_size = len(base_sql.encode('utf-8'))
+                # Calculate how many rows we can safely fit
+                max_safe_rows = int((max_safe_query_size - base_sql_size) / (avg_row_size + 2))  # +2 for comma and space
+                # Use the smaller of our calculated value or default
+                batch_size = min(max_safe_rows, MAX_ROWS_PER_INSERT)
+                batch_size = max(batch_size, 1)  # Ensure at least 1 row per batch
+                
+                logger.info(f"Calculated batch size: {batch_size} rows per INSERT (avg row size: {avg_row_size:.0f} bytes)")
+            else:
+                batch_size = MAX_ROWS_PER_INSERT
+            
+            # Create multiple INSERT statements with smaller row batches
+            insert_statements = []
+            for i in range(0, len(formatted_rows), batch_size):
+                batch = formatted_rows[i:i + batch_size]
+                values_sql = ", ".join(batch)
+                insert_sql = f"{base_sql}{values_sql}"
+                insert_statements.append(insert_sql)
             
             # Define metadata for the query collector
             metadata = {
