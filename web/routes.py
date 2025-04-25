@@ -316,6 +316,7 @@ def convert():
             use_custom_schema = request.form.get('use_custom_schema') == 'true'
             custom_schema = request.form.get('custom_schema', '') if use_custom_schema else ''
             dry_run = request.form.get('dry_run') == 'true'
+            max_query_size = int(request.form.get('max_query_size', 700)) * 1000  # Convert to bytes
             
             # Parse column lists
             include_cols_list = [col.strip() for col in include_columns.split(',')] if include_columns.strip() else None
@@ -395,7 +396,8 @@ def convert():
                 'include_columns': include_cols_list,
                 'exclude_columns': exclude_cols_list,
                 'custom_schema': custom_schema if custom_schema.strip() else None,
-                'dry_run': dry_run
+                'dry_run': dry_run,
+                'max_query_size': max_query_size
             }
             
             # Create the job
@@ -451,6 +453,9 @@ def convert():
                         
                         # Dry run option
                         dry_run=job_params['dry_run'],
+                        
+                        # SQL batcher options
+                        max_query_size=job_params['max_query_size'],
                         
                         # Progress callback
                         progress_callback=update_progress

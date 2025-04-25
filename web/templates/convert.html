@@ -141,6 +141,12 @@
                                 </div>
                                 
                                 <div class="mb-3">
+                                    <label for="max_query_size" class="form-label">Max Query Size (KB)</label>
+                                    <input type="number" class="form-control" id="max_query_size" name="max_query_size" value="700" min="100" max="900" step="100">
+                                    <div class="form-text">Maximum SQL query size in KB. Default: 700KB (70% of Trino's 1MB limit). Increase for better performance, decrease if errors occur.</div>
+                                </div>
+                                
+                                <div class="mb-3">
                                     <label for="include_columns" class="form-label">Include Columns (comma-separated)</label>
                                     <input type="text" class="form-control" id="include_columns" name="include_columns">
                                     <div class="form-text">Specify columns to include (leave empty to include all)</div>
