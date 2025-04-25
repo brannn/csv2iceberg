@@ -434,7 +434,7 @@ class IcebergWriter:
             
     def _write_batch_to_iceberg_sql(self, batch_data, mode: str, dry_run: bool = False, query_collector = None) -> None:
         """
-        High-performance method to write batch data using optimized SQL INSERT statements.
+        High-performance method to write batch data using optimized SQL INSERT statements with SQLBatcher.
         
         Args:
             batch_data: Batch of data to write (Polars DataFrame)
