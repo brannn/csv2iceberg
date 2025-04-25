@@ -17,22 +17,21 @@ class SQLBatcher:
     exceeding query size limits while optimizing for performance.
     """
     
-    def __init__(self, max_bytes: int = 900_000, delimiter: str = ";\n", dry_run: bool = False):
+    def __init__(self, max_bytes: int = 500_000, delimiter: str = ";\n", dry_run: bool = False):
         """
         Initialize a new SQL batcher.
         
         Args:
-            max_bytes: Maximum size in bytes of the query string batch (default: 900,000)
-            delimiter: Delimiter to use between SQL statements (default: ";\n")
+            max_bytes: Maximum size in bytes of each statement batch (default: 500,000)
+            delimiter: Delimiter used for size calculation only (actual execution is per statement)
             dry_run: If True, just logs the queries without executing (default: False)
         """
         self.max_bytes = max_bytes
-        self.delimiter = delimiter
+        self.delimiter = delimiter  # Only used for size calculation, not for joining
         self.dry_run = dry_run
         self.total_statements_processed = 0
         self.reset()
-        logger.debug(f"Initialized SQLBatcher with max_bytes={max_bytes}, "
-                    f"delimiter='{delimiter}', dry_run={dry_run}")
+        logger.debug(f"Initialized SQLBatcher with max_bytes={max_bytes}, dry_run={dry_run}")
     
     def reset(self) -> None:
         """Reset the current batch."""
@@ -75,36 +74,45 @@ class SQLBatcher:
         Flush the current batch using the provided callback.
         
         Args:
-            execute_callback: Function to call with the batched SQL
+            execute_callback: Function to call with each SQL statement
             query_collector: Optional query collector for dry run mode
             metadata: Additional metadata for the query collector
         """
         if not self.current_batch:
             return
         
-        query = self.delimiter.join(self.current_batch)
         statements_count = len(self.current_batch)
         self.total_statements_processed += statements_count
         
-        logger.debug(f"Flushing SQL batch ({self.current_size} bytes, {statements_count} statements)")
+        logger.debug(f"Flushing SQL statements ({self.current_size} bytes, {statements_count} statements)")
         
         if self.dry_run:
             logger.info(f"[DRY RUN] SQL batch with {statements_count} statements ({self.current_size} bytes)")
-            logger.debug(f"[DRY RUN] SQL batch content:\n{query}")
             
-            # If we have a query collector, add the query to it
+            # If we have a query collector, add the queries to it
             if query_collector and metadata:
-                query_collector.add_query(
-                    query,
-                    metadata.get("type", "DML"),
-                    metadata.get("row_count", statements_count),
-                    metadata.get("table_name", "unknown")
-                )
+                for i, statement in enumerate(self.current_batch):
+                    logger.debug(f"[DRY RUN] SQL statement {i+1}/{statements_count}")
+                    query_collector.add_query(
+                        statement,
+                        metadata.get("type", "DML"),
+                        metadata.get("row_count", 1),  # One row count per statement
+                        metadata.get("table_name", "unknown")
+                    )
         else:
-            # Execute the query
+            # Execute each statement individually
+            success_count = 0
             try:
-                execute_callback(query)
-                logger.info(f"Successfully executed SQL batch with {statements_count} statements")
+                for i, statement in enumerate(self.current_batch):
+                    try:
+                        logger.debug(f"Executing SQL statement {i+1}/{statements_count}")
+                        execute_callback(statement)
+                        success_count += 1
+                    except Exception as inner_e:
+                        logger.error(f"Error executing SQL statement {i+1}: {str(inner_e)}")
+                        raise inner_e
+                        
+                logger.info(f"Successfully executed {success_count}/{statements_count} SQL statements")
             except Exception as e:
                 logger.error(f"Error executing SQL batch: {str(e)}", exc_info=True)
                 raise RuntimeError(f"Failed to execute SQL batch: {str(e)}") from e
