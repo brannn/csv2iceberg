@@ -19,6 +19,7 @@ from csv_to_iceberg.connectors.trino_client import TrinoClient
 from csv_to_iceberg.core.schema_inferrer import infer_schema_from_df
 from csv_to_iceberg.connectors.hive_client import HiveMetastoreClient
 
+# Configure logger
 logger = logging.getLogger(__name__)
 
 class IcebergWriter:
@@ -363,81 +364,94 @@ class IcebergWriter:
             
             logger.info(f"Using maximum of {MAX_ROWS_PER_INSERT} rows per INSERT statement")
             
-            # Process batch in chunks
-            rows_to_process = list(batch_data.rows(named=True))
-            current_chunk = []
-            current_query_length = 0
+            # Process batch in chunks for better efficiency
             rows_processed = 0
+            total_rows = len(batch_data)
             
             # Base SQL part
             base_sql = f"INSERT INTO {self.catalog}.{self.schema}.{self.table} ({column_names_str}) VALUES "
-            base_length = len(base_sql)
             
-            # Process rows
-            for row in rows_to_process:
-                # Format row values
-                row_values = []
+            # Process in batches of MAX_ROWS_PER_INSERT
+            for batch_start in range(0, total_rows, MAX_ROWS_PER_INSERT):
+                batch_end = min(batch_start + MAX_ROWS_PER_INSERT, total_rows)
+                current_batch_size = batch_end - batch_start
                 
-                for col in columns:
-                    val = row[col]
-                    if val is None:
-                        row_values.append("NULL")
-                    elif isinstance(val, bool):
-                        row_values.append("TRUE" if val else "FALSE")
-                    elif isinstance(val, (int, float)):
-                        row_values.append(str(val))
-                    elif isinstance(val, datetime.datetime):
-                        # Format timestamp properly for Trino
-                        row_values.append(f"TIMESTAMP '{val}'")
-                    elif isinstance(val, datetime.date):
-                        row_values.append(f"DATE '{val}'")
-                    else:
-                        # Handle string values with proper escaping
-                        str_val = str(val).replace("'", "''")
-                        row_values.append(f"'{str_val}'")
+                # Get the slice of data for this batch
+                batch_slice = batch_data.slice(batch_start, current_batch_size)
+                rows_to_process = list(batch_slice.rows(named=True))
                 
-                row_sql = f"({', '.join(row_values)})"
-                row_length = len(row_sql) + (2 if current_chunk else 0)  # +2 for comma and space
-                
-                # Check if adding this row would exceed query limits
-                new_query_length = current_query_length + row_length
-                
-                # Execute current batch if needed
-                if ((new_query_length + base_length > MAX_QUERY_LENGTH or 
-                     len(current_chunk) >= MAX_ROWS_PER_INSERT) and current_chunk):
+                # Format all rows in the batch
+                formatted_rows = []
+                for row in rows_to_process:
+                    # Format row values
+                    row_values = []
                     
-                    # Build and execute the current chunk
+                    for col in columns:
+                        val = row[col]
+                        if val is None:
+                            row_values.append("NULL")
+                        elif isinstance(val, bool):
+                            row_values.append("TRUE" if val else "FALSE")
+                        elif isinstance(val, (int, float)):
+                            row_values.append(str(val))
+                        elif isinstance(val, datetime.datetime):
+                            # Format timestamp properly for Trino
+                            row_values.append(f"TIMESTAMP '{val}'")
+                        elif isinstance(val, datetime.date):
+                            row_values.append(f"DATE '{val}'")
+                        else:
+                            # Handle string values with proper escaping
+                            str_val = str(val).replace("'", "''")
+                            row_values.append(f"'{str_val}'")
+                    
+                    formatted_rows.append(f"({', '.join(row_values)})")
+                
+                # Check if we need to split this batch due to query size limits
+                # Trino has a query length limit, so we might need to split large batches
+                # into smaller chunks to stay within that limit
+                MAX_QUERY_LENGTH = 900000  # Setting a bit below Trino's limit of 1,000,000 for safety
+                
+                # First check if a single batch is too big (usual case)
+                # If so, create mini-batches based on query length
+                current_chunk = []
+                current_query_length = 0
+                
+                for row_sql in formatted_rows:
+                    row_length = len(row_sql) + (2 if current_chunk else 0)  # +2 for comma and space
+                    new_query_length = current_query_length + row_length
+                    
+                    # If adding this row would exceed the query limit, execute current chunk
+                    if new_query_length + len(base_sql) > MAX_QUERY_LENGTH and current_chunk:
+                        # Execute current mini-batch
+                        insert_sql = f"{base_sql}{', '.join(current_chunk)}"
+                        
+                        try:
+                            self.trino_client.execute_query(insert_sql)
+                            rows_processed += len(current_chunk)
+                            logger.info(f"Successfully inserted mini-batch of {len(current_chunk)} rows (query length limit)")
+                        except Exception as e:
+                            logger.error(f"Error during SQL INSERT: {str(e)}", exc_info=True)
+                            raise RuntimeError(f"Failed to write data to Iceberg table: {str(e)}")
+                        
+                        # Reset for next mini-batch
+                        current_chunk = []
+                        current_query_length = 0
+                    
+                    # Add the current row to the chunk
+                    current_chunk.append(row_sql)
+                    current_query_length = new_query_length
+                
+                # Process any remaining rows in this batch
+                if current_chunk:
                     insert_sql = f"{base_sql}{', '.join(current_chunk)}"
                     
                     try:
-                        logger.debug(f"Executing SQL INSERT with {len(current_chunk)} rows (query length: {len(insert_sql)})")
                         self.trino_client.execute_query(insert_sql)
                         rows_processed += len(current_chunk)
-                        logger.info(f"Successfully inserted chunk of {len(current_chunk)} rows")
+                        logger.info(f"Successfully inserted batch of {len(current_chunk)} rows")
                     except Exception as e:
                         logger.error(f"Error during SQL INSERT: {str(e)}", exc_info=True)
                         raise RuntimeError(f"Failed to write data to Iceberg table: {str(e)}")
-                    
-                    # Reset for next batch
-                    current_chunk = []
-                    current_query_length = 0
-                
-                # Add the current row to the chunk
-                current_chunk.append(row_sql)
-                current_query_length = new_query_length
-            
-            # Process any remaining rows in the final chunk
-            if current_chunk:
-                insert_sql = f"{base_sql}{', '.join(current_chunk)}"
-                
-                try:
-                    logger.debug(f"Executing final SQL INSERT with {len(current_chunk)} rows (query length: {len(insert_sql)})")
-                    self.trino_client.execute_query(insert_sql)
-                    rows_processed += len(current_chunk)
-                    logger.info(f"Successfully inserted final chunk of {len(current_chunk)} rows")
-                except Exception as e:
-                    logger.error(f"Error during SQL INSERT: {str(e)}", exc_info=True)
-                    raise RuntimeError(f"Failed to write data to Iceberg table: {str(e)}")
             
             logger.info(f"Successfully wrote {rows_processed} rows to {self.catalog}.{self.schema}.{self.table} using SQL INSERT method")
         except Exception as e:
