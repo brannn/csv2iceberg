@@ -326,6 +326,17 @@ class TrinoClient:
             # Get the create table SQL
             create_table_sql = self.get_create_table_sql(catalog, schema, table, iceberg_schema)
             
+            # Handle dry run mode
+            if self.dry_run:
+                logger.info(f"[DRY RUN] Would create table {catalog}.{schema}.{table} with PARQUET format")
+                logger.info(f"[DRY RUN] SQL that would be executed: {create_table_sql}")
+                
+                # In dry run mode, pretend the table was created successfully
+                self._table_existence_cache[(catalog, schema, table)] = True
+                logger.info(f"[DRY RUN] Simulated successful table creation: {catalog}.{schema}.{table}")
+                return
+            
+            # Normal execution mode
             logger.info(f"Creating table {catalog}.{schema}.{table} with PARQUET format")
             logger.debug(f"Create table SQL: {create_table_sql}")
             
@@ -353,6 +364,18 @@ class TrinoClient:
             self._clear_cache_for_table(catalog, schema, table)
             
             drop_table_sql = f"DROP TABLE IF EXISTS {catalog}.{schema}.{table}"
+            
+            # Handle dry run mode
+            if self.dry_run:
+                logger.info(f"[DRY RUN] Would drop table: {catalog}.{schema}.{table}")
+                logger.info(f"[DRY RUN] SQL that would be executed: {drop_table_sql}")
+                
+                # In dry run mode, pretend the table was dropped successfully
+                self._table_existence_cache[(catalog, schema, table)] = False
+                logger.info(f"[DRY RUN] Simulated successful table drop: {catalog}.{schema}.{table}")
+                return
+            
+            # Normal execution mode
             logger.info(f"Dropping table: {catalog}.{schema}.{table}")
             self.execute_query(drop_table_sql)
             
