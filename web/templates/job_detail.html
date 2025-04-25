@@ -65,6 +65,7 @@
                                 <li class="list-inline-item"><strong>Quote Char:</strong> "{{ job.quote_char }}"</li>
                                 <li class="list-inline-item"><strong>Has Header:</strong> {{ "Yes" if job.has_header else "No" }}</li>
                                 <li class="list-inline-item"><strong>Batch Size:</strong> {{ job.batch_size }}</li>
+                                <li class="list-inline-item"><strong>Max Query Size:</strong> {{ (job.params.max_query_size/1000)|int if job.params.max_query_size else 700 }}KB</li>
                             </ul>
                         </td>
                     </tr>
