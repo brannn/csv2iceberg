@@ -442,7 +442,7 @@ class IcebergWriter:
             dry_run: If True, collect queries without executing them
             query_collector: QueryCollector instance for storing queries in dry run mode
         """
-        logger.info(f"Using optimized SQL INSERT method for batch of {len(batch_data)} rows")
+        logger.info(f"Using optimized SQL INSERT method with SQLBatcher for batch of {len(batch_data)} rows")
         
         try:
             # Get column names from the dataframe
@@ -450,158 +450,88 @@ class IcebergWriter:
             quoted_columns = [f'"{col}"' for col in columns]
             column_names_str = ", ".join(quoted_columns)
             
-            # Define parameters based on column count to optimize performance
-            column_count = len(columns)
-            
             # Define maximum SQL query size (in characters) - Trino has a limit of 1,000,000
             MAX_QUERY_LENGTH = 900000  # Setting a bit below the limit for safety
             
-            # Define maximum rows per INSERT statement based on column count
-            if column_count > 80:
-                MAX_ROWS_PER_INSERT = 1000
-            elif column_count > 50:
-                MAX_ROWS_PER_INSERT = 2000
-            elif column_count > 30:
-                MAX_ROWS_PER_INSERT = 3000
-            else:
-                # For tables with fewer columns, we can process more rows per statement
-                MAX_ROWS_PER_INSERT = 5000
-            
-            logger.info(f"Using maximum of {MAX_ROWS_PER_INSERT} rows per INSERT statement")
-            
-            # Process batch in chunks for better efficiency
+            # Initialize row processing counter
             rows_processed = 0
-            total_rows = len(batch_data)
             
             # Base SQL part
             base_sql = f"INSERT INTO {self.catalog}.{self.schema}.{self.table} ({column_names_str}) VALUES "
             
-            # Process in batches of MAX_ROWS_PER_INSERT
-            for batch_start in range(0, total_rows, MAX_ROWS_PER_INSERT):
-                batch_end = min(batch_start + MAX_ROWS_PER_INSERT, total_rows)
-                current_batch_size = batch_end - batch_start
-                
-                # Get the slice of data for this batch
-                batch_slice = batch_data.slice(batch_start, current_batch_size)
-                rows_to_process = list(batch_slice.rows(named=True))
-                
-                # Format all rows in the batch
-                formatted_rows = []
-                for row in rows_to_process:
-                    # Format row values
-                    row_values = []
-                    
-                    for col in columns:
-                        val = row[col]
-                        if val is None:
-                            row_values.append("NULL")
-                        elif isinstance(val, bool):
-                            row_values.append("TRUE" if val else "FALSE")
-                        elif isinstance(val, (int, float)):
-                            row_values.append(str(val))
-                        elif isinstance(val, datetime.datetime):
-                            # Format timestamp properly for Trino
-                            row_values.append(f"TIMESTAMP '{val}'")
-                        elif isinstance(val, datetime.date):
-                            row_values.append(f"DATE '{val}'")
-                        else:
-                            # Handle string values with proper escaping
-                            str_val = str(val).replace("'", "''")
-                            row_values.append(f"'{str_val}'")
-                    
-                    formatted_rows.append(f"({', '.join(row_values)})")
-                
-                # Check estimated total query length for this batch
-                # Trino has a query length limit of 1,000,000 characters
-                
-                # Calculate total length of all rows together (plus commas)
-                estimated_total_length = len(base_sql) + sum(len(row) for row in formatted_rows) + (2 * (len(formatted_rows) - 1))
-                
-                # If estimated total length is within limit, send all rows at once
-                if estimated_total_length <= MAX_QUERY_LENGTH:
-                    # Process all rows in a single batch
-                    insert_sql = f"{base_sql}{', '.join(formatted_rows)}"
-                    
-                    if dry_run and query_collector:
-                        # In dry run mode, just collect the query
-                        query_collector.add_query(insert_sql, "DML", len(formatted_rows), f"{self.catalog}.{self.schema}.{self.table}")
-                        logger.info(f"[DRY RUN] Would insert {len(formatted_rows)} rows")
-                        rows_processed += len(formatted_rows)
-                    else:
-                        # Normal execution
-                        try:
-                            self.trino_client.execute_query(insert_sql)
-                            rows_processed += len(formatted_rows)
-                            logger.info(f"Successfully inserted batch of {len(formatted_rows)} rows (within query length limit)")
-                        except Exception as e:
-                            logger.error(f"Error during SQL INSERT: {str(e)}", exc_info=True)
-                            raise RuntimeError(f"Failed to write data to Iceberg table: {str(e)}")
-                else:
-                    # Need to split into smaller chunks due to query length limit
-                    logger.info(f"Batch too large for single query ({estimated_total_length} chars), splitting into smaller chunks")
-                    
-                    # Process in chunks
-                    current_chunk = []
-                    current_query_length = len(base_sql)
-                    
-                    # Target at least 100 rows per mini-batch if possible
-                    min_rows_per_chunk = min(100, len(formatted_rows))
-                    
-                    for row_sql in formatted_rows:
-                        # Calculate length with this row added (plus comma if not first row)
-                        row_length = len(row_sql) + (2 if current_chunk else 0)  # +2 for comma and space
-                        new_query_length = current_query_length + row_length
-                        
-                        # If adding this row would exceed the query limit, execute current chunk
-                        # Only if we have some minimum number of rows already
-                        if new_query_length > MAX_QUERY_LENGTH and len(current_chunk) >= min_rows_per_chunk:
-                            # Execute current mini-batch
-                            insert_sql = f"{base_sql}{', '.join(current_chunk)}"
-                            
-                            if dry_run and query_collector:
-                                # In dry run mode, just collect the query
-                                query_collector.add_query(insert_sql, "DML", len(current_chunk), f"{self.catalog}.{self.schema}.{self.table}")
-                                logger.info(f"[DRY RUN] Would insert mini-batch of {len(current_chunk)} rows")
-                                rows_processed += len(current_chunk)
-                            else:
-                                # Normal execution
-                                try:
-                                    self.trino_client.execute_query(insert_sql)
-                                    rows_processed += len(current_chunk)
-                                    logger.info(f"Successfully inserted mini-batch of {len(current_chunk)} rows (query length limit)")
-                                except Exception as e:
-                                    logger.error(f"Error during SQL INSERT: {str(e)}", exc_info=True)
-                                    raise RuntimeError(f"Failed to write data to Iceberg table: {str(e)}")
-                            
-                            # Reset for next mini-batch
-                            current_chunk = []
-                            current_query_length = len(base_sql)
-                        
-                        # Add the current row to the chunk
-                        current_chunk.append(row_sql)
-                        current_query_length = new_query_length
-                
-                # Process any remaining rows in this batch, but only if we entered the else block above
-                # If estimated_total_length <= MAX_QUERY_LENGTH, we didn't initialize current_chunk
-                if 'current_chunk' in locals() and current_chunk:
-                    insert_sql = f"{base_sql}{', '.join(current_chunk)}"
-                    
-                    if dry_run and query_collector:
-                        # In dry run mode, just collect the query
-                        query_collector.add_query(insert_sql, "DML", len(current_chunk), f"{self.catalog}.{self.schema}.{self.table}")
-                        logger.info(f"[DRY RUN] Would insert remaining {len(current_chunk)} rows")
-                        rows_processed += len(current_chunk)
-                    else:
-                        # Normal execution
-                        try:
-                            self.trino_client.execute_query(insert_sql)
-                            rows_processed += len(current_chunk)
-                            logger.info(f"Successfully inserted batch of {len(current_chunk)} rows")
-                        except Exception as e:
-                            logger.error(f"Error during SQL INSERT: {str(e)}", exc_info=True)
-                            raise RuntimeError(f"Failed to write data to Iceberg table: {str(e)}")
+            # Create a SQL batcher instance - Trino has a limit of ~1,000,000 characters
+            # Use 900,000 as a safe limit (same as MAX_QUERY_LENGTH)
+            sql_batcher = SQLBatcher(max_bytes=MAX_QUERY_LENGTH, dry_run=dry_run)
             
-            logger.info(f"Successfully wrote {rows_processed} rows to {self.catalog}.{self.schema}.{self.table} using SQL INSERT method")
+            # Define a callback function for the SQL batcher to execute queries
+            def execute_callback(query_sql):
+                self.trino_client.execute_query(query_sql)
+            
+            # Format all rows in the batch using a simpler approach with SQLBatcher
+            formatted_rows = []
+            for row in batch_data.rows(named=True):
+                # Format row values
+                row_values = []
+                
+                for col in columns:
+                    val = row[col]
+                    if val is None:
+                        row_values.append("NULL")
+                    elif isinstance(val, bool):
+                        row_values.append("TRUE" if val else "FALSE")
+                    elif isinstance(val, (int, float)):
+                        row_values.append(str(val))
+                    elif isinstance(val, datetime.datetime):
+                        # Format timestamp properly for Trino
+                        row_values.append(f"TIMESTAMP '{val}'")
+                    elif isinstance(val, datetime.date):
+                        row_values.append(f"DATE '{val}'")
+                    else:
+                        # Handle string values with proper escaping
+                        str_val = str(val).replace("'", "''")
+                        row_values.append(f"'{str_val}'")
+                
+                formatted_rows.append(f"({', '.join(row_values)})")
+            
+            # Prepare SQL INSERT statements
+            insert_statements = []
+            
+            # Prepare a single INSERT with multiple rows using VALUES (...), (...), ...
+            values_sql = ", ".join(formatted_rows)
+            complete_insert_sql = f"{base_sql}{values_sql}"
+            insert_statements.append(complete_insert_sql)
+            
+            # Define metadata for the query collector
+            metadata = {
+                "type": "DML",
+                "row_count": len(formatted_rows),
+                "table_name": f"{self.catalog}.{self.schema}.{self.table}"
+            }
+            
+            # Process all statements using the SQLBatcher for optimal batching
+            rows_processed = 0
+            if dry_run and query_collector:
+                # In dry run mode
+                rows_processed = sql_batcher.process_statements(
+                    insert_statements,
+                    execute_callback,
+                    query_collector,
+                    metadata
+                )
+                logger.info(f"[DRY RUN] Would insert {len(batch_data)} rows to {self.catalog}.{self.schema}.{self.table}")
+            else:
+                # Normal execution
+                try:
+                    rows_processed = sql_batcher.process_statements(
+                        insert_statements, 
+                        execute_callback
+                    )
+                    logger.info(f"Successfully inserted {rows_processed} rows to {self.catalog}.{self.schema}.{self.table} using SQL batcher")
+                except Exception as e:
+                    logger.error(f"Error during SQL INSERT: {str(e)}", exc_info=True)
+                    raise RuntimeError(f"Failed to write data to Iceberg table: {str(e)}")
+            
+            logger.info(f"Successfully processed {rows_processed} rows using SQLBatcher")
         except Exception as e:
             logger.error(f"Error in SQL INSERT method: {str(e)}", exc_info=True)
             raise RuntimeError(f"Failed to write data using SQL INSERT: {str(e)}")
