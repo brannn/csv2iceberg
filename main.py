@@ -2,10 +2,10 @@
 Main entry point for the web application.
 
 This file serves as an entry point for Gunicorn and for direct Python execution.
-All application logic is in the csv_to_iceberg package.
+All application logic is organized in modules by functionality.
 """
-# Import from the csv_to_iceberg package
-from csv_to_iceberg.web.app import app
+# Import from the web package
+from web.app import app
 
 # This enables the app to be run directly or via Gunicorn with the same import path
 if __name__ == "__main__":

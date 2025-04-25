@@ -161,7 +161,7 @@ def storage_status():
     """Display storage system status."""
     logger.debug("Storage status route called")
     try:
-        from csv_to_iceberg.storage.lmdb_stats import get_all_storage_stats
+        from storage.lmdb_stats import get_all_storage_stats
         
         # Get comprehensive storage stats
         stats = get_all_storage_stats()
@@ -208,7 +208,7 @@ def analyze_csv():
         )
         
         # Generate partition recommendations
-        from csv_to_iceberg.core.schema_inferrer import analyze_column_cardinality
+        from core.schema_inferrer import analyze_column_cardinality
         partition_recommendations = analyze_column_cardinality(
             csv_file=file_path,
             delimiter=delimiter,
@@ -403,7 +403,7 @@ def convert():
             def run_conversion_job():
                 try:
                     # Import the centralized conversion service
-                    from csv_to_iceberg.core.conversion_service import convert_csv_to_iceberg
+                    from core.conversion_service import convert_csv_to_iceberg
                     
                     # Update job status to running
                     job_manager.update_job(job_id, {

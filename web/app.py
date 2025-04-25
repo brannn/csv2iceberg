@@ -39,7 +39,7 @@ def create_app(test_config=None):
     os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
     
     # Register blueprints
-    from csv_to_iceberg.web.routes import routes, get_git_info
+    from web.routes import routes, get_git_info
     app.register_blueprint(routes)
     
     # Add template context processor to provide git version information to all templates
