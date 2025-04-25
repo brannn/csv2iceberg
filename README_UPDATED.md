@@ -194,6 +194,84 @@ python csv_to_iceberg.py convert \
   --trino-schema default
 ```
 
+### Include or exclude specific columns
+
+```bash
+python csv_to_iceberg.py convert \
+  --csv-file data.csv \
+  --table-name iceberg.default.filtered_table \
+  --trino-host localhost \
+  --trino-port 443 \
+  --trino-user admin \
+  --trino-password your_password \
+  --http-scheme https \
+  --trino-catalog iceberg \
+  --trino-schema default \
+  --include-columns "id,name,date,value"
+```
+
+### Using a custom schema file
+
+You can define a custom schema in a JSON file and use it instead of the auto-inferred schema:
+
+```bash
+python csv_to_iceberg.py convert \
+  --csv-file data.csv \
+  --table-name iceberg.default.custom_schema_table \
+  --trino-host localhost \
+  --trino-port 443 \
+  --trino-user admin \
+  --trino-password your_password \
+  --http-scheme https \
+  --trino-catalog iceberg \
+  --trino-schema default \
+  --custom-schema schema.json
+```
+
+## Web Interface Features
+
+### Connection Profiles
+
+The application stores connection profiles in LMDB for secure, persistent storage. Profiles include:
+- Trino connection details (host, port, catalog, schema)
+- Authentication credentials
+- HTTP/HTTPS scheme settings
+- Default role
+
+### Schema Customization
+
+The schema editor allows you to:
+- View inferred column types
+- Modify column names and types
+- Mark columns as required or optional
+- Preview sample data
+- See data type distribution
+
+### Partitioning Recommendations
+
+Based on column cardinality analysis, the application provides intelligent partitioning suggestions:
+- Identifies columns ideal for partitioning
+- Calculates suitability scores
+- Recommends appropriate transforms (identity, bucket, truncate)
+- Provides ready-to-use SQL examples
+
+### Job Management
+
+Job tracking features include:
+- Real-time progress indicators
+- Detailed logs
+- Error reporting
+- Job history with search and filtering
+- Duration tracking
+- Row count statistics
+
+## Storage and Performance
+
+- Jobs are persisted in LMDB (Lightning Memory-Mapped Database)
+- Completed jobs are retained for 30 days or a maximum of 100 jobs
+- Batch processing adapts to column count and row size
+- SQL INSERTs are optimized to handle large CSV files efficiently
+
 ## Troubleshooting
 
 If you encounter issues:
