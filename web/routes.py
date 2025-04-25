@@ -458,15 +458,22 @@ def convert():
                     
                     # Handle the result
                     if result['success']:
-                        # Get the row count 
+                        # Get the row count and performance metrics
                         rows_processed = result.get('rows_processed', 0)
                         stdout = result.get('stdout', '')
+                        performance_metrics = result.get('performance_metrics', {})
                         
-                        # Update job with row count and stdout
+                        # Update job with row count, stdout, and performance metrics
                         updates = {
                             'rows_processed': rows_processed,
                             'stdout': stdout
                         }
+                        
+                        # Add performance metrics if available
+                        if performance_metrics:
+                            updates['performance_metrics'] = performance_metrics
+                            logger.info(f"Adding performance metrics to job {job_id}: {performance_metrics}")
+                            
                         job_manager.update_job(job_id, updates)
                         
                         # Mark job as completed with success, stdout, and ensure rows_processed stays
@@ -476,22 +483,31 @@ def convert():
                             stdout=stdout
                         )
                         
-                        # Make a final update to ensure rows_processed is preserved
-                        job_manager.update_job(job_id, {'rows_processed': rows_processed})
+                        # Make a final update to ensure rows_processed and performance_metrics are preserved
+                        final_updates = {'rows_processed': rows_processed}
+                        if performance_metrics:
+                            final_updates['performance_metrics'] = performance_metrics
+                        job_manager.update_job(job_id, final_updates)
                     else:
                         # Mark job as failed with error and traceback if available
                         error = result['error']
                         traceback_info = result.get('traceback', '')
                         stdout = result.get('stdout', '')
+                        performance_metrics = result.get('performance_metrics', {})
                         
                         # Create a detailed error message with traceback
                         stderr_info = f"Error: {error}\n\n"
                         if traceback_info:
                             stderr_info += f"Traceback:\n{traceback_info}"
                             
-                        # First update the job with any collected stdout/logs
-                        if stdout:
-                            job_manager.update_job(job_id, {'stdout': stdout})
+                        # Build an update with collected information
+                        updates = {'stdout': stdout}
+                        if performance_metrics:
+                            updates['performance_metrics'] = performance_metrics
+                            logger.info(f"Adding performance metrics to failed job {job_id}: {performance_metrics}")
+                            
+                        # First update the job with any collected info
+                        job_manager.update_job(job_id, updates)
                             
                         # Then mark the job as failed with complete error details    
                         job_manager.mark_job_completed(
@@ -501,6 +517,10 @@ def convert():
                             stderr=stderr_info,
                             stdout=stdout
                         )
+                        
+                        # Make a final update to ensure performance metrics are preserved for failed jobs too
+                        if performance_metrics:
+                            job_manager.update_job(job_id, {'performance_metrics': performance_metrics})
                     
                     # Clean up temporary file in either case
                     try:
