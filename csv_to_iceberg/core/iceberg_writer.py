@@ -330,7 +330,7 @@ class IcebergWriter:
             
     def _write_batch_to_iceberg_sql(self, batch_data, mode: str) -> None:
         """
-        Fallback method to write batch data using SQL INSERT statements when PyArrow method fails.
+        High-performance method to write batch data using optimized SQL INSERT statements.
         
         Args:
             batch_data: Batch of data to write (Polars DataFrame)
@@ -441,7 +441,7 @@ class IcebergWriter:
             
             logger.info(f"Successfully wrote {rows_processed} rows to {self.catalog}.{self.schema}.{self.table} using SQL INSERT method")
         except Exception as e:
-            logger.error(f"Error in SQL INSERT fallback method: {str(e)}", exc_info=True)
+            logger.error(f"Error in SQL INSERT method: {str(e)}", exc_info=True)
             raise RuntimeError(f"Failed to write data using SQL INSERT: {str(e)}")
 
 def count_csv_rows(
