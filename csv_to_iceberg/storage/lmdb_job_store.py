@@ -375,7 +375,10 @@ class LMDBJobStore:
                 # the oldest job is now first and newest is last in the natural order
                 
                 # Start at last record (newest job) and move through them
-                if cursor.last():
+                cursor_pos = cursor.last()
+                logger.info(f"Starting cursor position at last entry: {cursor_pos}")
+                
+                if cursor_pos:
                     while count < limit:
                         try:
                             # Get the job key from index entry
@@ -405,8 +408,8 @@ class LMDBJobStore:
                         except Exception as e:
                             logger.error(f"Error processing job during get_all_jobs: {str(e)}")
                             
-                        # Move to next job in the index
-                        if not cursor.next():
+                        # Move to previous job in the index (since we want newest to oldest)
+                        if not cursor.prev():
                             break
             
             return jobs
