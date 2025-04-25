@@ -1,0 +1,429 @@
+{% extends 'base.html' %}
+
+{% block title %}CSV to Iceberg - Conversion Parameters{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-lg-12">
+        <h2 class="mb-4">Convert CSV to Iceberg with Custom Schema</h2>
+        <div class="alert alert-success">
+            <strong>Custom schema applied!</strong> Your schema customizations have been saved. Please complete the connection details below to convert the file.
+        </div>
+        <div class="card">
+            <div class="card-body">
+                <form action="{{ url_for('convert') }}" method="post" enctype="multipart/form-data">
+                    <!-- Hidden fields for the CSV parameters -->
+                    <input type="hidden" name="delimiter" value="{{ csv_params.delimiter }}">
+                    <input type="hidden" name="has_header" value="{{ 'true' if csv_params.has_header else 'false' }}">
+                    <input type="hidden" name="quote_char" value="{{ csv_params.quote_char }}">
+                    <input type="hidden" name="sample_size" value="{{ csv_params.sample_size }}">
+                    
+                    <!-- Hidden file field - we'll use the one already uploaded -->
+                    <input type="hidden" name="file_path" value="{{ file_path }}">
+                    
+                    <!-- Create a fake file input since the form expects it -->
+                    <input type="hidden" name="csv_file" value="placeholder">
+                    
+                    <div class="mb-3">
+                        <h5>Selected File</h5>
+                        <p class="form-control-static">
+                            <strong>{{ filename }}</strong>
+                            <small class="text-muted">(Already uploaded)</small>
+                        </p>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <h5>Connection Profile</h5>
+                        <div class="d-flex gap-2 align-items-center">
+                            <select class="form-select" id="connection_profile" name="connection_profile">
+                                <option value="">-- Select a profile --</option>
+                                {% for profile in profiles %}
+                                <option value="{{ profile.name }}" {% if profile.name == last_used_profile %}selected{% endif %}>{{ profile.name }} - {{ profile.description }}</option>
+                                {% endfor %}
+                            </select>
+                            <a href="{{ url_for('profiles') }}" class="btn btn-outline-secondary btn-sm">Manage Profiles</a>
+                        </div>
+                        <div class="form-text">Select a connection profile or configure the connection settings below.</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <h5>Trino Connection</h5>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="trino_host" class="form-label">Trino Host</label>
+                        <input type="text" class="form-control" id="trino_host" name="trino_host" value="sep.sdp-dev.pd.switchnet.nv" required>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="trino_port" class="form-label">Trino Port</label>
+                        <input type="number" class="form-control" id="trino_port" name="trino_port" value="443" required>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="trino_user" class="form-label">Trino User</label>
+                        <input type="text" class="form-control" id="trino_user" name="trino_user" value="admin">
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="trino_password" class="form-label">Trino Password</label>
+                        <input type="password" class="form-control" id="trino_password" name="trino_password">
+                        <div class="form-text">Leave empty if authentication is not enabled</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="http_scheme" class="form-label">HTTP Scheme</label>
+                        <select class="form-select" id="http_scheme" name="http_scheme">
+                            <option value="http">HTTP</option>
+                            <option value="https" selected>HTTPS (Required for authentication)</option>
+                        </select>
+                        <div class="form-text">Use HTTPS if Trino authentication is enabled</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="trino_role" class="form-label">Trino Role</label>
+                        <input type="text" class="form-control" id="trino_role" name="trino_role" value="sysadmin">
+                        <div class="form-text">Trino role for authorization (e.g., sysadmin)</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="trino_catalog" class="form-label">Trino Catalog</label>
+                        <input type="text" class="form-control" id="trino_catalog" name="trino_catalog" value="iceberg" required>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="trino_schema" class="form-label">Trino Schema</label>
+                        <input type="text" class="form-control" id="trino_schema" name="trino_schema" value="default" required>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <h5>Hive Metastore</h5>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="hive_metastore_uri" class="form-label">Hive Metastore URI</label>
+                        <input type="text" class="form-control" id="hive_metastore_uri" name="hive_metastore_uri" value="localhost:9083">
+                        <div class="form-text">Format: host:port</div>
+                    </div>
+                    
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" class="form-check-input" id="use_hive_metastore" name="use_hive_metastore" value="true" checked>
+                        <label class="form-check-label" for="use_hive_metastore">Use direct Hive Metastore connection</label>
+                        <div class="form-text">When disabled, all operations will be performed through Trino only. Hive Metastore URI is optional when disabled.</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <h5>Target Table</h5>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="table_name" class="form-label">Table Name</label>
+                        <input type="text" class="form-control" id="table_name" name="table_name" required>
+                        <div class="form-text">Format: catalog.schema.table</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="mode" class="form-label">Write Mode</label>
+                        <select class="form-select" id="mode" name="mode">
+                            <option value="append" selected>Append</option>
+                            <option value="overwrite">Overwrite</option>
+                        </select>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <h5>Advanced Options</h5>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <h6>Column Filtering</h6>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <label for="include_columns" class="form-label">Include Columns</label>
+                                <input type="text" class="form-control" id="include_columns" name="include_columns" value="{{ session.get('schema_preview', {}).get('include_columns', '') }}">
+                                <div class="form-text">Comma-separated list of columns to include. Takes precedence over exclude.</div>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="exclude_columns" class="form-label">Exclude Columns</label>
+                                <input type="text" class="form-control" id="exclude_columns" name="exclude_columns" value="{{ session.get('schema_preview', {}).get('exclude_columns', '') }}">
+                                <div class="form-text">Comma-separated list of columns to exclude. Only used if include is empty.</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="batch_size" class="form-label">Batch Size</label>
+                        <input type="number" class="form-control" id="batch_size" name="batch_size" value="10000" min="1">
+                        <div class="form-text">Number of rows to process in each batch.</div>
+                    </div>
+                    
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" class="form-check-input" id="verbose" name="verbose" value="true">
+                        <label class="form-check-label" for="verbose">Verbose Logging</label>
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary" id="submitBtn">Convert with Custom Schema</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Add submit event listener to the form
+    const form = document.querySelector('form');
+    const submitBtn = document.getElementById('submitBtn');
+    const profileSelect = document.getElementById('connection_profile');
+    const passwordField = document.getElementById('trino_password');
+    const httpSchemeSelect = document.getElementById('http_scheme');
+    const trinoCatalog = document.getElementById('trino_catalog');
+    const trinoSchema = document.getElementById('trino_schema');
+    const tableNameField = document.getElementById('table_name');
+    const trinoHostField = document.getElementById('trino_host');
+    const trinoPortField = document.getElementById('trino_port');
+    const trinoUserField = document.getElementById('trino_user');
+    const trinoRoleField = document.getElementById('trino_role');
+    const hiveMetastoreUriField = document.getElementById('hive_metastore_uri');
+    const useHiveMetastoreCheckbox = document.getElementById('use_hive_metastore');
+    const includeColumnsField = document.getElementById('include_columns');
+    const excludeColumnsField = document.getElementById('exclude_columns');
+    
+    // Profile data from server
+    const profiles = {
+        {% for profile in profiles %}
+        "{{ profile.name }}": {
+            name: "{{ profile.name }}",
+            description: "{{ profile.description }}",
+            trino_host: "{{ profile.trino_host }}",
+            trino_port: {{ profile.trino_port }},
+            trino_user: "{{ profile.trino_user }}",
+            trino_password: "{{ profile.trino_password }}",
+            http_scheme: "{{ profile.http_scheme }}",
+            trino_role: "{{ profile.trino_role }}",
+            trino_catalog: "{{ profile.trino_catalog }}",
+            trino_schema: "{{ profile.trino_schema }}",
+            use_hive_metastore: {{ 'true' if profile.use_hive_metastore else 'false' }},
+            hive_metastore_uri: "{{ profile.hive_metastore_uri }}"
+        },
+        {% endfor %}
+    };
+    
+    // Function to apply profile settings to form fields
+    function applyProfile(profileName) {
+        if (!profileName || !profiles[profileName]) {
+            return;
+        }
+        
+        const profile = profiles[profileName];
+        
+        // Apply profile values to form fields
+        trinoHostField.value = profile.trino_host;
+        trinoPortField.value = profile.trino_port;
+        trinoUserField.value = profile.trino_user;
+        // We don't set the password field directly for security reasons
+        // But we can check if there is a password and hint to the user
+        if (profile.trino_password) {
+            passwordField.placeholder = '••••••••';
+        } else {
+            passwordField.placeholder = '';
+        }
+        httpSchemeSelect.value = profile.http_scheme;
+        trinoRoleField.value = profile.trino_role;
+        trinoCatalog.value = profile.trino_catalog;
+        trinoSchema.value = profile.trino_schema;
+        
+        // Handle boolean checkbox state
+        useHiveMetastoreCheckbox.checked = profile.use_hive_metastore === true;
+        hiveMetastoreUriField.value = profile.hive_metastore_uri;
+        
+        // Update dependent fields
+        toggleHiveMetastoreField();
+        updateTableName();
+    }
+    
+    // Set up profile selection handler
+    profileSelect.addEventListener('change', function() {
+        applyProfile(profileSelect.value);
+    });
+    
+    // Apply the selected profile on page load
+    if (profileSelect.value) {
+        applyProfile(profileSelect.value);
+    }
+    
+    // Function to toggle Hive Metastore URI field based on checkbox
+    
+    function toggleHiveMetastoreField() {
+        if (useHiveMetastoreCheckbox.checked) {
+            hiveMetastoreUriField.required = true;
+            hiveMetastoreUriField.disabled = false;
+        } else {
+            hiveMetastoreUriField.required = false;
+            hiveMetastoreUriField.disabled = true;
+        }
+    }
+    
+    // Initial toggle state
+    toggleHiveMetastoreField();
+    
+    // Toggle on checkbox change
+    useHiveMetastoreCheckbox.addEventListener('change', toggleHiveMetastoreField);
+    
+    // Column filtering validation
+    // Disable exclude columns when include columns are specified
+    includeColumnsField.addEventListener('input', function() {
+        if (includeColumnsField.value.trim().length > 0) {
+            excludeColumnsField.disabled = true;
+            excludeColumnsField.placeholder = 'Include columns override exclude columns';
+        } else {
+            excludeColumnsField.disabled = false;
+            excludeColumnsField.placeholder = '';
+        }
+    });
+    
+    // Format column lists on blur
+    function formatColumnList(inputField) {
+        inputField.addEventListener('blur', function() {
+            if (inputField.value.trim()) {
+                // Split, trim, and rejoin with consistent comma spacing
+                const columns = inputField.value.split(',')
+                    .map(col => col.trim())
+                    .filter(col => col.length > 0);
+                
+                if (columns.length > 0) {
+                    inputField.value = columns.join(', ');
+                }
+            }
+        });
+    }
+    
+    formatColumnList(includeColumnsField);
+    formatColumnList(excludeColumnsField);
+    
+    // Initial state for column filtering fields
+    if (includeColumnsField.value.trim().length > 0) {
+        excludeColumnsField.disabled = true;
+        excludeColumnsField.placeholder = 'Include columns override exclude columns';
+    }
+
+    // Function to update the table name field based on catalog and schema
+    function updateTableName() {
+        const catalog = trinoCatalog.value.trim();
+        const schema = trinoSchema.value.trim();
+        
+        // Only set the prefix if both catalog and schema have values
+        if (catalog && schema) {
+            // Get the current table name (after the last dot if it exists)
+            let tablePart = '';
+            const currentValue = tableNameField.value.trim();
+            const parts = currentValue.split('.');
+            
+            // If the current value has at least 3 parts (catalog.schema.table)
+            // or if it has no dots, use the table part
+            if (parts.length >= 3) {
+                tablePart = parts[2];
+            } else if (!currentValue.includes('.') && currentValue) {
+                tablePart = currentValue;
+            }
+            
+            // Update the table name field with the new format
+            tableNameField.value = `${catalog}.${schema}.${tablePart}`;
+        }
+    }
+    
+    // Initialize the table name field with catalog and schema values
+    updateTableName();
+    
+    // Update the table name field when catalog or schema changes
+    trinoCatalog.addEventListener('input', updateTableName);
+    trinoSchema.addEventListener('input', updateTableName);
+    
+    // Special handling for the table name field
+    tableNameField.addEventListener('focus', function() {
+        // If the field follows the pattern catalog.schema., place cursor at the end
+        const val = tableNameField.value;
+        if (val.split('.').length === 3 && val.endsWith('.')) {
+            tableNameField.setSelectionRange(val.length, val.length);
+        }
+    });
+    
+    // Handle the case when user enters a simple table name without dots
+    tableNameField.addEventListener('input', function() {
+        const val = tableNameField.value.trim();
+        // If it doesn't contain dots, it's likely just the table part
+        if (!val.includes('.') && val) {
+            const catalog = trinoCatalog.value.trim();
+            const schema = trinoSchema.value.trim();
+            if (catalog && schema) {
+                // Wait a short time to see if the user is still typing
+                setTimeout(() => {
+                    // Check again if dots have been added manually
+                    if (!tableNameField.value.includes('.') && tableNameField.value.trim() === val) {
+                        tableNameField.value = `${catalog}.${schema}.${val}`;
+                    }
+                }, 1500);
+            }
+        }
+    });
+    
+    // Automatically switch to HTTPS when password is entered
+    passwordField.addEventListener('input', function() {
+        if (passwordField.value.trim().length > 0) {
+            httpSchemeSelect.value = 'https';
+        }
+    });
+    
+    // Warn when trying to use password with HTTP
+    httpSchemeSelect.addEventListener('change', function() {
+        if (httpSchemeSelect.value === 'http' && passwordField.value.trim().length > 0) {
+            alert('Warning: Password authentication requires HTTPS. Your password will be ignored when using HTTP.');
+        }
+    });
+    
+    form.addEventListener('submit', function(e) {
+        console.log('Form submission initiated');
+        
+        // Validate required fields
+        const requiredFields = form.querySelectorAll('[required]');
+        let isValid = true;
+        
+        requiredFields.forEach(function(field) {
+            if (!field.value.trim()) {
+                console.log('Validation failed for', field.name);
+                isValid = false;
+                
+                // Highlight the field
+                field.classList.add('is-invalid');
+            } else {
+                field.classList.remove('is-invalid');
+            }
+        });
+        
+        if (!isValid) {
+            console.log('Form validation failed, preventing submission');
+            e.preventDefault();
+            return false;
+        }
+        
+        // Check if using password with HTTP
+        if (passwordField.value.trim().length > 0 && httpSchemeSelect.value === 'http') {
+            const confirmHttp = confirm('Warning: You are trying to use password authentication with HTTP. This is insecure and the password will be ignored. \n\nDo you want to continue without authentication? \n\nClick "Cancel" to go back and select HTTPS instead.');
+            if (!confirmHttp) {
+                console.log('Form submission canceled due to HTTP with password');
+                e.preventDefault();
+                return false;
+            }
+        }
+        
+        // Disable the submit button to prevent multiple submissions
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Processing...';
+        
+        console.log('Form valid, proceeding with submission');
+        // Form will submit normally
+    });
+});
+</script>
+{% endblock %}
+{% endblock %}
