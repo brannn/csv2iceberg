@@ -16,8 +16,8 @@ except ImportError:
     LMDB_AVAILABLE = False
 
 # Get the paths from the storage modules
-from csv_to_iceberg.storage.lmdb_job_store import DEFAULT_LMDB_PATH as JOB_STORE_PATH
-from csv_to_iceberg.storage.lmdb_config_manager import DEFAULT_LMDB_PATH as CONFIG_STORE_PATH
+from storage.lmdb_job_store import DEFAULT_LMDB_PATH as JOB_STORE_PATH
+from storage.lmdb_config_manager import DEFAULT_LMDB_PATH as CONFIG_STORE_PATH
 
 
 def get_formatted_size(size_bytes: int) -> str:
