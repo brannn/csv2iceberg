@@ -45,7 +45,10 @@ def create_app(test_config=None):
     # Add template context processor to provide git version information to all templates
     @app.context_processor
     def inject_git_version():
-        return {'git_version': get_git_info().get('commit', 'unknown')}
+        git_info = get_git_info()
+        branch = git_info.get('branch', 'unknown')
+        commit = git_info.get('commit', 'unknown')
+        return {'git_version': f"{branch}@{commit}"}
     
     # Log application startup
     logger.info("Application initialized")
