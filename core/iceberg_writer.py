@@ -353,11 +353,14 @@ class IcebergWriter:
                 self._cached_column_types_dict = {}
             
             # Process in optimized batches
-            self._write_batch_to_iceberg_sql(batch_data, mode)
+            self._write_batch_to_iceberg_sql(batch_data, mode, dry_run, query_collector)
             
             # Log execution time for this batch
             elapsed_time = time.time() - start_time
-            logger.info(f"SQL INSERT batch processing completed in {elapsed_time:.2f} seconds")
+            if dry_run:
+                logger.info(f"SQL INSERT batch processing (dry run) completed in {elapsed_time:.2f} seconds")
+            else:
+                logger.info(f"SQL INSERT batch processing completed in {elapsed_time:.2f} seconds")
             
         except Exception as e:
             logger.error(f"Error in _write_batch_to_iceberg: {str(e)}", exc_info=True)

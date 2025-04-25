@@ -240,6 +240,48 @@ class TrinoClient:
             logger.debug(f"Clearing table existence cache for {catalog}.{schema}.{table}")
             del self._table_existence_cache[cache_key]
     
+    def get_create_table_sql(
+        self, 
+        catalog: str, 
+        schema: str, 
+        table: str, 
+        iceberg_schema: Schema
+    ) -> str:
+        """
+        Generate the SQL for creating a table without executing it.
+        
+        Args:
+            catalog: Catalog name
+            schema: Schema name
+            table: Table name
+            iceberg_schema: PyIceberg Schema object
+            
+        Returns:
+            SQL statement for creating the table
+        """
+        # Convert PyIceberg schema to Trino DDL
+        columns_ddl = []
+        for field in iceberg_schema.fields:
+            # Properly quote column names to handle special characters and spaces
+            column_name = f'"{field.name}"'
+            column_type = iceberg_type_to_trino_type(field.field_type)
+            columns_ddl.append(f"{column_name} {column_type}")
+        
+        columns_clause = ", ".join(columns_ddl)
+        
+        # Create table DDL
+        # Use PARQUET format since 'ICEBERG' format is not supported in this Trino instance
+        create_table_sql = f"""
+        CREATE TABLE {catalog}.{schema}.{table} (
+            {columns_clause}
+        )
+        WITH (
+            format = 'PARQUET'
+        )
+        """
+        
+        return create_table_sql.strip()
+
     def create_iceberg_table(
         self, 
         catalog: str, 
@@ -261,26 +303,8 @@ class TrinoClient:
             # Clear any cached data for this table first
             self._clear_cache_for_table(catalog, schema, table)
             
-            # Convert PyIceberg schema to Trino DDL
-            columns_ddl = []
-            for field in iceberg_schema.fields:
-                # Properly quote column names to handle special characters and spaces
-                column_name = f'"{field.name}"'
-                column_type = iceberg_type_to_trino_type(field.field_type)
-                columns_ddl.append(f"{column_name} {column_type}")
-            
-            columns_clause = ", ".join(columns_ddl)
-            
-            # Create table DDL
-            # Use PARQUET format since 'ICEBERG' format is not supported in this Trino instance
-            create_table_sql = f"""
-            CREATE TABLE {catalog}.{schema}.{table} (
-                {columns_clause}
-            )
-            WITH (
-                format = 'PARQUET'
-            )
-            """
+            # Get the create table SQL
+            create_table_sql = self.get_create_table_sql(catalog, schema, table, iceberg_schema)
             
             logger.info(f"Creating table {catalog}.{schema}.{table} with PARQUET format")
             logger.debug(f"Create table SQL: {create_table_sql}")
