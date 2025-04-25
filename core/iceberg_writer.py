@@ -14,10 +14,10 @@ import polars as pl
 # Import PyIceberg schema
 from pyiceberg.schema import Schema
 
-# Use package relative imports
-from csv_to_iceberg.connectors.trino_client import TrinoClient
-from csv_to_iceberg.core.schema_inferrer import infer_schema_from_df
-from csv_to_iceberg.connectors.hive_client import HiveMetastoreClient
+# Use flat structure imports
+from connectors.trino_client import TrinoClient
+from core.schema_inferrer import infer_schema_from_df
+from connectors.hive_client import HiveMetastoreClient
 
 # Configure logger
 logger = logging.getLogger(__name__)

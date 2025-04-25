@@ -7,7 +7,7 @@ from pathlib import Path
 # Add the root directory to the path so we can import the package
 sys.path.insert(0, os.path.abspath("."))
 
-from csv_to_iceberg.storage.job_manager import JobManager, job_manager
+from storage.job_manager import JobManager, job_manager
 
 def create_test_job():
     """
