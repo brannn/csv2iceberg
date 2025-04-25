@@ -10,7 +10,7 @@ from typing import Dict, List, Optional, Any, Union
 
 # Try to import LMDB job store
 try:
-    from csv_to_iceberg.storage.lmdb_job_store import LMDBJobStore, LMDB_IMPORTED
+    from storage.lmdb_job_store import LMDBJobStore, LMDB_IMPORTED
 except ImportError:
     LMDB_IMPORTED = False
     logging.warning("LMDB job store not available. Using in-memory storage only.")
