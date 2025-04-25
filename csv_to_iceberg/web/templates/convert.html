@@ -275,15 +275,6 @@ document.addEventListener('DOMContentLoaded', function() {
         partitionSection.innerHTML = '';
         
         // If there are no recommendations, show a message
-        if (!recommendations || recommendations.length === 0) {
-            partitionSection.innerHTML = `
-            <div class="alert alert-info">
-                <i class="fas fa-info-circle me-2"></i>
-                No partitioning recommendations available for this dataset.
-            </div>`;
-            return;
-        }
-        
         // Create the header
         const header = document.createElement('h5');
         header.textContent = 'Iceberg Partitioning Recommendations';
@@ -294,8 +285,24 @@ document.addEventListener('DOMContentLoaded', function() {
         infoAlert.className = 'alert alert-info';
         infoAlert.innerHTML = `
         <i class="fas fa-info-circle me-2"></i>
-        These recommendations are based on column cardinality analysis. Effective partitioning can significantly improve query performance.`;
+        These recommendations are based on column cardinality analysis. Effective partitioning can significantly improve query performance.
+        <p class="mt-2 mb-0"><strong>Note:</strong> Only high-quality recommendations (score ≥ 75) are shown. Color coding indicates quality:</p>
+        <div class="mt-1 d-flex gap-2">
+            <span class="badge bg-success">Perfect (90-100)</span>
+            <span class="badge bg-primary">Excellent (80-89)</span>
+            <span class="badge bg-info">Very Good (75-79)</span>
+        </div>`;
         partitionSection.appendChild(infoAlert);
+        
+        if (!recommendations || recommendations.length === 0) {
+            const noRecsAlert = document.createElement('div');
+            noRecsAlert.className = 'alert alert-warning';
+            noRecsAlert.innerHTML = `
+            <i class="fas fa-exclamation-triangle me-2"></i>
+            No high-quality partition recommendations available for this dataset. Your columns may have distributions that are not optimal for partitioning.`;
+            partitionSection.appendChild(noRecsAlert);
+            return;
+        }
         
         // Create the row container
         const row = document.createElement('div');
@@ -322,12 +329,21 @@ document.addEventListener('DOMContentLoaded', function() {
             columnName.textContent = rec.column;
             cardHeader.appendChild(columnName);
             
-            // Add the suitability badge
+            // Add the suitability badge - using a color-coded system within top tier (75+)
             const badge = document.createElement('span');
-            const badgeClass = rec.suitability_score >= 70 ? 'success' : 
-                              rec.suitability_score >= 40 ? 'primary' : 'secondary';
-            const badgeText = rec.suitability_score >= 70 ? 'Excellent' : 
-                             rec.suitability_score >= 40 ? 'Good' : 'Fair';
+            let badgeClass, badgeText;
+            
+            if (rec.suitability_score >= 90) {
+                badgeClass = 'success';
+                badgeText = 'Perfect';
+            } else if (rec.suitability_score >= 80) {
+                badgeClass = 'primary';
+                badgeText = 'Excellent';
+            } else {
+                badgeClass = 'info';
+                badgeText = 'Very Good';
+            }
+            
             badge.className = `badge bg-${badgeClass}`;
             badge.textContent = `${badgeText} (${rec.suitability_score}/100)`;
             cardHeader.appendChild(badge);

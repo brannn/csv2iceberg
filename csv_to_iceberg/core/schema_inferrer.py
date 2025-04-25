@@ -684,8 +684,8 @@ def analyze_column_cardinality(
                 # Update the suitability score
                 recommendation['suitability_score'] = suitability_score
                 
-                # Add to results if we have any recommendations
-                if recommendation['recommendations']:
+                # Add to results if we have high-quality recommendations (score >= 75)
+                if recommendation['recommendations'] and recommendation['suitability_score'] >= 75:
                     results.append(recommendation)
                     
             except Exception as e:

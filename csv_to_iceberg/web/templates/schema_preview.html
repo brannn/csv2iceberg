@@ -148,6 +148,12 @@
                         <div class="alert alert-info">
                             <i class="fas fa-info-circle me-2"></i>
                             These recommendations are based on column cardinality analysis. Effective partitioning can significantly improve query performance.
+                            <p class="mt-2 mb-0"><strong>Note:</strong> Only high-quality recommendations (score ≥ 75) are shown. Color coding indicates quality:</p>
+                            <div class="mt-1 d-flex gap-2">
+                                <span class="badge bg-success">Perfect (90-100)</span>
+                                <span class="badge bg-primary">Excellent (80-89)</span>
+                                <span class="badge bg-info">Very Good (75-79)</span>
+                            </div>
                         </div>
                         
                         {% if partition_recommendations and partition_recommendations|length > 0 %}
@@ -157,8 +163,8 @@
                                 <div class="card h-100">
                                     <div class="card-header d-flex justify-content-between align-items-center">
                                         <h6 class="mb-0">{{ rec.column }}</h6>
-                                        <span class="badge bg-{{ 'success' if rec.suitability_score >= 70 else 'primary' if rec.suitability_score >= 40 else 'secondary' }}">
-                                            {{ 'Excellent' if rec.suitability_score >= 70 else 'Good' if rec.suitability_score >= 40 else 'Fair' }}
+                                        <span class="badge bg-{{ 'success' if rec.suitability_score >= 90 else 'primary' if rec.suitability_score >= 80 else 'info' }}">
+                                            {{ 'Perfect' if rec.suitability_score >= 90 else 'Excellent' if rec.suitability_score >= 80 else 'Very Good' }}
                                             ({{ rec.suitability_score }}/100)
                                         </span>
                                     </div>
