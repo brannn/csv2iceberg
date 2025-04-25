@@ -92,7 +92,8 @@ def index():
 def profiles():
     """Show the profiles page."""
     profiles = config_manager.get_profiles()
-    return render_template('profiles.html', profiles=profiles)
+    last_used = config_manager.get_last_used_profile()
+    return render_template('profiles.html', profiles=profiles, last_used=last_used)
 
 @routes.route('/profiles/add', methods=['GET', 'POST'])
 def profile_add():
