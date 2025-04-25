@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="200" height="100" viewBox="0 0 200 100">
+  <!-- Red Stapler SVG -->
+  <path d="M20,40 L160,40 C170,40 180,45 180,55 L180,60 C180,70 170,75 160,75 L20,75 C10,75 0,70 0,60 L0,55 C0,45 10,40 20,40 Z" fill="#ff2200" stroke="#990000" stroke-width="2"/>
+  <!-- Silver/metal part -->
+  <path d="M20,50 L80,50 L80,65 L20,65 Z" fill="#dddddd" stroke="#666666" stroke-width="1"/>
+  <!-- Loading part -->
+  <path d="M40,50 L60,50 L60,65 L40,65 Z" fill="#aaaaaa" stroke="#666666" stroke-width="1"/>
+  <!-- Top bar -->
+  <path d="M100,30 L160,30 C165,30 170,32 170,35 L170,40 L100,40 Z" fill="#ff2200" stroke="#990000" stroke-width="2"/>
+  <!-- Support bars -->
+  <path d="M110,30 L110,40" stroke="#990000" stroke-width="2" fill="none"/>
+  <path d="M130,30 L130,40" stroke="#990000" stroke-width="2" fill="none"/>
+  <path d="M150,30 L150,40" stroke="#990000" stroke-width="2" fill="none"/>
+  <!-- Base -->
+  <path d="M20,75 L160,75 C170,75 180,75 180,80 L180,85 C180,90 170,90 160,90 L20,90 C10,90 0,90 0,85 L0,80 C0,75 10,75 20,75 Z" fill="#ff2200" stroke="#990000" stroke-width="2"/>
+</svg>
