@@ -7,22 +7,9 @@
     <div class="container-fluid py-5">
         <h1 class="display-5 fw-bold">
             Milton
-            <svg xmlns="http://www.w3.org/2000/svg" width="60" height="60" viewBox="0 0 24 24" class="d-inline-block align-bottom ms-2">
-              <!-- Main stapler body -->
-              <path d="M2,8 L22,8 L22,12 C22,13.1 21.1,14 20,14 L4,14 C2.9,14 2,13.1 2,12 L2,8 Z" fill="#ff0000" stroke="#cc0000" stroke-width="0.5" />
-              
-              <!-- Stapler base - slightly wider than top -->
-              <path d="M4,14 L20,14 L18,18 L6,18 L4,14 Z" fill="#ff0000" stroke="#cc0000" stroke-width="0.5" />
-              
-              <!-- Stapler top press -->
-              <path d="M10,6 L20,6 L20,8 L10,8 L10,6 Z" fill="#ff0000" stroke="#cc0000" stroke-width="0.5" />
-              
-              <!-- Stapler mechanism at front -->
-              <path d="M5,10 L12,10 C12.6,10 13,10.4 13,11 L13,11 C13,11.6 12.6,12 12,12 L5,12 L5,10 Z" fill="#dddddd" stroke="#aaaaaa" stroke-width="0.3" />
-              
-              <!-- Stapler hinge connections -->
-              <path d="M12,8 L12,6 M16,8 L16,6" stroke="#cc0000" stroke-width="1" fill="none" />
-            </svg>
+            <span class="ms-3">
+              <i class="bi bi-file-earmark-text-fill text-danger fs-3"></i>
+            </span>
         </h1>
         <p class="col-md-8 fs-4">Convert CSV files to Apache Iceberg tables with Trino</p>
         <a href="{{ url_for('routes.convert') }}" class="btn btn-primary btn-lg">Start Converting</a>
