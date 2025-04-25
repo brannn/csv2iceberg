@@ -7,13 +7,11 @@
     <div class="container-fluid py-5">
         <h1 class="display-5 fw-bold">
             Milton
-            <span class="ms-3">
-              <!-- Base of stapler -->
-              <span style="display: inline-block; width: 50px; height: 10px; background-color: #f00; border: 1px solid #900; border-radius: 2px; position: relative; top: 8px; z-index: 1;"></span>
-              <!-- Top part that's open -->
-              <span style="display: inline-block; width: 45px; height: 10px; background-color: #f00; border: 1px solid #900; border-radius: 2px; position: relative; top: -10px; left: 5px; transform: rotate(-20deg); transform-origin: right; z-index: 2;"></span>
-              <!-- Silver front part -->
-              <span style="display: inline-block; width: 15px; height: 8px; background-color: #ddd; border: 1px solid #999; position: relative; top: -6px; left: 5px; z-index: 3;"></span>
+            <span class="ms-3" title="Red Stapler (Office Space reference)">
+              <span style="display: inline-block; position: relative;">
+                <i class="bi bi-layers-fill text-danger fs-2"></i>
+                <i class="bi bi-dash-lg text-danger position-absolute" style="top: 4px; left: -4px; font-size: 1.7rem;"></i>
+              </span>
             </span>
         </h1>
         <p class="col-md-8 fs-4">Convert CSV files to Apache Iceberg tables with Trino</p>
