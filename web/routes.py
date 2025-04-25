@@ -380,346 +380,236 @@ def job_detail(job_id):
     job = job_manager.get_job(job_id)
     
     if not job:
-        flash(f'Job {job_id} not found', 'error')
+        flash('Job not found', 'error')
         return redirect(url_for('routes.jobs'))
         
-    # Get the associated profile
-    profile = config_manager.get_profile(job.get('profile_name'))
+    # For test jobs, we don't have an actual CSV file
+    is_test_job = job.get('is_test', False)
     
-    # Use the full path as path in the template
-    job_path = job.get('file_path')
+    # Get the profile associated with the job
+    profile_name = job.get('profile_name')
+    profile = config_manager.get_profile(profile_name) if profile_name else None
     
-    # Get job error log if any
-    error_log = job.get('error_log', '')
+    # Get any generated SQL for the job
+    job_id = job.get('id')
+    sql_queries = job.get('sql_queries', [])
     
-    return render_template('job_detail.html', 
-                           job=job, 
-                           profile=profile, 
-                           job_path=job_path, 
-                           error_log=error_log)
+    # Get the job status
+    status = job.get('status', 'unknown')
+    
+    # Check if the job is completed or failed
+    is_completed = status in ['completed', 'failed']
+    
+    # Template variables
+    template_vars = {
+        'job': job,
+        'profile': profile,
+        'sql_queries': sql_queries,
+        'is_completed': is_completed,
+        'is_test_job': is_test_job
+    }
+    
+    # If the job is in 'queued' status, start processing it
+    if status == 'queued' and not is_test_job:
+        # Update the job status to 'processing'
+        job_manager.update_job_status(job_id, 'processing')
+        
+        # Background thread to process the job
+        def process_job():
+            try:
+                # Get the job parameters
+                file_path = job.get('file_path')
+                table_name = job.get('table_name')
+                delimiter = job.get('delimiter', ',')
+                quote_char = job.get('quote_char', '"')
+                has_header = job.get('has_header', True)
+                batch_size = job.get('batch_size', DEFAULT_BATCH_SIZE)
+                mode = job.get('mode', 'append')
+                
+                # Get the profile for this job
+                profile = config_manager.get_profile(job.get('profile_name'))
+                
+                if not profile:
+                    raise ValueError(f"Profile {job.get('profile_name')} not found")
+                    
+                # Log job start
+                logger.info(f"Starting job {job_id} - Converting {file_path} to {table_name}")
+                
+                # Create a query collector for storing SQL statements
+                query_collector = QueryCollector()
+                
+                # Process the CSV file
+                convert_csv_to_iceberg(
+                    file_path=file_path,
+                    table_name=table_name,
+                    connection_config=profile,
+                    delimiter=delimiter,
+                    quote_char=quote_char,
+                    has_header=has_header,
+                    batch_size=batch_size,
+                    mode=mode,
+                    query_collector=query_collector
+                )
+                
+                # Update the job with the collected queries
+                job_manager.update_job_field(job_id, 'sql_queries', query_collector.get_queries())
+                
+                # Mark the job as completed
+                job_manager.update_job_status(job_id, 'completed')
+                logger.info(f"Job {job_id} completed successfully")
+                
+            except Exception as e:
+                # Log the error
+                logger.error(f"Error processing job {job_id}: {str(e)}")
+                traceback.print_exc()
+                
+                # Update the job with the error message
+                job_manager.update_job_field(job_id, 'error', str(e))
+                
+                # Mark the job as failed
+                job_manager.update_job_status(job_id, 'failed')
+        
+        # Start the background thread
+        import threading
+        thread = threading.Thread(target=process_job)
+        thread.daemon = True
+        thread.start()
+        
+        # Show the job details page while the job is running
+        return render_template('job_detail.html', **template_vars)
+    
+    # For completed or failed jobs, show the details
+    return render_template('job_detail.html', **template_vars)
 
 @routes.route('/jobs')
 def jobs():
     """Show all jobs."""
+    # Retrieve all jobs
     all_jobs = job_manager.get_all_jobs()
     
-    # Sort jobs by creation date (descending)
-    sorted_jobs = sorted(all_jobs, key=lambda j: j.get('created', ''), reverse=True)
+    # Group the jobs by date
+    grouped_jobs = {}
     
-    return render_template('jobs.html', jobs=sorted_jobs)
+    # Process each job
+    for job in all_jobs:
+        # Get the job creation date
+        created = job.get('created')
+        
+        # Skip jobs without a creation date
+        if not created:
+            continue
+            
+        # Convert to a datetime object if it's a string
+        if isinstance(created, str):
+            try:
+                created_dt = datetime.datetime.fromisoformat(created.replace('Z', '+00:00'))
+            except ValueError:
+                # Skip jobs with invalid dates
+                continue
+        else:
+            # Already a datetime
+            created_dt = created
+            
+        # Format the date as YYYY-MM-DD for grouping
+        date_str = created_dt.strftime('%Y-%m-%d')
+        
+        # Add to the group
+        if date_str not in grouped_jobs:
+            grouped_jobs[date_str] = []
+            
+        grouped_jobs[date_str].append(job)
+        
+    # Sort each group by creation date, newest first
+    for date_str in grouped_jobs:
+        grouped_jobs[date_str] = sorted(
+            grouped_jobs[date_str],
+            key=lambda j: j.get('created', ''),
+            reverse=True
+        )
+        
+    # Sort the dates, newest first
+    sorted_dates = sorted(grouped_jobs.keys(), reverse=True)
+    
+    # Render the jobs list template
+    return render_template('jobs.html', grouped_jobs=grouped_jobs, sorted_dates=sorted_dates)
 
-@routes.route('/jobs/delete/<job_id>')
+@routes.route('/job/<job_id>/delete')
 def job_delete(job_id):
     """Delete a job."""
+    # Delete the job
     if job_manager.delete_job(job_id):
         flash(f'Job {job_id} deleted successfully', 'success')
     else:
         flash(f'Failed to delete job {job_id}', 'error')
+        
+    # Redirect to the jobs list
     return redirect(url_for('routes.jobs'))
 
-@routes.route('/run_job/<job_id>')
-def run_job(job_id):
-    """Run a conversion job."""
-    job = job_manager.get_job(job_id)
+@routes.route('/storage')
+def storage_stats():
+    """Show storage statistics."""
+    # Get stats from all LMDB databases
+    lmdb_stats = {}
     
-    if not job:
-        flash(f'Job {job_id} not found', 'error')
-        return redirect(url_for('routes.jobs'))
-        
-    # Check if the job is already running or completed
-    current_status = job.get('status')
-    if current_status in ['running', 'completed']:
-        flash(f'Job is already {current_status}', 'warning')
-        return redirect(url_for('routes.job_detail', job_id=job_id))
-        
-    # Get the profile
-    profile_name = job.get('profile_name')
-    profile = config_manager.get_profile(profile_name)
+    # Add job store stats
+    lmdb_stats['jobs'] = job_manager.get_stats()
     
-    if not profile:
-        flash(f'Profile {profile_name} not found', 'error')
-        return redirect(url_for('routes.job_detail', job_id=job_id))
-        
-    try:
-        # Update job status to running
-        job['status'] = 'running'
-        job['started'] = datetime.datetime.now().isoformat()
-        job['updated'] = datetime.datetime.now().isoformat()
-        job_manager.update_job(job_id, job)
-        
-        # Run the conversion
-        result = convert_csv_to_iceberg(
-            csv_file=job.get('file_path'),
-            table_name=job.get('table_name'),
-            connection_type=job.get('connection_type', 'trino'),
-            profile=profile,
-            delimiter=job.get('delimiter', ','),
-            quote_char=job.get('quote_char', '"'),
-            has_header=job.get('has_header', True),
-            batch_size=job.get('batch_size', DEFAULT_BATCH_SIZE),
-            mode=job.get('mode', 'append')
-        )
-        
-        # Update job status based on the result
-        if result.get('success'):
-            job['status'] = 'completed'
-            
-            # Copy the statistics and queries into the job
-            job['stats'] = result.get('stats', {})
-            job['queries'] = result.get('queries', [])
-            
-            flash('Conversion completed successfully', 'success')
-        else:
-            job['status'] = 'failed'
-            job['error'] = result.get('error', 'Unknown error')
-            job['error_log'] = result.get('error_log', '')
-            
-            flash(f'Conversion failed: {result.get("error", "Unknown error")}', 'error')
-            
-        # Set completed timestamp
-        job['completed'] = datetime.datetime.now().isoformat()
-        job['updated'] = datetime.datetime.now().isoformat()
-        
-        # Save the updated job
-        job_manager.update_job(job_id, job)
-        
-    except Exception as e:
-        # Handle any unexpected errors
-        traceback.print_exc()
-        error_details = traceback.format_exc()
-        
-        job['status'] = 'failed'
-        job['error'] = str(e)
-        job['error_log'] = error_details
-        job['updated'] = datetime.datetime.now().isoformat()
-        job_manager.update_job(job_id, job)
-        
-        flash(f'Error running conversion job: {str(e)}', 'error')
+    # Add config store stats
+    lmdb_stats['config'] = config_manager.get_stats()
     
-    return redirect(url_for('routes.job_detail', job_id=job_id))
-
-@routes.route('/api/infer_schema', methods=['POST'])
-def infer_schema():
-    """API endpoint to infer schema from a CSV file."""
-    try:
-        # Check if file was uploaded
-        if 'csv_file' not in request.files:
-            return jsonify({'error': 'No file part'}), 400
-            
-        csv_file = request.files['csv_file']
-        
-        # Check if a file was selected
-        if csv_file.filename == '':
-            return jsonify({'error': 'No file selected'}), 400
-            
-        # Validate file type
-        if not allowed_file(csv_file.filename):
-            return jsonify({'error': 'Invalid file type'}), 400
-            
-        # Get CSV file parameters
-        delimiter = request.form.get('delimiter', ',')
-        if delimiter == 'tab':
-            delimiter = '\t'
-        elif delimiter == 'pipe':
-            delimiter = '|'
-        elif delimiter == 'semicolon':
-            delimiter = ';'
-            
-        quote_char = request.form.get('quote_char', '"')
-        has_header = request.form.get('has_header') == 'true'
-        
-        # Process the file
-        from core.schema_inferrer import infer_schema_from_csv
-        
-        # Save file to a temporary location
-        with tempfile.NamedTemporaryFile(delete=False) as temp:
-            csv_file.save(temp.name)
-            temp_path = temp.name
-        
-        try:
-            # Infer schema from the temporary file
-            columns, partition_recommendations = infer_schema_from_csv(
-                temp_path, 
-                delimiter=delimiter, 
-                quote_char=quote_char, 
-                has_header=has_header
-            )
-            
-            logger.debug(f"Inferred schema with {len(columns)} columns: {columns}")
-            
-            # Format the partition recommendations for the UI
-            formatted_recommendations = []
-            for rec in partition_recommendations:
-                # Create a simplified version for the UI
-                formatted_rec = {
-                    'column': rec['column'],
-                    'type': rec['type'],
-                    'suitability_score': rec['suitability_score'],
-                    'cardinality_ratio': round(rec['cardinality_ratio'] * 100, 2),  # Convert to percentage
-                    'unique_values': rec['unique_values'],
-                    'total_values': rec['total_values'],
-                    'transforms': []
-                }
-                
-                # Add the transform recommendations
-                for transform in rec['recommendations']:
-                    formatted_rec['transforms'].append({
-                        'name': transform['transform'],
-                        'description': transform['description'],
-                        'example': transform['example']
-                    })
-                
-                formatted_recommendations.append(formatted_rec)
-                
-            # Return both the schema and partition recommendations
-            return jsonify({
-                'schema': columns,
-                'partition_recommendations': formatted_recommendations
-            })
-            
-        finally:
-            # Clean up the temporary file
-            try:
-                os.unlink(temp_path)
-            except:
-                pass
-                
-    except Exception as e:
-        logger.error(f"Error inferring schema: {str(e)}")
-        logger.error(traceback.format_exc())
-        return jsonify({'error': str(e)}), 500
-
-@routes.route('/api/profile/<name>')
-def get_profile_api(name):
-    """API endpoint to get a profile by name."""
-    profile = config_manager.get_profile(name)
+    # Calculate total size
+    total_size = sum(stats.get('size', 0) for stats in lmdb_stats.values())
     
-    if not profile:
-        return jsonify({'error': 'Profile not found'}), 404
-        
-    return jsonify(profile)
-
-@routes.route('/api/job/<job_id>')
-def get_job_api(job_id):
-    """API endpoint to get a job by ID."""
-    job = job_manager.get_job(job_id)
-    
-    if not job:
-        return jsonify({'error': 'Job not found'}), 404
-        
-    return jsonify(job)
-
-@routes.route('/api/job/<job_id>/logs')
-def get_job_logs(job_id):
-    """API endpoint to get job logs."""
-    job = job_manager.get_job(job_id)
-    
-    if not job:
-        return jsonify({'error': 'Job not found'}), 404
-        
-    # Return any available logs or error messages
-    logs = {
-        'status': job.get('status', 'unknown'),
-        'error': job.get('error', ''),
-        'error_log': job.get('error_log', ''),
-        'queries': job.get('queries', []),
-        'stats': job.get('stats', {})
-    }
-    
-    return jsonify(logs)
+    # Render the storage stats template
+    return render_template('storage_stats.html', 
+                          lmdb_stats=lmdb_stats, 
+                          total_size=total_size)
 
 @routes.route('/uploads/<filename>')
-def uploaded_file(filename):
-    """Serve uploaded files."""
+def download_file(filename):
+    """Download a file from the uploads directory."""
     return send_from_directory('uploads', filename)
 
-@routes.route('/dry_run/<job_id>')
-def dry_run_job(job_id):
-    """Perform a dry run of a conversion job without writing to the database."""
-    job = job_manager.get_job(job_id)
+@routes.route('/uploads/<path:path>')
+def static_file(path):
+    """Serve static files from the uploads directory."""
+    return send_from_directory('uploads', path)
+
+@routes.route('/api/check-table', methods=['POST'])
+def check_table():
+    """API endpoint to check if a table exists."""
+    # Get the JSON data from the request
+    data = request.json
     
-    if not job:
-        flash(f'Job {job_id} not found', 'error')
-        return redirect(url_for('routes.jobs'))
+    if not data:
+        return jsonify({
+            'error': 'No data provided'
+        }), 400
+        
+    # Get the table name and profile name
+    table_name = data.get('table_name')
+    profile_name = data.get('profile_name')
+    
+    if not table_name or not profile_name:
+        return jsonify({
+            'error': 'Table name and profile name are required'
+        }), 400
         
     # Get the profile
-    profile_name = job.get('profile_name')
     profile = config_manager.get_profile(profile_name)
     
     if not profile:
-        flash(f'Profile {profile_name} not found', 'error')
-        return redirect(url_for('routes.job_detail', job_id=job_id))
+        return jsonify({
+            'error': 'Profile not found'
+        }), 404
         
-    try:
-        # Create a query collector to store SQL statements
-        query_collector = QueryCollector()
-        
-        # Run the dry run
-        result = convert_csv_to_iceberg(
-            csv_file=job.get('file_path'),
-            table_name=job.get('table_name'),
-            connection_type=job.get('connection_type', 'trino'),
-            profile=profile,
-            delimiter=job.get('delimiter', ','),
-            quote_char=job.get('quote_char', '"'),
-            has_header=job.get('has_header', True),
-            batch_size=job.get('batch_size', DEFAULT_BATCH_SIZE),
-            mode=job.get('mode', 'append'),
-            dry_run=True,
-            query_collector=query_collector
-        )
-        
-        # Return the queries that would be executed
-        return render_template('dry_run.html', 
-                              job=job, 
-                              profile=profile, 
-                              queries=query_collector.get_queries(),
-                              stats=result.get('stats', {}))
-        
-    except Exception as e:
-        # Handle any unexpected errors
-        flash(f'Error performing dry run: {str(e)}', 'error')
-        return redirect(url_for('routes.job_detail', job_id=job_id))
-
-@routes.route('/storage_stats')
-def storage_stats():
-    """Show LMDB storage statistics."""
-    from storage.lmdb_stats import get_all_storage_stats
+    # Check if the table exists
+    # This is just a placeholder - in a real app, you would check the table
+    # This would require connecting to the database, which is beyond this example
+    table_exists = False
     
-    try:
-        stats = get_all_storage_stats()
-        return render_template('storage_stats.html', stats=stats)
-    except Exception as e:
-        flash(f'Error retrieving storage statistics: {str(e)}', 'error')
-        return redirect(url_for('routes.index'))
-
-@routes.route('/about')
-def about():
-    """Show information about the application."""
-    git_info = get_git_info()
-    
-    return render_template('about.html', git_info=git_info)
-
-# Additional API endpoints for asynchronous operations
-@routes.route('/api/job/<job_id>/status')
-def job_status_api(job_id):
-    """API endpoint to get job status."""
-    job = job_manager.get_job(job_id)
-    
-    if not job:
-        return jsonify({'error': 'Job not found'}), 404
-        
-    # Return basic status information
-    status_info = {
-        'id': job.get('id'),
-        'status': job.get('status', 'unknown'),
-        'created': job.get('created'),
-        'started': job.get('started'),
-        'completed': job.get('completed'),
-        'error': job.get('error', '')
-    }
-    
-    return jsonify(status_info)
-
-# Register the datetime filter with the blueprint
-routes.add_app_template_filter(format_datetime_filter, 'format_datetime')
+    # Return the result
+    return jsonify({
+        'exists': table_exists,
+        'table_name': table_name
+    })
