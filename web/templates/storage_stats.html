@@ -4,34 +4,142 @@
 
 {% block content %}
 <div class="container mt-5">
-    <div class="card">
+    <div class="card mb-4">
         <div class="card-header">
-            <h2>Storage Statistics</h2>
+            <h2>LMDB Storage Statistics</h2>
         </div>
         <div class="card-body">
             {% if stats %}
-                <table class="table table-striped">
-                    <thead>
-                        <tr>
-                            <th>Store Name</th>
-                            <th>Location</th>
-                            <th>Entry Count</th>
-                            <th>Size (KB)</th>
-                            <th>Map Size (MB)</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for store in stats %}
-                            <tr>
-                                <td>{{ store.name }}</td>
-                                <td>{{ store.path }}</td>
-                                <td>{{ store.entries }}</td>
-                                <td>{{ store.size_kb }}</td>
-                                <td>{{ store.map_size_mb }}</td>
-                            </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
+                <div class="row">
+                    <div class="col-12 mb-4">
+                        <h4>System Information</h4>
+                        <table class="table table-bordered">
+                            <tbody>
+                                <tr>
+                                    <th>Temp Directory</th>
+                                    <td>{{ stats.system.temp_directory }}</td>
+                                </tr>
+                                <tr>
+                                    <th>Home Directory</th>
+                                    <td>{{ stats.system.home_directory }}</td>
+                                </tr>
+                                <tr>
+                                    <th>LMDB Available</th>
+                                    <td>{{ stats.lmdb_available }}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="row">
+                    <!-- Job Store -->
+                    <div class="col-md-6 mb-4">
+                        <h4>Job Store</h4>
+                        <table class="table table-bordered">
+                            <tbody>
+                                <tr>
+                                    <th>Path</th>
+                                    <td>{{ stats.job_store.path }}</td>
+                                </tr>
+                                <tr>
+                                    <th>Exists</th>
+                                    <td>{{ stats.job_store.exists }}</td>
+                                </tr>
+                                <tr>
+                                    <th>Entries</th>
+                                    <td>{{ stats.job_store.entries }}</td>
+                                </tr>
+                                <tr>
+                                    <th>Size</th>
+                                    <td>{{ stats.job_store.size_formatted }}</td>
+                                </tr>
+                                <tr>
+                                    <th>Maximum Size</th>
+                                    <td>{{ stats.job_store.max_size_formatted }}</td>
+                                </tr>
+                                <tr>
+                                    <th>Page Size</th>
+                                    <td>{{ stats.job_store.page_size }}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Config Store -->
+                    <div class="col-md-6 mb-4">
+                        <h4>Config Store</h4>
+                        <table class="table table-bordered">
+                            <tbody>
+                                <tr>
+                                    <th>Path</th>
+                                    <td>{{ stats.config_store.path }}</td>
+                                </tr>
+                                <tr>
+                                    <th>Exists</th>
+                                    <td>{{ stats.config_store.exists }}</td>
+                                </tr>
+                                <tr>
+                                    <th>Entries</th>
+                                    <td>{{ stats.config_store.entries }}</td>
+                                </tr>
+                                <tr>
+                                    <th>Size</th>
+                                    <td>{{ stats.config_store.size_formatted }}</td>
+                                </tr>
+                                <tr>
+                                    <th>Maximum Size</th>
+                                    <td>{{ stats.config_store.max_size_formatted }}</td>
+                                </tr>
+                                <tr>
+                                    <th>Page Size</th>
+                                    <td>{{ stats.config_store.page_size }}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Disk Usage Information -->
+                <div class="row">
+                    <div class="col-12">
+                        <h4>Disk Usage</h4>
+                        <div class="progress mb-3" style="height: 30px;">
+                            {% if stats.job_store.disk_total > 0 %}
+                                {% set used_percent = (stats.job_store.disk_used / stats.job_store.disk_total) * 100 %}
+                                <div class="progress-bar bg-danger" role="progressbar" 
+                                    style="width: {{ used_percent }}%" 
+                                    aria-valuenow="{{ used_percent }}" 
+                                    aria-valuemin="0" aria-valuemax="100">
+                                    {{ stats.job_store.disk_used_formatted }} Used ({{ used_percent|round(1) }}%)
+                                </div>
+                            {% else %}
+                                <div class="progress-bar" role="progressbar" 
+                                    style="width: 0%" 
+                                    aria-valuenow="0" 
+                                    aria-valuemin="0" aria-valuemax="100">
+                                    Disk space information not available
+                                </div>
+                            {% endif %}
+                        </div>
+                        <table class="table table-bordered">
+                            <tbody>
+                                <tr>
+                                    <th>Total Disk Space</th>
+                                    <td>{{ stats.job_store.disk_total_formatted }}</td>
+                                </tr>
+                                <tr>
+                                    <th>Used Disk Space</th>
+                                    <td>{{ stats.job_store.disk_used_formatted }}</td>
+                                </tr>
+                                <tr>
+                                    <th>Free Disk Space</th>
+                                    <td>{{ stats.job_store.disk_free_formatted }}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
             {% else %}
                 <div class="alert alert-info">
                     No storage statistics available.
