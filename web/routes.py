@@ -315,6 +315,7 @@ def convert():
             exclude_columns = request.form.get('exclude_columns', '')
             use_custom_schema = request.form.get('use_custom_schema') == 'true'
             custom_schema = request.form.get('custom_schema', '') if use_custom_schema else ''
+            dry_run = request.form.get('dry_run') == 'true'
             
             # Parse column lists
             include_cols_list = [col.strip() for col in include_columns.split(',')] if include_columns.strip() else None
