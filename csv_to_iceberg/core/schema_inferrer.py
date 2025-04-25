@@ -613,17 +613,48 @@ def analyze_column_cardinality(
                 
                 # String types with low to moderate cardinality are good candidates
                 elif 'string' in col_type or 'str' in col_type:
+                    # Check for value distribution to identify skewed distributions
+                    value_distribution = df[col_name].value_counts().to_dict()
+                    most_common_count = max(value_distribution.values()) if value_distribution else 0
+                    distribution_ratio = most_common_count / total_values if total_values > 0 else 0
+                    
+                    # Calculate an evenness score (0-1) where 1 means perfectly even distribution
+                    # Low score means one value dominates (like "California" in state field)
+                    evenness_score = 1.0 - distribution_ratio
+                    
                     # Low cardinality strings (e.g., status codes, categories) are good for partitioning
+                    # BUT only if the values are well distributed
                     if cardinality_ratio < 0.01 and unique_values < 100:
-                        suitability_score = 75
-                        recommendation['recommendations'].append({
-                            'transform': 'identity',
-                            'description': 'Partition directly by this column',
-                            'example': f"PARTITION BY {col_name}"
-                        })
+                        # Adjust score based on distribution evenness
+                        if evenness_score < 0.2:  # Highly skewed (one value dominates)
+                            suitability_score = 20  # Poor candidate
+                            recommendation['recommendations'].append({
+                                'transform': 'identity',
+                                'description': 'Not recommended due to skewed distribution',
+                                'example': f"PARTITION BY {col_name} -- Warning: Skewed distribution"
+                            })
+                        elif evenness_score < 0.5:  # Moderately skewed
+                            suitability_score = 40  # Fair candidate
+                            recommendation['recommendations'].append({
+                                'transform': 'identity',
+                                'description': 'Partition directly by this column (note: distribution is uneven)',
+                                'example': f"PARTITION BY {col_name}"
+                            })
+                        else:  # Fairly even distribution
+                            suitability_score = 75  # Good candidate
+                            recommendation['recommendations'].append({
+                                'transform': 'identity',
+                                'description': 'Partition directly by this column (good distribution)',
+                                'example': f"PARTITION BY {col_name}"
+                            })
                     # Moderate cardinality strings
                     elif cardinality_ratio < 0.1 and unique_values < 1000:
-                        suitability_score = 50
+                        # Adjust score based on distribution evenness
+                        if evenness_score < 0.3:  # Significantly skewed
+                            suitability_score = 30  # Less suitable
+                        else:
+                            suitability_score = 50  # Moderately suitable
+                            
                         recommendation['recommendations'].append({
                             'transform': 'truncate',
                             'description': 'Truncate to first 5 characters',
