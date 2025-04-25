@@ -115,7 +115,8 @@ document.addEventListener('DOMContentLoaded', function() {
             const confirmDeleteBtn = deleteModal.querySelector('#confirmDeleteBtn');
             
             profileNameSpan.textContent = profileName;
-            confirmDeleteBtn.href = "{{ url_for('routes.profile_delete', name='') }}" + profileName;
+            // Use correctly encoded URL
+            confirmDeleteBtn.href = "{{ url_for('routes.profile_delete', name='__NAME__') }}".replace('__NAME__', encodeURIComponent(profileName));
         });
     }
 });
