@@ -499,8 +499,8 @@ class IcebergWriter:
             if formatted_rows:
                 # Calculate average row size
                 avg_row_size = sum(len(row.encode('utf-8')) for row in formatted_rows) / len(formatted_rows)
-                # 500KB max query size for safety (half of Trino's limit)
-                max_safe_query_size = 500000
+                # 700KB max query size for safety (70% of Trino's limit)
+                max_safe_query_size = 700000
                 # Base SQL part size 
                 base_sql_size = len(base_sql.encode('utf-8'))
                 # Calculate how many rows we can safely fit

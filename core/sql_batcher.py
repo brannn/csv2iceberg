@@ -17,12 +17,12 @@ class SQLBatcher:
     exceeding query size limits while optimizing for performance.
     """
     
-    def __init__(self, max_bytes: int = 500_000, delimiter: str = ";\n", dry_run: bool = False):
+    def __init__(self, max_bytes: int = 700_000, delimiter: str = ";\n", dry_run: bool = False):
         """
         Initialize a new SQL batcher.
         
         Args:
-            max_bytes: Maximum size in bytes of each statement batch (default: 500,000)
+            max_bytes: Maximum size in bytes of each statement batch (default: 700,000)
             delimiter: Delimiter used for size calculation only (actual execution is per statement)
             dry_run: If True, just logs the queries without executing (default: False)
         """
