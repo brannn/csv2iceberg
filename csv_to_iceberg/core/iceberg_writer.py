@@ -197,7 +197,7 @@ class IcebergWriter:
     
     def _write_batch_to_iceberg(self, batch_data, mode: str) -> None:
         """
-        Write a batch of data to an Iceberg table using direct SQL INSERT statements.
+        Write a batch of data to an Iceberg table using PyArrow and Parquet files for high performance.
         
         Args:
             batch_data: Batch of data to write (Polars DataFrame or any compatible DataFrame with columns attribute)
@@ -254,13 +254,6 @@ class IcebergWriter:
             table_exists = self.trino_client.table_exists(self.catalog, self.schema, self.table)
             logger.info(f"Table {self.catalog}.{self.schema}.{self.table} exists: {table_exists}")
             
-            # For append mode on a non-existent table, we'll create the table below
-            # For overwrite mode on a non-existent table, we skip the truncate step
-            
-            # For both append and overwrite modes with non-existent tables
-            if not table_exists:
-                logger.info(f"Table {self.catalog}.{self.schema}.{self.table} doesn't exist, will be created automatically")
-            
             # Special handling for overwrite mode when table exists
             if table_exists and mode == 'overwrite' and len(batch_data) > 0:
                 try:
@@ -278,80 +271,98 @@ class IcebergWriter:
                     logger.warning(f"Failed to truncate table for overwrite mode: {str(e)}")
                     logger.warning("Will continue with insert operation")
             
-            # Get the target table schema (using cache if available)
+            # Handle table creation if it doesn't exist
+            if not table_exists:
+                logger.info(f"Table {self.catalog}.{self.schema}.{self.table} doesn't exist yet, creating it from batch data")
+                
+                # Infer schema from batch data
+                iceberg_schema = infer_schema_from_df(batch_data)
+                
+                # Create the table
+                self.trino_client.create_iceberg_table(self.catalog, self.schema, self.table, iceberg_schema)
+                logger.info(f"Created table {self.catalog}.{self.schema}.{self.table}")
+                
+                # Set empty schema to force dynamic inference for the first batch
+                self._cached_target_schema = []
+                self._cached_column_types_dict = {}
+            
+            # Import pyarrow here to avoid import errors if not needed in other code paths
             try:
-                # Check if table exists first to avoid errors when trying to get schema
-                table_exists = self.trino_client.table_exists(self.catalog, self.schema, self.table)
-                
-                if not table_exists:
-                    logger.info(f"Table {self.catalog}.{self.schema}.{self.table} doesn't exist yet, creating it from batch data")
-                    
-                    # Create the table using inferred schema from batch data
-                    # Use batch data to create a PyIceberg schema
-                    # Using the infer_schema_from_df function imported at the top of the file
-                    
-                    # Infer schema from batch data
-                    iceberg_schema = infer_schema_from_df(batch_data)
-                    
-                    # Create the table
-                    self.trino_client.create_iceberg_table(self.catalog, self.schema, self.table, iceberg_schema)
-                    logger.info(f"Created table {self.catalog}.{self.schema}.{self.table}")
-                    
-                    # Set empty schema to force dynamic inference for the first batch
-                    self._cached_target_schema = []
-                    self._cached_column_types_dict = {}
-                    target_schema = []
-                    column_types_dict = {}
-                else:
-                    # Table exists, get its schema
-                    # Check if schema is already cached
-                    if self._cached_target_schema is None:
-                        logger.info(f"Fetching and caching schema for {self.catalog}.{self.schema}.{self.table}")
-                        self._cached_target_schema = self.trino_client.get_table_schema(self.catalog, self.schema, self.table)
-                        
-                        # Create dictionary only if we got valid schema results
-                        if self._cached_target_schema is not None and len(self._cached_target_schema) > 0:
-                            self._cached_column_types_dict = {col_name: col_type for col_name, col_type in self._cached_target_schema}
-                            logger.debug(f"Cached schema with types: {self._cached_column_types_dict}")
-                        else:
-                            # If schema retrieval returned empty result, initialize empty dict
-                            self._cached_column_types_dict = {}
-                            logger.warning(f"Retrieved empty schema for {self.catalog}.{self.schema}.{self.table}")
-                    else:
-                        logger.debug(f"Using cached schema for {self.catalog}.{self.schema}.{self.table}")
-                    
-                    # Use the cached schema information, ensuring they're never None
-                    target_schema = self._cached_target_schema if self._cached_target_schema is not None else []
-                    column_types_dict = self._cached_column_types_dict if self._cached_column_types_dict is not None else {}
-            except Exception as e:
-                logger.error(f"Failed to retrieve or create target schema: {str(e)}", exc_info=True)
-                
-                # Initialize empty schema info to allow fallback to dynamic type inference
-                target_schema = []
-                column_types_dict = {}
-                logger.warning(f"Will use dynamic schema inference due to schema retrieval error")
+                import pyarrow as pa
+                import pyarrow.parquet as pq
+                logger.debug("Successfully imported PyArrow and PyArrow Parquet modules")
+            except ImportError:
+                logger.error("Failed to import PyArrow modules. Falling back to SQL INSERT method.")
+                self._write_batch_to_iceberg_sql(batch_data, mode)
+                return
             
-            # Define maximum rows per batch to avoid memory issues
-            # The maximum batch size depends on the column count
+            # Use a temporary directory for the parquet file
+            with tempfile.TemporaryDirectory() as temp_dir:
+                # Create temporary parquet file path
+                parquet_file = os.path.join(temp_dir, f"batch_{int(time.time())}.parquet")
+                
+                try:
+                    # Convert Polars DataFrame to PyArrow Table
+                    logger.debug("Converting Polars DataFrame to PyArrow Table")
+                    arrow_table = batch_data.to_arrow()
+                    
+                    # Write the PyArrow Table to Parquet
+                    logger.debug(f"Writing PyArrow Table to temporary Parquet file: {parquet_file}")
+                    pq.write_table(arrow_table, parquet_file)
+                    
+                    # Get the absolute path for the Parquet file
+                    abs_parquet_path = os.path.abspath(parquet_file)
+                    logger.debug(f"Temporary Parquet file absolute path: {abs_parquet_path}")
+                    
+                    # Build the COPY FROM SQL query
+                    copy_sql = f"""
+                    INSERT INTO {self.catalog}.{self.schema}.{self.table}
+                    SELECT * FROM read_parquet('{abs_parquet_path}')
+                    """
+                    
+                    # Execute the COPY query
+                    logger.info(f"Executing COPY from Parquet query (file size: {os.path.getsize(parquet_file)/1024/1024:.2f} MB)")
+                    self.trino_client.execute_query(copy_sql)
+                    logger.info(f"Successfully copied {len(batch_data)} rows from Parquet file to target table")
+                    
+                except Exception as e:
+                    logger.error(f"Error using PyArrow/Parquet method: {str(e)}", exc_info=True)
+                    logger.warning("Falling back to SQL INSERT method")
+                    self._write_batch_to_iceberg_sql(batch_data, mode)
+            
+        except Exception as e:
+            logger.error(f"Error in _write_batch_to_iceberg: {str(e)}", exc_info=True)
+            
+            # Check if this is overwrite mode, and we should invalidate the schema cache
+            if mode == 'overwrite':
+                logger.info("Invalidating schema cache due to error in overwrite mode")
+                self.invalidate_schema_cache()
+            
+            raise RuntimeError(f"Failed to write batch to Iceberg: {str(e)}")
+            
+    def _write_batch_to_iceberg_sql(self, batch_data, mode: str) -> None:
+        """
+        Fallback method to write batch data using SQL INSERT statements when PyArrow method fails.
+        
+        Args:
+            batch_data: Batch of data to write (Polars DataFrame)
+            mode: Write mode (append or overwrite)
+        """
+        logger.info(f"Using SQL INSERT fallback method for batch of {len(batch_data)} rows")
+        
+        try:
+            # Get column names from the dataframe
+            columns = batch_data.columns
+            quoted_columns = [f'"{col}"' for col in columns]
+            column_names_str = ", ".join(quoted_columns)
+            
+            # Define parameters based on column count to optimize performance
             column_count = len(columns)
-            max_rows_per_batch = 20000  # Default batch size - significantly increased for performance
-            
-            # Adjust batch size for wide tables
-            if column_count > 100:
-                max_rows_per_batch = 10000
-            elif column_count > 50:
-                max_rows_per_batch = 15000
-            
-            logger.info(f"Using batch size of {max_rows_per_batch} rows for table with {column_count} columns")
-            
-            # Process data in batches to optimize memory usage
-            total_rows = len(batch_data)
             
             # Define maximum SQL query size (in characters) - Trino has a limit of 1,000,000
             MAX_QUERY_LENGTH = 900000  # Setting a bit below the limit for safety
             
-            # Define maximum rows per INSERT statement based on column count - significantly higher for performance
-            # More columns = wider data = fewer rows per batch needed to stay under query length limits
+            # Define maximum rows per INSERT statement based on column count
             if column_count > 80:
                 MAX_ROWS_PER_INSERT = 1000
             elif column_count > 50:
@@ -364,130 +375,83 @@ class IcebergWriter:
             
             logger.info(f"Using maximum of {MAX_ROWS_PER_INSERT} rows per INSERT statement")
             
-            for i in range(0, total_rows, max_rows_per_batch):
-                # Create batch slice
-                batch_slice = batch_data.slice(i, min(max_rows_per_batch, total_rows - i))
-                sub_batch_size = len(batch_slice)
+            # Process batch in chunks
+            rows_to_process = list(batch_data.rows(named=True))
+            current_chunk = []
+            current_query_length = 0
+            rows_processed = 0
+            
+            # Base SQL part
+            base_sql = f"INSERT INTO {self.catalog}.{self.schema}.{self.table} ({column_names_str}) VALUES "
+            base_length = len(base_sql)
+            
+            # Process rows
+            for row in rows_to_process:
+                # Format row values
+                row_values = []
                 
-                if sub_batch_size == 0:
-                    logger.warning("Empty batch slice encountered, skipping")
-                    continue
+                for col in columns:
+                    val = row[col]
+                    if val is None:
+                        row_values.append("NULL")
+                    elif isinstance(val, bool):
+                        row_values.append("TRUE" if val else "FALSE")
+                    elif isinstance(val, (int, float)):
+                        row_values.append(str(val))
+                    elif isinstance(val, datetime.datetime):
+                        # Format timestamp properly for Trino
+                        row_values.append(f"TIMESTAMP '{val}'")
+                    elif isinstance(val, datetime.date):
+                        row_values.append(f"DATE '{val}'")
+                    else:
+                        # Handle string values with proper escaping
+                        str_val = str(val).replace("'", "''")
+                        row_values.append(f"'{str_val}'")
                 
-                logger.info(f"Processing sub-batch of {sub_batch_size} rows")
+                row_sql = f"({', '.join(row_values)})"
+                row_length = len(row_sql) + (2 if current_chunk else 0)  # +2 for comma and space
                 
-                # Process this batch slice in smaller chunks to avoid query length limits
-                rows_to_process = list(batch_slice.rows(named=True))
-                current_chunk = []
-                current_query_length = 0
-                rows_processed = 0
+                # Check if adding this row would exceed query limits
+                new_query_length = current_query_length + row_length
                 
-                # Base SQL part (INSERT INTO statement without VALUES)
-                base_sql = f"INSERT INTO {self.catalog}.{self.schema}.{self.table} ({column_names_str}) VALUES "
-                base_length = len(base_sql)
-                
-                # Process rows in batches for better performance
-                # We already initialized current_chunk = [] above, no need to do it again
-                
-                # Process rows with list comprehensions for better performance
-                for row in rows_to_process:
-                    # Format row values - significantly faster using list comprehension
-                    row_values = []
+                # Execute current batch if needed
+                if ((new_query_length + base_length > MAX_QUERY_LENGTH or 
+                     len(current_chunk) >= MAX_ROWS_PER_INSERT) and current_chunk):
                     
-                    for col in columns:
-                        val = row[col]
-                        if val is None:
-                            row_values.append("NULL")
-                        elif isinstance(val, bool):
-                            row_values.append("TRUE" if val else "FALSE")
-                        elif isinstance(val, (int, float)):
-                            row_values.append(str(val))
-                        elif isinstance(val, datetime.datetime):
-                            # Format timestamp properly for Trino
-                            row_values.append(f"TIMESTAMP '{val}'")
-                        elif isinstance(val, datetime.date):
-                            row_values.append(f"DATE '{val}'")
-                        else:
-                            # Handle string values with proper escaping
-                            str_val = str(val).replace("'", "''")
-                            row_values.append(f"'{str_val}'")
-                    
-                    row_sql = f"({', '.join(row_values)})"
-                    row_length = len(row_sql) + (2 if current_chunk else 0)  # +2 for comma and space
-                    
-                    # Check if adding this row would exceed query limits
-                    new_query_length = current_query_length + row_length
-                    
-                    # Execute current batch if:
-                    # 1. Adding this row would exceed query length limit, OR
-                    # 2. We've reached the maximum rows per INSERT, OR
-                    # 3. This is the last row and we have accumulated rows
-                    if ((new_query_length + base_length > MAX_QUERY_LENGTH or 
-                         len(current_chunk) >= MAX_ROWS_PER_INSERT) and current_chunk):
-                        
-                        # Build and execute the current chunk
-                        insert_sql = f"{base_sql}{', '.join(current_chunk)}"
-                        
-                        try:
-                            logger.debug(f"Executing SQL INSERT with {len(current_chunk)} rows (query length: {len(insert_sql)})")
-                            self.trino_client.execute_query(insert_sql)
-                            rows_processed += len(current_chunk)
-                            logger.info(f"Successfully inserted chunk of {len(current_chunk)} rows")
-                        except Exception as e:
-                            logger.error(f"Error during SQL INSERT: {str(e)}", exc_info=True)
-                            
-                            # Provide more detailed error information
-                            error_msg = str(e).lower()
-                            if "type mismatch" in error_msg:
-                                logger.error("Type mismatch detected - column types may not match target table schema")
-                            elif "table not found" in error_msg:
-                                logger.error("Table not found - the target table may have been dropped during the operation")
-                            elif "query_text_too_large" in error_msg:
-                                logger.error(f"Query text too large ({len(insert_sql)} chars) - reducing chunk size further")
-                            
-                            raise RuntimeError(f"Failed to write data to Iceberg table: {str(e)}")
-                        
-                        # Reset for next batch
-                        current_chunk = []
-                        current_query_length = 0
-                    
-                    # Add the current row to the chunk
-                    current_chunk.append(row_sql)
-                    current_query_length = new_query_length
-                
-                # Process any remaining rows in the final chunk
-                if current_chunk:
+                    # Build and execute the current chunk
                     insert_sql = f"{base_sql}{', '.join(current_chunk)}"
                     
                     try:
-                        logger.debug(f"Executing final SQL INSERT with {len(current_chunk)} rows (query length: {len(insert_sql)})")
+                        logger.debug(f"Executing SQL INSERT with {len(current_chunk)} rows (query length: {len(insert_sql)})")
                         self.trino_client.execute_query(insert_sql)
                         rows_processed += len(current_chunk)
-                        logger.info(f"Successfully inserted final chunk of {len(current_chunk)} rows")
+                        logger.info(f"Successfully inserted chunk of {len(current_chunk)} rows")
                     except Exception as e:
                         logger.error(f"Error during SQL INSERT: {str(e)}", exc_info=True)
-                        
-                        # Provide more detailed error information
-                        error_msg = str(e).lower()
-                        if "type mismatch" in error_msg:
-                            logger.error("Type mismatch detected - column types may not match target table schema")
-                        elif "table not found" in error_msg:
-                            logger.error("Table not found - the target table may have been dropped during the operation")
-                        elif "query_text_too_large" in error_msg:
-                            logger.error(f"Query text too large ({len(insert_sql)} chars) - try reducing batch size further")
-                        
                         raise RuntimeError(f"Failed to write data to Iceberg table: {str(e)}")
+                    
+                    # Reset for next batch
+                    current_chunk = []
+                    current_query_length = 0
+                
+                # Add the current row to the chunk
+                current_chunk.append(row_sql)
+                current_query_length = new_query_length
             
-            logger.info(f"Successfully wrote {len(batch_data)} rows to {self.catalog}.{self.schema}.{self.table}")
+            # Process any remaining rows in the final chunk
+            if current_chunk:
+                insert_sql = f"{base_sql}{', '.join(current_chunk)}"
+                
+                try:
+                    logger.debug(f"Executing final SQL INSERT with {len(current_chunk)} rows (query length: {len(insert_sql)})")
+                    self.trino_client.execute_query(insert_sql)
+                    rows_processed += len(current_chunk)
+                    logger.info(f"Successfully inserted final chunk of {len(current_chunk)} rows")
+                except Exception as e:
+                    logger.error(f"Error during SQL INSERT: {str(e)}", exc_info=True)
+                    raise RuntimeError(f"Failed to write data to Iceberg table: {str(e)}")
             
-        except Exception as e:
-            logger.error(f"Error in _write_batch_to_iceberg: {str(e)}", exc_info=True)
-            
-            # Check if this is overwrite mode, and we should invalidate the schema cache
-            if mode == 'overwrite':
-                logger.info("Invalidating schema cache due to error in overwrite mode")
-                self.invalidate_schema_cache()
-            
-            raise RuntimeError(f"Failed to write batch to Iceberg: {str(e)}")
+            logger.info(f"Successfully wrote {rows_processed} rows to {self.catalog}.{self.schema}.{self.table} using SQL INSERT method")
 
 def count_csv_rows(
     csv_file: str, 
