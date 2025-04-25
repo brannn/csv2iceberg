@@ -98,6 +98,7 @@ class IcebergWriter:
             exclude_columns: List of column names to exclude (if None, no exclusions)
             progress_callback: Callback function to report progress
             dry_run: If True, collect and log queries that would be executed without actually running them
+            max_query_size: Maximum SQL query size in bytes (default: 700000, 70% of Trino's 1MB limit)
         """
         try:
             # Initialize query collector for dry run mode
@@ -201,7 +202,7 @@ class IcebergWriter:
                 
                 # Write the batch to the Iceberg table directly using Polars DataFrame
                 write_start_time = time.time()
-                self._write_batch_to_iceberg(batch, current_mode, dry_run, query_collector)
+                self._write_batch_to_iceberg(batch, current_mode, dry_run, query_collector, max_query_size)
                 write_time = time.time() - write_start_time
                 
                 # Calculate total batch processing time
@@ -275,7 +276,7 @@ class IcebergWriter:
             raise RuntimeError(f"Failed to write CSV to Iceberg: {str(e)}")
             return 0  # Will never reach here due to the raise
     
-    def _write_batch_to_iceberg(self, batch_data, mode: str, dry_run: bool = False, query_collector = None) -> None:
+    def _write_batch_to_iceberg(self, batch_data, mode: str, dry_run: bool = False, query_collector = None, max_query_size: int = 700000) -> None:
         """
         Write a batch of data to an Iceberg table using optimized SQL INSERT statements.
         
@@ -284,6 +285,7 @@ class IcebergWriter:
             mode: Write mode (append or overwrite)
             dry_run: If True, collect queries without executing them
             query_collector: QueryCollector instance for storing queries in dry run mode
+            max_query_size: Maximum SQL query size in bytes (default: 700000, 70% of Trino's 1MB limit)
         """
         start_time = time.time()
         try:
@@ -414,7 +416,7 @@ class IcebergWriter:
                 self._cached_column_types_dict = {}
             
             # Process in optimized batches
-            self._write_batch_to_iceberg_sql(batch_data, mode, dry_run, query_collector)
+            self._write_batch_to_iceberg_sql(batch_data, mode, dry_run, query_collector, max_query_size)
             
             # Log execution time for this batch
             elapsed_time = time.time() - start_time
@@ -433,7 +435,7 @@ class IcebergWriter:
             
             raise RuntimeError(f"Failed to write batch to Iceberg: {str(e)}")
             
-    def _write_batch_to_iceberg_sql(self, batch_data, mode: str, dry_run: bool = False, query_collector = None) -> None:
+    def _write_batch_to_iceberg_sql(self, batch_data, mode: str, dry_run: bool = False, query_collector = None, max_query_size: int = 700000) -> None:
         """
         High-performance method to write batch data using optimized SQL INSERT statements with SQLBatcher.
         
@@ -442,6 +444,7 @@ class IcebergWriter:
             mode: Write mode (append or overwrite)
             dry_run: If True, collect queries without executing them
             query_collector: QueryCollector instance for storing queries in dry run mode
+            max_query_size: Maximum SQL query size in bytes (default: 700000, 70% of Trino's 1MB limit)
         """
         logger.info(f"Using optimized SQL INSERT method with SQLBatcher for batch of {len(batch_data)} rows")
         
@@ -452,7 +455,8 @@ class IcebergWriter:
             column_names_str = ", ".join(quoted_columns)
             
             # Define maximum SQL query size (in characters) - Trino has a limit of 1,000,000
-            MAX_QUERY_LENGTH = 500000  # Set to 500KB (half of Trino's limit) for extra safety
+            # Use the passed max_query_size parameter instead of hardcoded value
+            MAX_QUERY_LENGTH = max_query_size  # Default is 700KB (70% of Trino's limit)
             
             # Initialize row processing counter
             rows_processed = 0
@@ -500,8 +504,8 @@ class IcebergWriter:
             if formatted_rows:
                 # Calculate average row size
                 avg_row_size = sum(len(row.encode('utf-8')) for row in formatted_rows) / len(formatted_rows)
-                # 700KB max query size for safety (70% of Trino's limit)
-                max_safe_query_size = 700000
+                # Use the provided max_query_size
+                max_safe_query_size = max_query_size
                 # Base SQL part size 
                 base_sql_size = len(base_sql.encode('utf-8'))
                 # Calculate how many rows we can safely fit
