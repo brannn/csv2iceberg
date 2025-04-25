@@ -78,6 +78,49 @@ class QueryCollector:
             }
         }
     
+    def add_ddl(self, statement: str, table_name: Optional[str] = None):
+        """
+        Add a DDL statement to the collector.
+        
+        This is a convenience method specifically for DDL operations.
+        
+        Args:
+            statement: The DDL statement (e.g., CREATE TABLE)
+            table_name: Name of the table being affected
+        """
+        self.add_query(statement, query_type="DDL", table_name=table_name)
+    
+    def add_dml(self, statement: str, row_count: int = 0, table_name: Optional[str] = None):
+        """
+        Add a DML statement to the collector.
+        
+        This is a convenience method specifically for DML operations.
+        
+        Args:
+            statement: The DML statement (e.g., INSERT INTO)
+            row_count: Number of rows affected
+            table_name: Name of the table being affected
+        """
+        self.add_query(statement, query_type="DML", row_count=row_count, table_name=table_name)
+    
+    def get_ddl_statements(self) -> List[Dict[str, Any]]:
+        """
+        Get all collected DDL statements.
+        
+        Returns:
+            List of DDL statement dictionaries
+        """
+        return self.ddl_statements
+        
+    def get_dml_statements(self) -> List[Dict[str, Any]]:
+        """
+        Get all collected DML statements.
+        
+        Returns:
+            List of DML statement dictionaries
+        """
+        return self.queries
+    
     def get_full_report(self) -> Dict[str, Any]:
         """
         Get a full report of all collected queries

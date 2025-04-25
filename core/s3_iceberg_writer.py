@@ -15,7 +15,7 @@ from pyiceberg.schema import Schema
 
 # Use S3 REST client
 from connectors.s3_rest_client import S3RestClient
-from core.schema_inferrer import infer_schema_from_df
+from core.schema_inferrer import infer_schema_from_df, infer_schema_from_csv
 from core.query_collector import QueryCollector
 
 # Configure logger
@@ -289,6 +289,144 @@ class S3IcebergWriter:
             "batch_sizes": batch_sizes
         }
         
+    def write_csv_to_iceberg(
+        self,
+        csv_file: str,
+        mode: str = "append",
+        delimiter: str = ",",
+        has_header: bool = True,
+        quote_char: str = '"',
+        batch_size: int = 20000,
+        sample_size: int = 1000,
+        include_columns: Optional[List[str]] = None,
+        exclude_columns: Optional[List[str]] = None,
+        progress_callback: Optional[Callable[[int], None]] = None,
+        dry_run: bool = False,
+        max_query_size: int = 700000  # Not used for S3 Tables but kept for API compatibility
+    ) -> int:
+        """
+        Write a CSV file to an Iceberg table in AWS S3 Tables.
+        
+        Args:
+            csv_file: Path to the CSV file
+            mode: Write mode (append or overwrite)
+            delimiter: CSV delimiter character
+            has_header: Whether the CSV has a header row
+            quote_char: CSV quote character
+            batch_size: Number of rows to process in each batch
+            sample_size: Number of rows to sample for schema inference
+            include_columns: List of column names to include
+            exclude_columns: List of column names to exclude
+            progress_callback: Optional callback function for progress updates
+            dry_run: If True, collect operations without executing them
+            max_query_size: Not used for S3 Tables, kept for API compatibility
+            
+        Returns:
+            Number of rows written
+        """
+        # Keep track of dry run operations if needed
+        query_collector = None
+        if dry_run:
+            from core.query_collector import QueryCollector
+            query_collector = QueryCollector()
+            
+        # Store reference to performance metrics for easy access
+        self.processing_stats = self.performance_metrics
+        self.dry_run_results = {}
+        
+        # First, infer schema from the CSV file
+        logger.info(f"Inferring schema from CSV file: {csv_file}")
+        inferred_schema_polars, inferred_schema_iceberg = infer_schema_from_csv(
+            csv_file=csv_file,
+            delimiter=delimiter,
+            has_header=has_header,
+            quote_char=quote_char,
+            max_rows=sample_size,
+            include_columns=include_columns,
+            exclude_columns=exclude_columns
+        )
+        
+        if not inferred_schema_iceberg:
+            logger.error("Failed to infer schema from CSV file")
+            return 0
+            
+        column_names = inferred_schema_polars.columns
+        logger.info(f"Inferred schema with {len(column_names)} columns: {column_names}")
+        
+        # Create the table with the inferred schema
+        logger.info(f"Creating table {self.namespace}.{self.table_name} with inferred schema")
+        if not self.create_table_with_schema(
+            schema=inferred_schema_iceberg,
+            mode=mode,
+            dry_run=dry_run,
+            query_collector=query_collector
+        ):
+            logger.error(f"Failed to create table with inferred schema")
+            return 0
+            
+        # Read the CSV file into a Polars DataFrame
+        logger.info(f"Reading CSV file into DataFrame")
+        df_options = {
+            "has_header": has_header,
+            "separator": delimiter,
+            "quote_char": quote_char,
+            "ignore_errors": True,
+            "truncate_ragged_lines": True  # Handle CSV files with inconsistent number of fields
+        }
+        
+        try:
+            if dry_run:
+                # For dry run, only read the first few rows to simulate the process
+                df = pl.read_csv(csv_file, n_rows=min(sample_size, 100), **df_options)
+                logger.info(f"Dry run: Read {len(df)} sample rows from CSV file")
+            else:
+                # In production, read the entire file
+                df = pl.read_csv(csv_file, **df_options)
+                logger.info(f"Read {len(df)} rows from CSV file")
+                
+            # Apply column filters if specified
+            if include_columns:
+                # Keep only the specified columns
+                included_cols = [col for col in include_columns if col in df.columns]
+                df = df.select(included_cols)
+                logger.info(f"Applied include filter, kept columns: {included_cols}")
+                
+            elif exclude_columns:
+                # Remove the specified columns
+                excluded_cols = [col for col in exclude_columns if col in df.columns]
+                kept_cols = [col for col in df.columns if col not in excluded_cols]
+                df = df.select(kept_cols)
+                logger.info(f"Applied exclude filter, removed columns: {excluded_cols}")
+                
+            # Write the DataFrame to the Iceberg table
+            logger.info(f"Writing DataFrame to Iceberg table {self.namespace}.{self.table_name}")
+            success = self.write_dataframe(
+                df=df,
+                mode=mode,
+                batch_size=batch_size,
+                progress_callback=progress_callback,
+                dry_run=dry_run,
+                query_collector=query_collector
+            )
+            
+            if not success:
+                logger.error(f"Failed to write DataFrame to Iceberg table")
+                return 0
+                
+            # Collect dry run results if applicable
+            if dry_run and query_collector:
+                self.dry_run_results = {
+                    "ddl_statements": query_collector.get_ddl_statements(),
+                    "dml_statements": query_collector.get_dml_statements()
+                }
+                
+            # Return the number of rows processed
+            return len(df)
+            
+        except Exception as e:
+            logger.error(f"Error processing CSV file: {str(e)}", exc_info=True)
+            return 0
+    
     def get_performance_metrics(self) -> Dict[str, Any]:
         """
         Get the performance metrics for the writer.
@@ -302,4 +440,3 @@ class S3IcebergWriter:
         """Close resources"""
         if self.s3_rest_client:
             self.s3_rest_client.close()
-"""

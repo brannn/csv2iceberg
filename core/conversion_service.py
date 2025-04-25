@@ -6,13 +6,15 @@ import os
 import json
 import logging
 import time
-from typing import Dict, List, Any, Optional, Callable, Tuple, Union
+from typing import Dict, List, Any, Optional, Callable, Tuple, Union, Literal
 import traceback
 
 from core.iceberg_writer import IcebergWriter
+from core.s3_iceberg_writer import S3IcebergWriter
 from core.schema_inferrer import infer_schema_from_csv
 from connectors.trino_client import TrinoClient
 from connectors.hive_client import HiveMetastoreClient
+from connectors.s3_rest_client import S3RestClient
 from utils import clean_column_name
 
 # Configure logging
@@ -23,10 +25,13 @@ def convert_csv_to_iceberg(
     csv_file: str,
     table_name: str,
     
-    # Connection parameters
-    trino_host: str,
-    trino_port: int,
-    trino_user: str,
+    # Connection type
+    connection_type: Literal["trino", "s3_rest"] = "trino",
+    
+    # Trino connection parameters
+    trino_host: Optional[str] = None,
+    trino_port: Optional[int] = None,
+    trino_user: Optional[str] = None,
     trino_password: Optional[str] = None,
     http_scheme: str = 'https',
     trino_role: str = 'sysadmin',
@@ -34,6 +39,18 @@ def convert_csv_to_iceberg(
     trino_schema: str = 'default',
     use_hive_metastore: bool = False,
     hive_metastore_uri: str = 'localhost:9083',
+    
+    # S3 REST API connection parameters
+    s3_rest_uri: Optional[str] = None,
+    s3_warehouse_location: Optional[str] = None,
+    s3_namespace: str = 'default',
+    s3_client_id: Optional[str] = None,
+    s3_client_secret: Optional[str] = None,
+    s3_token: Optional[str] = None,
+    aws_access_key_id: Optional[str] = None,
+    aws_secret_access_key: Optional[str] = None,
+    aws_session_token: Optional[str] = None,
+    aws_region: str = 'us-east-1',
     
     # CSV handling parameters
     delimiter: str = ',',
@@ -113,62 +130,139 @@ def convert_csv_to_iceberg(
         result['stdout'] = '\n'.join(stdout_buffer)
     
     try:
-        # Create Trino client
-        if dry_run:
-            add_log(f"Running in DRY RUN mode - simulating operations without connecting to Trino")
-            add_log(f"Would connect to: {http_scheme}://{trino_host}:{trino_port}")
-            add_log(f"Would use Trino user: {trino_user} with role: {trino_role}")
-        else:
-            add_log(f"Connecting to Trino server at {http_scheme}://{trino_host}:{trino_port}")
-            add_log(f"Using Trino user: {trino_user} with role: {trino_role}")
-            
-        trino_client = TrinoClient(
-            host=trino_host,
-            port=trino_port,
-            user=trino_user,
-            password=trino_password,
-            http_scheme=http_scheme,
-            role=trino_role,
-            dry_run=dry_run
-        )
-        
-        if dry_run:
-            add_log("Trino client created in dry run mode - no actual connection will be made")
-        else:
-            add_log("Trino client created successfully")
-        
-        # Create Hive client if needed
-        hive_client = None
-        if use_hive_metastore:
+        # Initialize based on connection type
+        if connection_type == "trino":
+            # Validate required Trino parameters
+            if not trino_host or not trino_port or not trino_user:
+                error_msg = "Trino connection requires host, port, and user to be specified"
+                add_log(error_msg)
+                result['error'] = error_msg
+                return result
+                
+            # Create Trino client
             if dry_run:
-                add_log(f"Dry run mode: Would connect to Hive metastore at {hive_metastore_uri}")
-                add_log("Skipping actual Hive metastore connection in dry run mode")
+                add_log(f"Running in DRY RUN mode - simulating operations without connecting to Trino")
+                add_log(f"Would connect to: {http_scheme}://{trino_host}:{trino_port}")
+                add_log(f"Would use Trino user: {trino_user} with role: {trino_role}")
             else:
-                add_log(f"Connecting to Hive metastore at {hive_metastore_uri}")
-                hive_client = HiveMetastoreClient(hive_metastore_uri)
-                add_log("Hive metastore client created successfully")
+                add_log(f"Connecting to Trino server at {http_scheme}://{trino_host}:{trino_port}")
+                add_log(f"Using Trino user: {trino_user} with role: {trino_role}")
+                
+            trino_client = TrinoClient(
+                host=trino_host,
+                port=trino_port,
+                user=trino_user,
+                password=trino_password,
+                http_scheme=http_scheme,
+                role=trino_role,
+                dry_run=dry_run
+            )
+            
+            if dry_run:
+                add_log("Trino client created in dry run mode - no actual connection will be made")
+            else:
+                add_log("Trino client created successfully")
+            
+            # Create Hive client if needed
+            hive_client = None
+            if use_hive_metastore:
+                if dry_run:
+                    add_log(f"Dry run mode: Would connect to Hive metastore at {hive_metastore_uri}")
+                    add_log("Skipping actual Hive metastore connection in dry run mode")
+                else:
+                    add_log(f"Connecting to Hive metastore at {hive_metastore_uri}")
+                    hive_client = HiveMetastoreClient(hive_metastore_uri)
+                    add_log("Hive metastore client created successfully")
+            else:
+                add_log("Direct Hive metastore connection disabled, using Trino metadata APIs only")
+            
+            # Parse table name parts
+            catalog_part, schema_part, table_part = parse_table_name(table_name)
+            
+            # Use specified parts or defaults
+            catalog = catalog_part or trino_catalog
+            schema = schema_part or trino_schema
+            table = table_part or table_name  # Fallback to full table_name if parsing failed
+            
+            add_log(f"Target Iceberg table: {catalog}.{schema}.{table}")
+            add_log(f"Using write mode: {mode}")
+            
+            # Create Iceberg writer for Trino
+            writer = IcebergWriter(
+                trino_client=trino_client,
+                catalog=catalog,
+                schema=schema,
+                table=table,
+                hive_client=hive_client
+            )
+            
+        elif connection_type == "s3_rest":
+            # Validate required S3 REST parameters
+            if not s3_rest_uri or not s3_warehouse_location:
+                error_msg = "S3 REST connection requires rest_uri and warehouse_location to be specified"
+                add_log(error_msg)
+                result['error'] = error_msg
+                return result
+                
+            # Handle AWS credentials
+            if aws_access_key_id and aws_secret_access_key:
+                auth_method = "AWS credentials"
+            elif s3_client_id and s3_client_secret:
+                auth_method = "OAuth"
+            elif s3_token:
+                auth_method = "Token"
+            else:
+                auth_method = "Default credentials chain"
+                
+            # Create S3 REST client
+            if dry_run:
+                add_log(f"Running in DRY RUN mode - simulating operations without connecting to S3 Tables")
+                add_log(f"Would connect to S3 Tables REST API at: {s3_rest_uri}")
+                add_log(f"Would use warehouse location: {s3_warehouse_location}")
+                add_log(f"Would use authentication method: {auth_method}")
+                
+                # Create a mock S3 REST client for dry run
+                s3_client = None
+            else:
+                add_log(f"Connecting to S3 Tables REST API at {s3_rest_uri}")
+                add_log(f"Using warehouse location: {s3_warehouse_location}")
+                add_log(f"Using authentication method: {auth_method}")
+                
+                # Create the S3 REST client
+                s3_client = S3RestClient(
+                    rest_uri=s3_rest_uri,
+                    warehouse_location=s3_warehouse_location,
+                    namespace=s3_namespace,
+                    client_id=s3_client_id,
+                    client_secret=s3_client_secret,
+                    token=s3_token,
+                    aws_access_key_id=aws_access_key_id,
+                    aws_secret_access_key=aws_secret_access_key,
+                    aws_session_token=aws_session_token,
+                    region=aws_region
+                )
+                add_log("S3 REST client created successfully")
+            
+            # Parse table name - S3 Tables expects simple table name
+            # If a fully qualified name is provided, extract just the table part
+            _, _, table_part = parse_table_name(table_name)
+            table = table_part or table_name
+            
+            add_log(f"Target Iceberg table: {s3_namespace}.{table}")
+            add_log(f"Using write mode: {mode}")
+            
+            # Create S3 Iceberg writer
+            writer = S3IcebergWriter(
+                s3_rest_client=s3_client,
+                namespace=s3_namespace,
+                table_name=table
+            )
+            
         else:
-            add_log("Direct Hive metastore connection disabled, using Trino metadata APIs only")
-        
-        # Parse table name parts
-        catalog_part, schema_part, table_part = parse_table_name(table_name)
-        
-        # Use specified parts or defaults
-        catalog = catalog_part or trino_catalog
-        schema = schema_part or trino_schema
-        table = table_part or table_name  # Fallback to full table_name if parsing failed
-        
-        add_log(f"Target Iceberg table: {catalog}.{schema}.{table}")
-        add_log(f"Using write mode: {mode}")
-        
-        # Create Iceberg writer
-        writer = IcebergWriter(
-            trino_client=trino_client,
-            catalog=catalog,
-            schema=schema,
-            table=table,
-            hive_client=hive_client
-        )
+            error_msg = f"Unsupported connection type: {connection_type}"
+            add_log(error_msg)
+            result['error'] = error_msg
+            return result
         
         # Add information about CSV file
         add_log(f"Processing CSV file: {csv_file}")
