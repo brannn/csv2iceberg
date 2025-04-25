@@ -1,32 +1,16 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
   <!-- Main stapler body -->
-  <rect x="15" y="35" width="70" height="20" rx="3" fill="#ff0000" stroke="#cc0000" stroke-width="2" />
+  <path d="M2,8 L22,8 L22,12 C22,13.1 21.1,14 20,14 L4,14 C2.9,14 2,13.1 2,12 L2,8 Z" fill="#ff0000" stroke="#cc0000" stroke-width="0.5" />
   
-  <!-- Stapler base -->
-  <rect x="20" y="55" width="60" height="15" rx="3" fill="#ff0000" stroke="#cc0000" stroke-width="2" />
+  <!-- Stapler base - slightly wider than top -->
+  <path d="M4,14 L20,14 L18,18 L6,18 L4,14 Z" fill="#ff0000" stroke="#cc0000" stroke-width="0.5" />
   
-  <!-- Stapler top (handle) -->
-  <rect x="45" y="15" width="40" height="12" rx="3" fill="#ff0000" stroke="#cc0000" stroke-width="2" />
+  <!-- Stapler top press -->
+  <path d="M10,6 L20,6 L20,8 L10,8 L10,6 Z" fill="#ff0000" stroke="#cc0000" stroke-width="0.5" />
   
-  <!-- Hinge -->
-  <rect x="45" y="27" width="5" height="8" fill="#cc0000" stroke="#cc0000" stroke-width="1" />
-  <rect x="60" y="27" width="5" height="8" fill="#cc0000" stroke="#cc0000" stroke-width="1" />
-  <rect x="75" y="27" width="5" height="8" fill="#cc0000" stroke="#cc0000" stroke-width="1" />
+  <!-- Stapler mechanism at front -->
+  <path d="M5,10 L12,10 C12.6,10 13,10.4 13,11 L13,11 C13,11.6 12.6,12 12,12 L5,12 L5,10 Z" fill="#dddddd" stroke="#aaaaaa" stroke-width="0.3" />
   
-  <!-- Staple area -->
-  <rect x="25" y="39" width="20" height="4" rx="1" fill="#dddddd" stroke="#aaaaaa" stroke-width="1" />
-  
-  <!-- Staple punch -->
-  <rect x="48" y="39" width="4" height="4" rx="1" fill="#dddddd" stroke="#aaaaaa" stroke-width="1" />
-  
-  <!-- Shadows and highlights -->
-  <rect x="15" y="50" width="70" height="5" fill="#cc0000" opacity="0.3" />
-  <rect x="20" y="65" width="60" height="5" fill="#cc0000" opacity="0.4" />
-  <rect x="45" y="15" width="40" height="4" fill="#ffffff" opacity="0.2" />
-  
-  <!-- Staples -->
-  <rect x="32" y="40" width="6" height="2" fill="#bbbbbb" />
-  
-  <!-- Stapler front edge -->
-  <rect x="15" y="35" width="7" height="20" rx="2" fill="#ff0000" stroke="#cc0000" stroke-width="2" />
+  <!-- Stapler hinge connections -->
+  <path d="M12,8 L12,6 M16,8 L16,6" stroke="#cc0000" stroke-width="1" fill="none" />
 </svg>
