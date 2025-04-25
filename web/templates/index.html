@@ -8,7 +8,10 @@
         <h1 class="display-5 fw-bold">
             Milton
             <span class="ms-3">
-              <img src="{{ url_for('static', filename='simple-stapler.svg') }}" alt="Red Stapler" width="50" height="30" style="vertical-align: middle;">
+              <span style="display: inline-block; width: 50px; height: 20px; background-color: #f00; border: 1px solid #900; border-radius: 3px; position: relative; top: -2px; overflow: visible;">
+                <span style="display: inline-block; width: 20px; height: 12px; background-color: #ddd; position: absolute; left: 3px; top: 4px; border-radius: 2px;"></span>
+                <span style="display: inline-block; width: 25px; height: 6px; background-color: #f00; border: 1px solid #900; position: absolute; right: 5px; top: -6px; border-radius: 2px 2px 0 0;"></span>
+              </span>
             </span>
         </h1>
         <p class="col-md-8 fs-4">Convert CSV files to Apache Iceberg tables with Trino</p>
