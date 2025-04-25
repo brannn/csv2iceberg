@@ -58,12 +58,13 @@ def cli():
 @click.option('--custom-schema', help='Path to a JSON file containing a custom schema definition')
 @click.option('--include-columns', help='Comma-separated list of column names to include (overrides exclude-columns)')
 @click.option('--exclude-columns', help='Comma-separated list of column names to exclude')
+@click.option('--dry-run', is_flag=True, help='Run in dry run mode - report queries without executing them')
 @click.option('--verbose', '-v', is_flag=True, help='Enable verbose logging')
 def convert(csv_file: str, delimiter: str, has_header: bool, quote_char: str, batch_size: int,
             table_name: str, trino_host: str, trino_port: int, trino_user: str, trino_password: Optional[str],
             http_scheme: str, trino_role: str, trino_catalog: str, trino_schema: str, hive_metastore_uri: str,
             use_hive_metastore: bool, mode: str, sample_size: int, custom_schema: Optional[str], 
-            include_columns: Optional[str], exclude_columns: Optional[str], verbose: bool):
+            include_columns: Optional[str], exclude_columns: Optional[str], dry_run: bool, verbose: bool):
     """
     Convert a CSV file to an Iceberg table.
     
