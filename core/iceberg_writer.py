@@ -54,6 +54,10 @@ class IcebergWriter:
         self._cached_target_schema = None
         self._cached_column_types_dict = None
         
+        # Performance metrics and dry run results
+        self.processing_stats = {}
+        self.dry_run_results = None
+        
     def invalidate_schema_cache(self):
         """
         Invalidate the schema cache.
@@ -159,10 +163,19 @@ class IcebergWriter:
             # Update column names based on filtering
             column_names = columns_to_keep
             
-            # Track progress
+            # Track progress and performance metrics
             processed_rows = 0
             last_progress = 0
             first_batch = True
+            
+            # Initialize batch statistics
+            batch_stats = {
+                "total_batches": 0,
+                "total_processing_time": 0,
+                "batch_sizes": [],
+                "batch_times": [],
+                "start_time": time.time()
+            }
             
             # Process in batches using streaming approach
             for batch_start in range(0, total_rows, batch_size):
@@ -170,8 +183,14 @@ class IcebergWriter:
                 batch_end = min(batch_start + batch_size, total_rows)
                 batch_size_actual = batch_end - batch_start
                 
+                # Track batch processing time
+                batch_start_time = time.time()
+                
                 # Get the current batch using Polars lazy evaluation
                 batch = lazy_reader.slice(batch_start, batch_size_actual).collect()
+                
+                # Record batch read time
+                batch_read_time = time.time() - batch_start_time
                 
                 # For first batch in overwrite mode, we need to use a different approach
                 current_mode = mode if not first_batch or mode != 'overwrite' else 'overwrite'
@@ -179,7 +198,22 @@ class IcebergWriter:
                     first_batch = False
                 
                 # Write the batch to the Iceberg table directly using Polars DataFrame
+                write_start_time = time.time()
                 self._write_batch_to_iceberg(batch, current_mode, dry_run, query_collector)
+                write_time = time.time() - write_start_time
+                
+                # Calculate total batch processing time
+                batch_total_time = time.time() - batch_start_time
+                
+                # Update batch statistics
+                batch_stats["total_batches"] += 1
+                batch_stats["batch_sizes"].append(len(batch))
+                batch_stats["batch_times"].append(batch_total_time)
+                batch_stats["total_processing_time"] += batch_total_time
+                
+                # Log performance metrics for this batch
+                logger.info(f"Batch {batch_stats['total_batches']}: {len(batch)} rows in {batch_total_time:.2f}s " +
+                           f"(Read: {batch_read_time:.2f}s, Write: {write_time:.2f}s)")
                 
                 # Update progress
                 processed_rows += len(batch)
@@ -195,6 +229,30 @@ class IcebergWriter:
             if last_progress < 100 and progress_callback:
                 progress_callback(100)
                 logger.info("Progress: 100%")
+            
+            # Calculate final performance metrics
+            total_elapsed_time = time.time() - batch_stats["start_time"]
+            avg_batch_size = sum(batch_stats["batch_sizes"]) / batch_stats["total_batches"] if batch_stats["total_batches"] > 0 else 0
+            avg_batch_time = sum(batch_stats["batch_times"]) / batch_stats["total_batches"] if batch_stats["total_batches"] > 0 else 0
+            processing_rate = processed_rows / total_elapsed_time if total_elapsed_time > 0 else 0
+            
+            # Store processing statistics for later access
+            self.processing_stats = {
+                "total_rows": processed_rows,
+                "total_batches": batch_stats["total_batches"],
+                "total_processing_time": total_elapsed_time,
+                "avg_batch_size": avg_batch_size,
+                "avg_batch_time": avg_batch_time,
+                "processing_rate": processing_rate,  # rows per second
+                "batch_sizes": batch_stats["batch_sizes"],
+                "batch_times": batch_stats["batch_times"]
+            }
+            
+            # Log performance summary
+            logger.info(f"Performance summary: {processed_rows} rows in {total_elapsed_time:.2f}s " +
+                       f"({processing_rate:.2f} rows/sec)")
+            logger.info(f"Batch statistics: {batch_stats['total_batches']} batches, " +
+                       f"avg size: {avg_batch_size:.1f} rows, avg time: {avg_batch_time:.3f}s")
             
             # For dry run mode, store the query_collector results and log a summary
             if dry_run and query_collector:

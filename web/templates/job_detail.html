@@ -163,6 +163,84 @@
                 </div>
             </div>
 
+            <!-- Performance Metrics Section -->
+            {% if job.status == 'completed' and job.performance_metrics %}
+            <div class="row mt-4">
+                <div class="col-12">
+                    <h5>Performance Metrics</h5>
+                    <div class="card">
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="card mb-3">
+                                        <div class="card-header bg-primary text-white">
+                                            <h6 class="mb-0">Processing Overview</h6>
+                                        </div>
+                                        <div class="card-body">
+                                            <table class="table table-sm">
+                                                <tbody>
+                                                    <tr>
+                                                        <th>Total Rows</th>
+                                                        <td><strong>{{ job.performance_metrics.total_rows }}</strong></td>
+                                                    </tr>
+                                                    <tr>
+                                                        <th>Processing Rate</th>
+                                                        <td>{{ "%.2f"|format(job.performance_metrics.processing_rate) }} rows/sec</td>
+                                                    </tr>
+                                                    <tr>
+                                                        <th>Total Processing Time</th>
+                                                        <td>{{ "%.2f"|format(job.performance_metrics.total_processing_time) }} seconds</td>
+                                                    </tr>
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="card mb-3">
+                                        <div class="card-header bg-info text-white">
+                                            <h6 class="mb-0">Batch Processing</h6>
+                                        </div>
+                                        <div class="card-body">
+                                            <table class="table table-sm">
+                                                <tbody>
+                                                    <tr>
+                                                        <th>Number of Batches</th>
+                                                        <td>{{ job.performance_metrics.total_batches }}</td>
+                                                    </tr>
+                                                    <tr>
+                                                        <th>Average Batch Size</th>
+                                                        <td>{{ "%.1f"|format(job.performance_metrics.avg_batch_size) }} rows</td>
+                                                    </tr>
+                                                    <tr>
+                                                        <th>Average Batch Time</th>
+                                                        <td>{{ "%.3f"|format(job.performance_metrics.avg_batch_time) }} seconds</td>
+                                                    </tr>
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="row mt-3">
+                                <div class="col-12">
+                                    <div class="alert alert-info">
+                                        <i class="fas fa-info-circle me-2"></i>
+                                        {% if job.params.dry_run %}
+                                            These metrics are from the dry run simulation. Actual performance with real database connections may vary.
+                                        {% else %}
+                                            These metrics can help you optimize future jobs by adjusting batch size and other parameters.
+                                        {% endif %}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+            
             <div class="row mt-4">
                 <div class="col-12">
                     <h5>Connection Details</h5>

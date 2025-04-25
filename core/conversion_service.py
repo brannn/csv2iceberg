@@ -194,6 +194,18 @@ def convert_csv_to_iceberg(
         result['success'] = True
         result['rows_processed'] = rows_written
         
+        # Capture performance metrics
+        if hasattr(writer, 'processing_stats') and writer.processing_stats:
+            result['performance_metrics'] = writer.processing_stats
+            add_log(f"Processing rate: {writer.processing_stats.get('processing_rate', 0):.2f} rows/sec")
+            add_log(f"Batches: {writer.processing_stats.get('total_batches', 0)}, " +
+                   f"avg size: {writer.processing_stats.get('avg_batch_size', 0):.1f} rows")
+            add_log(f"Total processing time: {writer.processing_stats.get('total_processing_time', 0):.2f}s")
+            
+        # Capture dry run results if available
+        if dry_run and hasattr(writer, 'dry_run_results') and writer.dry_run_results:
+            result['dry_run_results'] = writer.dry_run_results
+        
     except Exception as e:
         import traceback
         error_msg = str(e)
