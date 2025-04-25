@@ -452,6 +452,9 @@ class IcebergWriter:
                     raise RuntimeError(f"Failed to write data to Iceberg table: {str(e)}")
             
             logger.info(f"Successfully wrote {rows_processed} rows to {self.catalog}.{self.schema}.{self.table} using SQL INSERT method")
+        except Exception as e:
+            logger.error(f"Error in SQL INSERT fallback method: {str(e)}", exc_info=True)
+            raise RuntimeError(f"Failed to write data using SQL INSERT: {str(e)}")
 
 def count_csv_rows(
     csv_file: str, 
