@@ -255,6 +255,21 @@ adapter.close()
 
 ## Advanced Usage
 
+### How SQL Batcher Works
+
+SQL Batcher uses a client-side batching approach to optimize database operations:
+
+1. **Statement Collection**: You provide a list of SQL statements (typically INSERT statements).
+2. **Size Analysis**: SQL Batcher analyzes each statement's size in bytes.
+3. **Optimal Batching**: Statements are combined into batches up to the configured `max_bytes` limit.
+4. **Database-Specific Execution**:
+   - For PostgreSQL: Semicolon-separated statements can be executed in a single query
+   - For Trino/Presto: Each statement is executed individually within the same adapter
+   - For Snowflake: Statements are grouped within transaction blocks
+   - For BigQuery: Statements use either interactive or batch mode depending on size
+
+SQL Batcher doesn't attempt to modify the database's underlying query execution mechanism. Instead, it optimizes how multiple statements are grouped and submitted to the database, working within each system's constraints and capabilities.
+
 ### Dynamic Column-Based Batch Sizing
 
 SQL Batcher now includes dynamic batch sizing based on the number of columns in your INSERT statements. This feature automatically adjusts the batch size to optimize performance based on table width.
@@ -1027,7 +1042,7 @@ Different databases have unique feature sets and limitations:
 ### PostgreSQL
 - **Query Size Limit**: Practical limit ~500MB
 - **Transaction Support**: Full ACID compliance
-- **Batch Execution**: Multiple statements per query
+- **Batch Strategy**: Client-side batching with semicolon-separated statements
 - **COPY Command**: Ultra-fast bulk data loading
 - **Advanced Features**: JSONB, Array types, GIN/GiST indices
 - **Ideal Batch Size**: 500KB-5MB
@@ -1035,25 +1050,25 @@ Different databases have unique feature sets and limitations:
 ### Trino (formerly PrestoSQL)
 - **Query Size Limit**: ~1MB
 - **Transaction Support**: Limited, depends on catalog (Hive ACID, etc.)
-- **Batch Execution**: Multiple statements per query
+- **Batch Strategy**: Client-side statement batching (one statement per execution)
 - **Ideal Batch Size**: 500-900KB
 
 ### Snowflake
 - **Query Size Limit**: 1MB for UI, 50MB for JDBC/ODBC
 - **Transaction Support**: Yes (multi-statement)
-- **Batch Execution**: Multiple statements per transaction
+- **Batch Strategy**: Client-side batching with transaction blocks
 - **Ideal Batch Size**: 1-10MB
 
 ### BigQuery
 - **Query Size Limit**: 1MB for interactive, 20MB for batch
 - **Transaction Support**: Yes (since 2022)
-- **Batch Execution**: Jobs API for large operations
+- **Batch Strategy**: Client-side batching with Jobs API for large operations
 - **Ideal Batch Size**: 10-15MB for batch mode
 
 ### Spark SQL
 - **Query Size Limit**: Depends on driver memory
 - **Transaction Support**: Limited (Delta Lake adds ACID)
-- **Batch Execution**: SparkSession.sql() for multiple statements
+- **Batch Strategy**: Sequential statement execution via SparkSession.sql()
 - **Ideal Batch Size**: 10-50MB
 
 ## License

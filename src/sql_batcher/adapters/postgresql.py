@@ -1,303 +1,162 @@
 """
 PostgreSQL adapter for SQL Batcher.
 
-This module provides a specialized adapter for PostgreSQL databases, taking advantage
-of PostgreSQL-specific features and optimizations.
+This module provides a PostgreSQL-specific adapter for SQL Batcher with
+optimizations for PostgreSQL features like COPY commands and transaction management.
 """
+import csv
+import io
+import os
 from typing import Any, Dict, List, Optional, Tuple, Union
-import logging
-import re
 
 from sql_batcher.adapters.base import SQLAdapter
 
-# Optional imports to avoid hard dependency
 try:
     import psycopg2
     import psycopg2.extras
-    _has_psycopg2 = True
+    PSYCOPG2_AVAILABLE = True
 except ImportError:
-    _has_psycopg2 = False
-
-
-logger = logging.getLogger(__name__)
+    PSYCOPG2_AVAILABLE = False
 
 
 class PostgreSQLAdapter(SQLAdapter):
     """
-    PostgreSQL adapter for SQL Batcher.
+    Adapter for PostgreSQL database connections.
     
-    This adapter provides a SQL Batcher interface specifically optimized for PostgreSQL,
-    implementing features that take advantage of PostgreSQL's capabilities.
+    This adapter is optimized for PostgreSQL's specific features, including:
+    - Multiple statements per query (semicolon-separated)
+    - COPY command for bulk data loading
+    - Full ACID transaction support
+    - JSONB, array, and other PostgreSQL-specific data types
     
-    Attributes:
-        connection: PostgreSQL database connection
-        cursor: Current cursor for executing queries
-        max_query_size: Maximum query size in bytes (default 500MB for PostgreSQL)
-        isolation_level: Transaction isolation level (0-3)
-        cursor_factory: Factory for creating cursors
-        fetch_results: Whether to fetch results by default
+    Args:
+        connection_params: Dictionary of connection parameters
+        isolation_level: Transaction isolation level (read_committed, etc.)
+        cursor_factory: Optional cursor factory class
+        application_name: Optional application name for monitoring
     """
     
     def __init__(
-        self, 
-        connection_params: Optional[Dict[str, Any]] = None,
-        connection: Optional[Any] = None,
-        max_query_size: int = 500_000_000,  # 500MB is a practical limit for PostgreSQL
-        isolation_level: str = "read_committed",
+        self,
+        connection_params: Dict[str, Any],
+        isolation_level: Optional[str] = None,
         cursor_factory: Optional[Any] = None,
-        fetch_results: bool = True,
-        application_name: Optional[str] = "sql_batcher"
+        application_name: Optional[str] = None
     ):
-        """
-        Initialize the PostgreSQL adapter.
-        
-        Args:
-            connection_params: Dictionary of PostgreSQL connection parameters
-            connection: Existing PostgreSQL connection to use (optional)
-            max_query_size: Maximum query size in bytes
-            isolation_level: Transaction isolation level
-                (read_committed, repeatable_read, serializable)
-            cursor_factory: Factory for creating cursors
-                (e.g., psycopg2.extras.DictCursor, psycopg2.extras.NamedTupleCursor)
-            fetch_results: Whether to fetch results by default
-            application_name: Application name to set in PostgreSQL (for monitoring)
-            
-        Raises:
-            ImportError: If psycopg2 is not installed
-            ValueError: If both connection and connection_params are None
-            RuntimeError: If connection to PostgreSQL fails
-        """
-        if not _has_psycopg2:
+        """Initialize the PostgreSQL adapter."""
+        if not PSYCOPG2_AVAILABLE:
             raise ImportError(
-                "psycopg2 is not installed. "
-                "Install it with 'pip install \"sql-batcher[postgresql]\"'"
+                "psycopg2-binary package is required for PostgreSQLAdapter. "
+                "Install it with: pip install psycopg2-binary"
             )
         
-        # Import isolation levels here to avoid issues
-        from psycopg2.extensions import ISOLATION_LEVEL_READ_COMMITTED
-        from psycopg2.extensions import ISOLATION_LEVEL_REPEATABLE_READ
-        from psycopg2.extensions import ISOLATION_LEVEL_SERIALIZABLE
+        # Add application name if provided
+        if application_name:
+            connection_params = connection_params.copy()
+            connection_params["application_name"] = application_name
         
-        # Set up isolation level mapping
-        isolation_levels = {
-            "read_committed": ISOLATION_LEVEL_READ_COMMITTED,
-            "repeatable_read": ISOLATION_LEVEL_REPEATABLE_READ,
-            "serializable": ISOLATION_LEVEL_SERIALIZABLE,
-        }
+        # Create connection
+        self._connection = psycopg2.connect(**connection_params)
         
-        self.max_query_size = max_query_size
-        self.fetch_results = fetch_results
+        # Set isolation level if provided
+        if isolation_level:
+            if isolation_level.lower() == "read_committed":
+                self._connection.isolation_level = psycopg2.extensions.ISOLATION_LEVEL_READ_COMMITTED
+            elif isolation_level.lower() == "serializable":
+                self._connection.isolation_level = psycopg2.extensions.ISOLATION_LEVEL_SERIALIZABLE
+            elif isolation_level.lower() == "repeatable_read":
+                self._connection.isolation_level = psycopg2.extensions.ISOLATION_LEVEL_REPEATABLE_READ
+            elif isolation_level.lower() == "read_uncommitted":
+                self._connection.isolation_level = psycopg2.extensions.ISOLATION_LEVEL_READ_UNCOMMITTED
         
-        # Set up cursor factory
-        self.cursor_factory = cursor_factory
-        
-        # Determine the isolation level
-        if isolation_level not in isolation_levels:
-            raise ValueError(
-                f"Invalid isolation level: {isolation_level}. "
-                f"Valid values are: {', '.join(isolation_levels.keys())}"
-            )
-        self.isolation_level = isolation_levels[isolation_level]
-        
-        # Set up connection
-        if connection is None and connection_params is None:
-            raise ValueError("Either connection or connection_params must be provided")
-        
-        if connection is None:
-            # Add application name to connection parameters if not present
-            if application_name and connection_params is not None and "application_name" not in connection_params:
-                connection_params["application_name"] = application_name
-            
-            try:
-                # Import psycopg2 again inside the function to ensure it's available
-                # This avoids the "possibly unbound" LSP error
-                import psycopg2 as pg2
-                
-                conn_params = connection_params or {}
-                self.connection = pg2.connect(**conn_params)
-                self.connection.set_isolation_level(self.isolation_level)
-                self.connection.autocommit = False
-            except Exception as e:
-                raise RuntimeError(f"Failed to connect to PostgreSQL: {str(e)}")
+        # Create cursor with factory if provided
+        self._cursor_factory = cursor_factory
+        if cursor_factory:
+            self._cursor = self._connection.cursor(cursor_factory=cursor_factory)
         else:
-            self.connection = connection
-            
-            # Set isolation level on existing connection if possible
-            try:
-                self.connection.set_isolation_level(self.isolation_level)
-            except Exception as e:
-                logger.warning(
-                    f"Could not set isolation level on existing connection: {str(e)}"
-                )
-        
-        # Create a cursor
-        self.cursor = self.create_cursor()
-        
-        # Flag to track transaction state
-        self._in_transaction = False
-            
-    def create_cursor(self):
-        """
-        Create a new cursor with the configured cursor factory.
-        
-        Returns:
-            New cursor object
-        """
-        if self.cursor_factory:
-            return self.connection.cursor(cursor_factory=self.cursor_factory)
-        else:
-            return self.connection.cursor()
+            self._cursor = self._connection.cursor()
     
     def get_max_query_size(self) -> int:
         """
         Get the maximum query size in bytes.
         
+        PostgreSQL has a practical limit around 500MB for query size,
+        but we use a much more conservative default for better performance.
+        
         Returns:
             Maximum query size in bytes
         """
-        return self.max_query_size
+        return 5_000_000  # 5MB default limit (conservative)
     
-    def execute(self, sql: str) -> List[Tuple]:
+    def execute(self, sql: str) -> List[Any]:
         """
-        Execute a SQL query.
+        Execute a SQL statement and return results.
+        
+        PostgreSQL supports executing multiple statements in a single query
+        by separating them with semicolons. This allows SQL Batcher to combine
+        multiple statements into a single execution for better performance.
         
         Args:
-            sql: SQL query to execute
+            sql: SQL statement(s) to execute
             
         Returns:
-            List of result rows
-            
-        Raises:
-            RuntimeError: If there's an error executing the query
-        """
-        # Check for COPY statements which need special handling
-        if re.match(r'^\s*COPY\s+', sql, re.IGNORECASE):
-            return self._execute_copy(sql)
-        
-        try:
-            self.cursor.execute(sql)
-            
-            if self.fetch_results and self.cursor.description is not None:
-                return self.cursor.fetchall()
-            return []
-        except Exception as e:
-            logger.error(f"PostgreSQL error: {str(e)}")
-            if self._in_transaction:
-                logger.info("Rolling back transaction due to error")
-                self.rollback_transaction()
-            raise RuntimeError(f"Failed to execute PostgreSQL query: {str(e)}")
-    
-    def _execute_copy(self, sql: str) -> List[Tuple]:
-        """
-        Execute a COPY statement, which needs special handling in psycopg2.
-        
-        Args:
-            sql: COPY SQL statement to execute
-            
-        Returns:
-            Empty list (COPY doesn't return rows)
-            
-        Raises:
-            RuntimeError: If there's an error executing the COPY statement
+            List of result rows (for SELECT queries) or empty list for others
         """
         try:
-            # For COPY, we need to use connection.commit() after execution
-            # as COPY statements implicitly commit in PostgreSQL
-            self.cursor.execute(sql)
-            self.connection.commit()
+            self._cursor.execute(sql)
             
-            # COPY doesn't return rows, but returns a count of rows affected
+            # For SELECT statements, return the results
+            if self._cursor.description is not None:
+                return self._cursor.fetchall()
+            
+            # For other statements, return empty list
             return []
         except Exception as e:
-            logger.error(f"PostgreSQL COPY error: {str(e)}")
-            if self._in_transaction:
-                logger.info("Rolling back transaction due to error")
-                self.rollback_transaction()
-            raise RuntimeError(f"Failed to execute PostgreSQL COPY: {str(e)}")
-    
-    def execute_batch(self, statements: List[str]) -> List[Tuple]:
-        """
-        Execute a batch of statements.
-        
-        This method provides simplified batch execution. For complex batch operations
-        or better performance with many similar queries, consider using the `executemany`
-        functionality available in the psycopg2 driver directly.
-        
-        Args:
-            statements: List of SQL statements to execute
-            
-        Returns:
-            Combined results from all executed statements
-        """
-        if not statements:
-            return []
-        
-        results = []
-        for statement in statements:
-            res = self.execute(statement)
-            results.extend(res)
-        return results
+            # Add context to the error
+            raise Exception(f"PostgreSQL Error executing SQL: {str(e)}") from e
     
     def begin_transaction(self) -> None:
-        """
-        Begin a transaction.
-        """
-        if not self._in_transaction:
-            # PostgreSQL is in transaction by default, but we can be explicit
-            self.execute("BEGIN")
-            self._in_transaction = True
+        """Begin a transaction."""
+        self._connection.autocommit = False
     
     def commit_transaction(self) -> None:
-        """
-        Commit the current transaction.
-        """
-        if self._in_transaction:
-            self.connection.commit()
-            self._in_transaction = False
+        """Commit the current transaction."""
+        self._connection.commit()
     
     def rollback_transaction(self) -> None:
-        """
-        Rollback the current transaction.
-        """
-        if self._in_transaction:
-            self.connection.rollback()
-            self._in_transaction = False
+        """Rollback the current transaction."""
+        self._connection.rollback()
     
     def close(self) -> None:
-        """
-        Close the connection.
-        """
-        if hasattr(self, 'cursor') and self.cursor:
-            self.cursor.close()
-        
-        if hasattr(self, 'connection') and self.connection:
-            self.connection.close()
+        """Close the connection."""
+        if hasattr(self, '_cursor') and self._cursor is not None:
+            self._cursor.close()
+        if hasattr(self, '_connection') and self._connection is not None:
+            self._connection.close()
     
     def explain_analyze(self, sql: str) -> List[Tuple]:
         """
-        Run EXPLAIN ANALYZE on a query to get execution plan details.
+        Run EXPLAIN ANALYZE on a query.
         
         Args:
             sql: SQL query to analyze
             
         Returns:
-            List of rows with execution plan information
+            Execution plan as a list of rows
         """
-        explain_sql = f"EXPLAIN (ANALYZE, VERBOSE, BUFFERS) {sql}"
+        explain_sql = f"EXPLAIN ANALYZE {sql}"
         return self.execute(explain_sql)
     
-    def create_temp_table(self, table_name: str, as_select: Optional[str] = None) -> None:
+    def create_temp_table(self, table_name: str, column_defs: str) -> None:
         """
-        Create a temporary table, optionally populating it with a SELECT query.
+        Create a temporary table.
         
         Args:
-            table_name: Name for the temporary table
-            as_select: Optional SELECT query to populate the table
+            table_name: Name of the temporary table
+            column_defs: Column definitions as a SQL string
         """
-        if as_select:
-            self.execute(f"CREATE TEMP TABLE {table_name} AS {as_select}")
-        else:
-            self.execute(f"CREATE TEMP TABLE {table_name} (LIKE {table_name} INCLUDING ALL)")
+        sql = f"CREATE TEMPORARY TABLE {table_name} ({column_defs})"
+        self.execute(sql)
     
     def get_server_version(self) -> Tuple[int, int, int]:
         """
@@ -306,122 +165,118 @@ class PostgreSQLAdapter(SQLAdapter):
         Returns:
             Tuple of (major, minor, patch) version numbers
         """
-        result = self.execute("SHOW server_version")
-        version_str = result[0][0]
-        
-        # Parse version string (e.g., "14.2" or "14.2 (Debian 14.2-1.pgdg110+1)")
-        match = re.match(r'(\d+)\.(\d+)(?:\.(\d+))?', version_str)
-        if match:
-            major = int(match.group(1))
-            minor = int(match.group(2))
-            patch = int(match.group(3)) if match.group(3) else 0
-            return (major, minor, patch)
-        else:
-            # Return a default if we can't parse
-            return (0, 0, 0)
-            
-    def use_copy_for_bulk_insert(self, table_name: str, column_names: List[str], 
-                                 data: List[Tuple], temp_file: Optional[str] = None) -> int:
+        return self._connection.server_version // 10000, (self._connection.server_version // 100) % 100, self._connection.server_version % 100
+    
+    def execute_batch(self, statements: List[str]) -> int:
         """
-        Use PostgreSQL's COPY command for efficient bulk data loading.
+        Execute multiple statements as a batch.
         
-        This method provides a much faster alternative to INSERT statements for
-        bulk data loading.
+        This is optimized for PostgreSQL which can handle multiple statements
+        in a single execution when separated by semicolons.
         
         Args:
-            table_name: Name of the target table
-            column_names: List of column names
-            data: List of data tuples (must match column order)
-            temp_file: Optional path to temp file for COPY FROM (if None, uses COPY FROM STDIN)
+            statements: List of SQL statements to execute
             
         Returns:
-            Number of rows inserted
-            
-        Raises:
-            RuntimeError: If there's an error during the COPY operation
+            Number of statements executed
         """
-        columns_clause = f"({', '.join(column_names)})" if column_names else ""
+        if not statements:
+            return 0
         
-        try:
-            if temp_file:
-                # Write data to temp file and use COPY FROM file
-                with open(temp_file, 'w') as f:
-                    for row in data:
-                        f.write('\t'.join(str(x) for x in row) + '\n')
-                
-                self.execute(f"COPY {table_name} {columns_clause} FROM '{temp_file}'")
-                return len(data)
-            else:
-                # Use COPY FROM STDIN for direct streaming
-                try:
-                    # First try using the modern context manager approach if available
-                    if hasattr(self.cursor, 'copy'):
-                        # psycopg2 >= 2.8
-                        with self.cursor.copy(f"COPY {table_name} {columns_clause} FROM STDIN") as copy:
-                            for row in data:
-                                copy.write_row(row)
-                    else:
-                        # Fallback for older psycopg2 versions using copy_from
-                        from io import StringIO
-                        output = StringIO()
-                        for row in data:
-                            # Convert each value to string and escape tab characters
-                            values = [
-                                str(val).replace('\t', '\\t').replace('\n', '\\n').replace('\r', '\\r')
-                                if val is not None else '\\N'
-                                for val in row
-                            ]
-                            output.write('\t'.join(values) + '\n')
-                        
-                        output.seek(0)
-                        self.cursor.copy_from(output, table_name, columns=column_names)
-                except AttributeError:
-                    # If neither copy nor copy_from is available, execute INSERT statements as fallback
-                    logger.warning("COPY functionality not available in this psycopg2 version - falling back to INSERT")
-                    for row in data:
-                        placeholders = ", ".join(["%s"] * len(row))
-                        insert_sql = f"INSERT INTO {table_name} {columns_clause} VALUES ({placeholders})"
-                        self.cursor.execute(insert_sql, row)
-                
-                return len(data)
-        except Exception as e:
-            logger.error(f"PostgreSQL COPY error: {str(e)}")
-            if self._in_transaction:
-                self.rollback_transaction()
-            raise RuntimeError(f"Failed to execute PostgreSQL bulk insert via COPY: {str(e)}")
-            
-    def create_indices(self, table_name: str, indices: List[Dict[str, Any]]) -> None:
+        # Combine statements with semicolons
+        combined_sql = ";\n".join(statements) + ";"
+        
+        # Execute the combined SQL
+        self.execute(combined_sql)
+        
+        return len(statements)
+    
+    def use_copy_for_bulk_insert(
+        self,
+        table_name: str,
+        column_names: List[str],
+        data: List[Tuple],
+        delimiter: str = "\t"
+    ) -> int:
         """
-        Create multiple indices on a table with error handling.
+        Use PostgreSQL's COPY command for bulk data loading.
+        
+        This is much faster than individual INSERT statements for large datasets.
         
         Args:
-            table_name: Name of the table to create indices on
-            indices: List of index specifications, each a dict with keys:
-                - 'columns': List of column names
-                - 'name': Optional index name
-                - 'unique': Boolean indicating if this is a unique index
-                - 'method': Optional index method (btree, hash, gin, etc.)
-                - 'where': Optional WHERE clause for partial indices
-                - 'concurrent': Whether to create the index concurrently
+            table_name: Target table name
+            column_names: List of column names
+            data: List of data tuples
+            delimiter: Delimiter for COPY command (default: tab)
+            
+        Returns:
+            Number of rows copied
         """
-        for idx in indices:
-            columns = idx.get('columns', [])
+        if not data:
+            return 0
+        
+        column_clause = ", ".join(column_names)
+        
+        # Create a file-like object in memory
+        csv_data = io.StringIO()
+        csv_writer = csv.writer(csv_data, delimiter=delimiter)
+        
+        # Write all data rows
+        for row in data:
+            csv_writer.writerow(row)
+        
+        # Reset position to start of the buffer
+        csv_data.seek(0)
+        
+        # Execute the COPY FROM command
+        with self._connection.cursor() as copy_cursor:
+            copy_cursor.copy_expert(
+                f"COPY {table_name} ({column_clause}) FROM STDIN WITH DELIMITER '{delimiter}'",
+                csv_data
+            )
+        
+        # Commit the copy operation
+        self._connection.commit()
+        
+        return len(data)
+    
+    def create_indices(
+        self,
+        table_name: str,
+        indices: List[Dict[str, Union[str, List[str]]]]
+    ) -> List[str]:
+        """
+        Create indices on a table.
+        
+        Args:
+            table_name: Target table name
+            indices: List of index definitions
+                Each index is a dict with:
+                - columns: List of column names
+                - name: Index name
+                - unique: Whether the index is unique (optional)
+                - method: Index method (btree, hash, gin, etc.) (optional)
+                - where: WHERE clause (optional)
+            
+        Returns:
+            List of created index names
+        """
+        created_indices = []
+        
+        for index_def in indices:
+            columns = index_def.get("columns", [])
             if not columns:
                 continue
                 
-            name = idx.get('name', f"idx_{table_name}_{'_'.join(columns)}")
-            unique = "UNIQUE " if idx.get('unique', False) else ""
-            method = f"USING {idx['method']} " if idx.get('method') else ""
-            where = f"WHERE {idx['where']}" if idx.get('where') else ""
-            concurrent = "CONCURRENTLY " if idx.get('concurrent', False) else ""
+            index_name = index_def.get("name", f"idx_{table_name}_{'_'.join(columns)}")
+            unique = "UNIQUE " if index_def.get("unique", False) else ""
+            method = index_def.get("method", "btree")
+            where = f" WHERE {index_def['where']}" if "where" in index_def else ""
             
-            columns_str = ', '.join(columns)
+            column_clause = ", ".join(columns)
             
-            try:
-                self.execute(
-                    f"CREATE {unique}INDEX {concurrent}{name} ON {table_name} {method}({columns_str}) {where}"
-                )
-            except Exception as e:
-                logger.error(f"Failed to create index {name}: {str(e)}")
-                # Continue with other indices even if one fails
-                continue
+            sql = f"CREATE {unique}INDEX IF NOT EXISTS {index_name} ON {table_name} USING {method} ({column_clause}){where}"
+            self.execute(sql)
+            created_indices.append(index_name)
+        
+        return created_indices

@@ -10,30 +10,31 @@ Requirements:
 - psycopg2-binary package: pip install psycopg2-binary
 - sql-batcher[postgresql]: pip install "sql-batcher[postgresql]"
 """
-
-from typing import List, Tuple
-import os
-import time
-import logging
 import argparse
 import json
+import os
+import random
+import time
+from datetime import datetime, timedelta
+from typing import Dict, List, Tuple
 
 from sql_batcher import SQLBatcher
 from sql_batcher.adapters.postgresql import PostgreSQLAdapter
-from sql_batcher.query_collector import ListQueryCollector
-
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
 
 
-def get_connection_params():
-    """Get PostgreSQL connection parameters from environment or defaults."""
+def get_connection_params() -> Dict[str, str]:
+    """
+    Get PostgreSQL connection parameters from environment or defaults.
+    
+    Returns:
+        Dictionary of connection parameters
+    """
     return {
         "host": os.environ.get("PGHOST", "localhost"),
-        "port": int(os.environ.get("PGPORT", 5432)),
-        "database": os.environ.get("PGDATABASE", "postgres"),
+        "port": os.environ.get("PGPORT", "5432"),
         "user": os.environ.get("PGUSER", "postgres"),
         "password": os.environ.get("PGPASSWORD", "postgres"),
+        "dbname": os.environ.get("PGDATABASE", "postgres"),
     }
 
 
@@ -44,59 +45,50 @@ def setup_database(adapter: PostgreSQLAdapter) -> None:
     Args:
         adapter: PostgreSQL adapter instance
     """
-    logger.info("Setting up database tables...")
+    print("Setting up database schema...")
     
-    # Create products table with PostgreSQL-specific features
+    # Create products table
     adapter.execute("""
     CREATE TABLE IF NOT EXISTS products (
         id SERIAL PRIMARY KEY,
-        name VARCHAR(100) NOT NULL,
-        description TEXT,
+        sku VARCHAR(50) UNIQUE NOT NULL,
+        name VARCHAR(255) NOT NULL,
+        category VARCHAR(100) NOT NULL,
         price DECIMAL(10, 2) NOT NULL,
-        category VARCHAR(50),
-        tags TEXT[],
-        metadata JSONB DEFAULT '{}',
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        stock INTEGER NOT NULL DEFAULT 0,
+        attributes JSONB DEFAULT '{}'::jsonb,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     )
-    """)
-    
-    # Create indices for performance
-    adapter.execute("""
-    CREATE INDEX IF NOT EXISTS idx_products_category ON products(category);
-    """)
-    
-    adapter.execute("""
-    CREATE INDEX IF NOT EXISTS idx_products_price ON products(price);
-    """)
-    
-    # Create GIN index for JSONB and array data
-    adapter.execute("""
-    CREATE INDEX IF NOT EXISTS idx_products_metadata ON products USING GIN(metadata);
-    """)
-    
-    adapter.execute("""
-    CREATE INDEX IF NOT EXISTS idx_products_tags ON products USING GIN(tags);
     """)
     
     # Create orders table
     adapter.execute("""
     CREATE TABLE IF NOT EXISTS orders (
         id SERIAL PRIMARY KEY,
-        customer_name VARCHAR(100) NOT NULL,
+        order_number VARCHAR(50) UNIQUE NOT NULL,
+        customer_name VARCHAR(255) NOT NULL,
         customer_email VARCHAR(255) NOT NULL,
-        order_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        status VARCHAR(20) DEFAULT 'pending',
+        status VARCHAR(50) NOT NULL DEFAULT 'pending',
         total_amount DECIMAL(12, 2) NOT NULL,
-        shipping_address JSONB,
-        items JSONB
+        order_date TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        metadata JSONB DEFAULT '{}'::jsonb
     )
     """)
     
-    # For fresh demo, truncate tables
-    adapter.execute("TRUNCATE TABLE products, orders CASCADE")
+    # Create order_items table
+    adapter.execute("""
+    CREATE TABLE IF NOT EXISTS order_items (
+        id SERIAL PRIMARY KEY,
+        order_id INTEGER REFERENCES orders(id),
+        product_id INTEGER REFERENCES products(id),
+        quantity INTEGER NOT NULL,
+        unit_price DECIMAL(10, 2) NOT NULL,
+        total_price DECIMAL(10, 2) NOT NULL,
+        UNIQUE(order_id, product_id)
+    )
+    """)
     
-    logger.info("Database setup complete")
+    print("Database schema created successfully")
 
 
 def generate_product_data(num_products: int) -> List[Tuple]:
@@ -109,55 +101,40 @@ def generate_product_data(num_products: int) -> List[Tuple]:
     Returns:
         List of product data tuples
     """
-    categories = ["Electronics", "Clothing", "Books", "Home", "Food", "Sports"]
-    tag_sets = [
-        ["new", "featured", "sale"],
-        ["clearance", "limited"],
-        ["organic", "vegan", "gluten-free"],
-        ["imported", "handmade", "luxury"],
-        ["eco-friendly", "sustainable", "recycled"]
+    print(f"Generating {num_products} sample products...")
+    
+    categories = ["Electronics", "Books", "Clothing", "Home", "Food", "Toys"]
+    attributes = [
+        {"color": "Red", "weight": "1.5kg", "dimensions": "10x15x5cm"},
+        {"color": "Blue", "material": "Cotton", "size": "M"},
+        {"color": "Black", "connectivity": "Bluetooth", "battery": "10h"},
+        {"material": "Wood", "finish": "Matte", "assembly_required": True},
+        {"pages": 350, "language": "English", "format": "Hardcover"},
+        {"ingredients": ["Sugar", "Flour", "Butter"], "allergens": ["Gluten", "Dairy"]}
     ]
     
     products = []
     for i in range(1, num_products + 1):
-        # Generate sample product data
-        product_id = i
-        name = f"Product {i}"
-        description = f"This is a detailed description for product {i}"
-        price = round((i % 100) * 1.25 + 9.99, 2)
-        category = categories[i % len(categories)]
+        category = random.choice(categories)
+        sku = f"{category[0:3].upper()}{i:06d}"
+        name = f"{category} Product {i}"
+        price = round(random.uniform(9.99, 999.99), 2)
+        stock = random.randint(0, 1000)
         
-        # Create array of tags
-        tags = tag_sets[i % len(tag_sets)]
-        if i % 5 == 0:
-            tags.append("bestseller")
+        # Select attributes relevant to the category
+        category_index = categories.index(category) % len(attributes)
+        product_attributes = attributes[category_index].copy()
         
-        # Create sample metadata as JSONB
-        metadata = {
-            "weight": (i % 10) + 0.5,
-            "dimensions": {
-                "width": (i % 10) + 5,
-                "height": (i % 15) + 2,
-                "depth": (i % 8) + 1
-            },
-            "in_stock": i % 3 != 0,
-            "supplier_id": f"SUP{i % 50 + 1:03d}",
-            "rating": (i % 5) + 1
-        }
+        # Add some random attributes
+        if random.random() > 0.5:
+            product_attributes["featured"] = random.random() > 0.8
+        if random.random() > 0.7:
+            product_attributes["rating"] = round(random.uniform(1, 5), 1)
         
-        # Convert metadata to JSON string
-        metadata_json = json.dumps(metadata)
+        # Convert to JSON string
+        json_attributes = json.dumps(product_attributes)
         
-        # Add to products list (for COPY bulk insert)
-        products.append((
-            product_id,
-            name,
-            description,
-            price,
-            category,
-            tags,
-            metadata_json
-        ))
+        products.append((sku, name, category, price, stock, json_attributes))
     
     return products
 
@@ -173,53 +150,64 @@ def generate_order_data(num_orders: int, max_product_id: int) -> List[str]:
     Returns:
         List of SQL INSERT statements for orders
     """
-    statements = []
+    print(f"Generating {num_orders} sample orders...")
+    
+    order_statements = []
+    now = datetime.now()
     
     for i in range(1, num_orders + 1):
+        # Order details
+        order_number = f"ORD-{i:06d}"
         customer_name = f"Customer {i}"
         customer_email = f"customer{i}@example.com"
+        status = random.choice(["pending", "processing", "shipped", "delivered", "cancelled"])
         
-        # Generate a random total between $10 and $500
-        total_amount = round((i % 49) * 10 + 10.99, 2)
+        # Create order date within the last 30 days
+        days_ago = random.randint(0, 30)
+        order_date = (now - timedelta(days=days_ago)).strftime("%Y-%m-%d %H:%M:%S")
         
-        # Create shipping address JSON
-        shipping_address = {
-            "street": f"{i % 999 + 100} Main St",
-            "city": f"City {i % 50 + 1}",
-            "state": f"State {i % 50 + 1}",
-            "zip": f"{i % 90000 + 10000}",
-            "country": "USA"
-        }
+        # Generate 1-5 items per order
+        num_items = random.randint(1, 5)
+        order_items = []
+        total_amount = 0
         
         # Create order items
-        num_items = (i % 5) + 1
-        items = []
-        for j in range(num_items):
-            product_id = (i + j) % max_product_id + 1
-            items.append({
+        for _ in range(num_items):
+            product_id = random.randint(1, max_product_id)
+            quantity = random.randint(1, 5)
+            unit_price = round(random.uniform(9.99, 99.99), 2)
+            total_price = round(quantity * unit_price, 2)
+            total_amount += total_price
+            
+            order_items.append({
                 "product_id": product_id,
-                "quantity": (j % 3) + 1,
-                "price": round((product_id % 100) * 1.25 + 9.99, 2)
+                "quantity": quantity,
+                "unit_price": unit_price
             })
         
-        # Create the INSERT statement with JSON values
-        statement = f"""
+        # Order metadata
+        metadata = {
+            "items_count": num_items,
+            "source": random.choice(["web", "mobile", "store", "phone"]),
+            "shipping_method": random.choice(["standard", "express", "pickup"]),
+            "notes": f"Test order {i}" if random.random() > 0.8 else ""
+        }
+        
+        # Create order INSERT statement
+        order_stmt = f"""
         INSERT INTO orders (
-            customer_name, customer_email, total_amount, 
-            shipping_address, items, status
+            order_number, customer_name, customer_email, 
+            status, total_amount, order_date, metadata
         ) VALUES (
-            '{customer_name}', 
-            '{customer_email}', 
-            {total_amount}, 
-            '{json.dumps(shipping_address)}'::jsonb, 
-            '{json.dumps(items)}'::jsonb,
-            '{'complete' if i % 4 == 0 else 'pending' if i % 4 == 1 else 'shipped' if i % 4 == 2 else 'cancelled'}'
-        )
+            '{order_number}', '{customer_name}', '{customer_email}',
+            '{status}', {total_amount:.2f}, '{order_date}',
+            '{json.dumps(metadata)}'::jsonb
+        ) RETURNING id;
         """
         
-        statements.append(statement)
+        order_statements.append(order_stmt)
     
-    return statements
+    return order_statements
 
 
 def run_postgresql_example(args: argparse.Namespace) -> None:
@@ -229,191 +217,149 @@ def run_postgresql_example(args: argparse.Namespace) -> None:
     Args:
         args: Command-line arguments
     """
+    print("SQL Batcher - PostgreSQL Example")
+    print("================================")
+    
+    # Get connection parameters
     connection_params = get_connection_params()
+    print(f"Connecting to PostgreSQL at {connection_params['host']}:{connection_params['port']}...")
     
-    # Log connection info (without password)
-    safe_params = {k: v for k, v in connection_params.items() if k != "password"}
-    logger.info(f"Connecting to PostgreSQL database with parameters: {safe_params}")
-    
-    # Create a PostgreSQL adapter with advanced features
+    # Create PostgreSQL adapter
     adapter = PostgreSQLAdapter(
         connection_params=connection_params,
-        isolation_level="read_committed",
-        application_name="sql-batcher-example"
+        isolation_level="read_committed"
     )
     
-    try:
-        # Set up the database
-        setup_database(adapter)
-        
-        # Generate product data for bulk insertion with COPY
-        num_products = args.num_products
-        logger.info(f"Generating {num_products} products for bulk insert via COPY...")
-        products = generate_product_data(num_products)
-        
-        # Use PostgreSQL's COPY command for efficient bulk loading
+    # Set up database
+    setup_database(adapter)
+    
+    # Create SQL batcher with appropriate settings
+    batcher = SQLBatcher(
+        max_bytes=500_000,  # 500KB per batch
+        auto_adjust_for_columns=True  # Adjust batch size based on column count
+    )
+    
+    # Insert products using PostgreSQL COPY command for efficiency
+    if args.products > 0:
+        print(f"\nInserting {args.products} products using COPY command...")
         start_time = time.time()
-        adapter.use_copy_for_bulk_insert(
+        
+        # Generate product data
+        product_data = generate_product_data(args.products)
+        
+        # Use the specialized COPY method for bulk insertion
+        copied_count = adapter.use_copy_for_bulk_insert(
             table_name="products",
-            column_names=["id", "name", "description", "price", "category", "tags", "metadata"],
-            data=products
+            column_names=["sku", "name", "category", "price", "stock", "attributes"],
+            data=product_data
         )
+        
         elapsed = time.time() - start_time
+        print(f"Inserted {copied_count} products in {elapsed:.2f} seconds")
         
-        logger.info(f"Inserted {len(products)} products using COPY in {elapsed:.2f} seconds "
-                  f"({len(products)/elapsed:.1f} rows/sec)")
+        # Create indices for better query performance
+        print("\nCreating indices on products table...")
+        adapter.create_indices(
+            table_name="products",
+            indices=[
+                {"columns": ["category"], "name": "idx_products_category"},
+                {"columns": ["price"], "name": "idx_products_price"}
+            ]
+        )
+    
+    # Insert orders using batched statements
+    if args.orders > 0:
+        print(f"\nInserting {args.orders} orders using batched statements...")
+        start_time = time.time()
         
-        # Generate order data as SQL statements
-        num_orders = args.num_orders
-        logger.info(f"Generating {num_orders} order INSERT statements...")
-        order_statements = generate_order_data(num_orders, num_products)
-        
-        # Create a query collector for analyzing batches
-        collector = ListQueryCollector()
-        
-        # Create a batcher with a 1MB size limit
-        batcher = SQLBatcher(max_bytes=args.batch_size)
-        
-        # Begin a transaction for the batched inserts
+        # Begin a transaction
         adapter.begin_transaction()
         
         try:
-            # Process all order statements
-            start_time = time.time()
-            total_processed = batcher.process_statements(
-                order_statements, 
-                adapter.execute,
-                query_collector=collector
-            )
-            elapsed = time.time() - start_time
+            # Generate order INSERT statements
+            order_statements = generate_order_data(args.orders, args.products)
+            
+            # Process all statements in batches
+            total_processed = batcher.process_statements(order_statements, adapter.execute)
             
             # Commit the transaction
             adapter.commit_transaction()
             
-            # Log batch statistics
-            batches = collector.get_queries()
-            logger.info(f"Inserted {total_processed} orders in {elapsed:.2f} seconds "
-                      f"({total_processed/elapsed:.1f} rows/sec)")
-            logger.info(f"Required {len(batches)} batches, averaging "
-                      f"{sum(len(b['query'].encode('utf-8')) for b in batches) / len(batches) / 1024:.1f} KB per batch")
+            elapsed = time.time() - start_time
+            print(f"Inserted {total_processed} orders in {elapsed:.2f} seconds")
             
         except Exception as e:
             # Rollback on error
             adapter.rollback_transaction()
-            logger.error(f"Error processing orders: {str(e)}")
+            print(f"Error: {e}")
             raise
-        
-        # Run some analytical queries to demonstrate PostgreSQL features
-        logger.info("\nRunning analytical queries using PostgreSQL features...")
-        
-        # Query: Get top product categories by price
-        results = adapter.execute("""
-        SELECT 
-            category, 
-            COUNT(*) as product_count, 
-            ROUND(AVG(price)::numeric, 2) as avg_price,
-            SUM(price) as total_value
-        FROM products
-        GROUP BY category
-        ORDER BY total_value DESC
-        """)
-        
-        logger.info("Top product categories:")
-        for row in results:
-            logger.info(f"  {row[0]}: {row[1]} products, avg price: ${row[2]}, total value: ${row[3]:.2f}")
-        
-        # Query: Find products with specific tags using array operators
-        results = adapter.execute("""
-        SELECT COUNT(*) 
-        FROM products 
-        WHERE 'bestseller' = ANY(tags)
-        """)
-        bestseller_count = results[0][0]
-        logger.info(f"\nProducts tagged as bestsellers: {bestseller_count}")
-        
-        # Query: Use JSONB operators to find orders with status updates
-        results = adapter.execute("""
-        SELECT 
-            status, 
-            COUNT(*) as order_count,
-            ROUND(SUM(total_amount)::numeric, 2) as total_revenue
-        FROM orders
-        GROUP BY status
-        ORDER BY total_revenue DESC
-        """)
-        
-        logger.info("\nOrder status breakdown:")
-        for row in results:
-            logger.info(f"  {row[0]}: {row[1]} orders, total revenue: ${row[2]}")
-        
-        # Query: Complex JSON traversal with joins
-        results = adapter.execute("""
-        SELECT 
-            p.category,
-            COUNT(DISTINCT o.id) as order_count,
-            SUM(oi.quantity) as total_items_sold
-        FROM 
-            orders o,
-            jsonb_to_recordset(o.items) as oi(product_id int, quantity int)
-        JOIN 
-            products p ON p.id = oi.product_id
-        GROUP BY 
-            p.category
-        ORDER BY 
-            total_items_sold DESC
-        """)
-        
-        logger.info("\nItems sold by category (from order items JSON):")
-        for row in results:
-            logger.info(f"  {row[0]}: {row[1]} orders, {row[2]} items sold")
-        
-        # Run an EXPLAIN ANALYZE to show query plan
-        if args.explain:
-            logger.info("\nQuery execution plan for complex JSON query:")
-            plan = adapter.explain_analyze("""
-            SELECT 
-                p.category,
-                COUNT(DISTINCT o.id) as order_count,
-                SUM(oi.quantity) as total_items_sold
-            FROM 
-                orders o,
-                jsonb_to_recordset(o.items) as oi(product_id int, quantity int)
-            JOIN 
-                products p ON p.id = oi.product_id
-            GROUP BY 
-                p.category
-            ORDER BY 
-                total_items_sold DESC
-            """)
-            
-            for line in plan:
-                logger.info(f"  {line[0]}")
-        
-    finally:
-        # Close the connection
-        adapter.close()
-        logger.info("Example completed")
+    
+    # Run some example queries to demonstrate PostgreSQL-specific features
+    print("\nRunning example queries...")
+    
+    # Query using JSONB operations
+    print("\n1. Find products with specific attributes using JSONB operators:")
+    results = adapter.execute("""
+    SELECT id, name, category, attributes->>'color' as color 
+    FROM products 
+    WHERE attributes @> '{"color": "Red"}'::jsonb 
+    LIMIT 5
+    """)
+    
+    for row in results:
+        print(f"  Product {row[0]}: {row[1]} ({row[2]}) - Color: {row[3]}")
+    
+    # Query with aggregation and filtering
+    print("\n2. Order statistics by status:")
+    results = adapter.execute("""
+    SELECT 
+        status, 
+        COUNT(*) as order_count, 
+        SUM(total_amount) as total_sales,
+        AVG(total_amount) as avg_order_value
+    FROM orders
+    GROUP BY status
+    ORDER BY total_sales DESC
+    """)
+    
+    for row in results:
+        status, count, total, avg = row
+        print(f"  {status}: {count} orders, ${total:.2f} total, ${avg:.2f} average")
+    
+    # Query with JOIN and JSON extraction
+    print("\n3. Top selling products by order source:")
+    results = adapter.execute("""
+    SELECT 
+        p.category,
+        o.metadata->>'source' as order_source,
+        COUNT(*) as order_count
+    FROM order_items oi
+    JOIN orders o ON oi.order_id = o.id
+    JOIN products p ON oi.product_id = p.id
+    GROUP BY p.category, o.metadata->>'source'
+    ORDER BY order_count DESC
+    LIMIT 10
+    """)
+    
+    for row in results:
+        category, source, count = row
+        print(f"  {category} via {source}: {count} orders")
+    
+    # Close the connection
+    adapter.close()
+    print("\nExample completed successfully!")
 
 
 def main():
     """Run the PostgreSQL example."""
-    parser = argparse.ArgumentParser(description='SQL Batcher PostgreSQL Example')
-    parser.add_argument('--num-products', type=int, default=1000,
-                        help='Number of products to generate')
-    parser.add_argument('--num-orders', type=int, default=500,
-                        help='Number of orders to generate')
-    parser.add_argument('--batch-size', type=int, default=1_000_000,
-                        help='Maximum batch size in bytes')
-    parser.add_argument('--explain', action='store_true',
-                        help='Run EXPLAIN ANALYZE on queries')
+    parser = argparse.ArgumentParser(description="SQL Batcher PostgreSQL Example")
+    parser.add_argument("--products", type=int, default=100, 
+                        help="Number of products to generate (default: 100)")
+    parser.add_argument("--orders", type=int, default=50, 
+                        help="Number of orders to generate (default: 50)")
     
     args = parser.parse_args()
-    
-    try:
-        run_postgresql_example(args)
-    except Exception as e:
-        logger.error(f"Error in PostgreSQL example: {str(e)}")
-        raise
+    run_postgresql_example(args)
 
 
 if __name__ == "__main__":
