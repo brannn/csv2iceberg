@@ -1,143 +1,149 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 """
-Comprehensive test runner for SQL Batcher with intelligent adapter handling
+Comprehensive test runner for SQL Batcher with intelligent adapter handling.
+
+This script runs tests for the SQL Batcher package, with smart handling of
+database-specific tests. It detects available database connections and only runs
+tests for databases that are available.
 """
-import os
-import sys
 import argparse
+import os
 import subprocess
+import sys
 from typing import List, Optional
 
-def run_core_tests() -> int:
-    """Run core SQL Batcher tests that don't require database connections"""
-    print("Running core SQL Batcher tests...")
+
+def run_core_tests(coverage: bool = False) -> int:
+    """
+    Run core SQL Batcher tests that don't require database connections.
     
-    # Run core tests that don't require database connections
-    result = subprocess.run([
-        "python", "-m", "pytest",
-        "tests/test_batcher.py::TestSQLBatcher",  # Core batching functionality
-        "tests/test_adapters.py::TestSQLAdapter",  # Abstract adapter interface
-        "-v"
-    ])
+    Args:
+        coverage: Whether to collect coverage information
+        
+    Returns:
+        Exit code from pytest
+    """
+    cmd = ["pytest", "tests/test_batcher.py", "tests/test_adapters.py::TestSQLAdapter", "-v"]
     
+    if coverage:
+        cmd.extend(["--cov=src/sql_batcher", "--cov-report=term", "--cov-report=html:coverage_html"])
+    
+    print(f"Running core tests: {' '.join(cmd)}")
+    result = subprocess.run(cmd)
     return result.returncode
+
 
 def run_generic_adapter_tests() -> int:
-    """Run generic adapter tests with mocked connections"""
-    print("\nRunning generic adapter tests with mocked database connections...")
+    """
+    Run generic adapter tests with mocked connections.
     
-    # Run adapter tests that can use mocked connections, but skip transaction tests
-    # which require more sophisticated mocking
-    result = subprocess.run([
-        "python", "-m", "pytest",
-        "tests/test_adapters.py::TestGenericAdapter::test_init",
-        "tests/test_adapters.py::TestGenericAdapter::test_get_max_query_size",
-        "tests/test_adapters.py::TestGenericAdapter::test_execute_select",
-        "tests/test_adapters.py::TestGenericAdapter::test_execute_insert",
-        "tests/test_adapters.py::TestGenericAdapter::test_execute_with_fetch_results_false",
-        "-v"
-    ])
-    
+    Returns:
+        Exit code from pytest
+    """
+    cmd = ["pytest", "tests/test_adapters.py::TestGenericAdapter", "-v"]
+    print(f"Running generic adapter tests: {' '.join(cmd)}")
+    result = subprocess.run(cmd)
     return result.returncode
 
-def run_postgresql_tests() -> bool:
-    """Check if PostgreSQL connection is available and run PostgreSQL adapter tests"""
-    print("\nChecking PostgreSQL connection availability...")
+
+def has_postgresql_connection() -> bool:
+    """
+    Check if PostgreSQL connection is available.
     
-    # Environment variables for PostgreSQL connection
-    pg_host = os.environ.get("PGHOST", "localhost")
-    pg_port = os.environ.get("PGPORT", "5432")
-    pg_user = os.environ.get("PGUSER", "postgres")
-    pg_database = os.environ.get("PGDATABASE", "postgres")
+    Returns:
+        True if PostgreSQL connection is available, False otherwise
+    """
+    # Check for required environment variables
+    required_vars = ["PGHOST", "PGPORT", "PGUSER", "PGDATABASE"]
+    for var in required_vars:
+        if not os.environ.get(var):
+            print(f"PostgreSQL environment variable {var} not set, skipping PostgreSQL tests")
+            return False
     
-    # Check if psycopg2 is installed
+    # Try to connect to PostgreSQL
     try:
         import psycopg2
-    except ImportError:
-        print("psycopg2 is not installed. Skipping PostgreSQL adapter tests.")
-        return False
-    
-    # Check if PostgreSQL server is accessible
-    try:
-        # Basic connection test
-        conn = psycopg2.connect(
-            host=pg_host,
-            port=pg_port,
-            user=pg_user,
-            database=pg_database,
-            connect_timeout=5
-        )
+        conn_params = {
+            "host": os.environ.get("PGHOST", "localhost"),
+            "port": os.environ.get("PGPORT", "5432"),
+            "user": os.environ.get("PGUSER", "postgres"),
+            "dbname": os.environ.get("PGDATABASE", "postgres"),
+            "password": os.environ.get("PGPASSWORD", ""),
+            "connect_timeout": 5,
+        }
+        
+        conn = psycopg2.connect(**conn_params)
         conn.close()
-        print(f"PostgreSQL connection successful to {pg_host}:{pg_port}")
-        
-        # Run PostgreSQL-specific adapter tests
-        print("Running PostgreSQL adapter tests...")
-        result = subprocess.run([
-            "python", "-m", "pytest",
-            "tests/test_postgresql_adapter.py",
-            "-v"
-        ])
-        
-        return result.returncode == 0
-    
-    except Exception as e:
+        return True
+    except (ImportError, Exception) as e:
         print(f"PostgreSQL connection failed: {str(e)}")
-        print("Skipping PostgreSQL adapter tests.")
         return False
 
+
+def run_postgresql_tests() -> int:
+    """
+    Run PostgreSQL adapter tests.
+    
+    Returns:
+        Exit code from pytest, or 0 if tests are skipped
+    """
+    if not has_postgresql_connection():
+        print("Skipping PostgreSQL tests - no connection available")
+        return 0
+    
+    cmd = ["pytest", "tests/test_postgresql_adapter.py", "-v"]
+    print(f"Running PostgreSQL tests: {' '.join(cmd)}")
+    result = subprocess.run(cmd)
+    return result.returncode
+
+
 def parse_args():
-    """Parse command line arguments"""
+    """
+    Parse command line arguments.
+    
+    Returns:
+        Parsed arguments
+    """
     parser = argparse.ArgumentParser(description="Run SQL Batcher tests")
-    parser.add_argument("--all", action="store_true", help="Attempt to run all tests including database adapters")
-    parser.add_argument("--core-only", action="store_true", help="Run only core tests (no adapters)")
-    parser.add_argument("--pg", action="store_true", help="Run PostgreSQL adapter tests (if connection available)")
-    parser.add_argument("--coverage", action="store_true", help="Generate test coverage report")
+    parser.add_argument("--all", action="store_true", help="Run all tests (requires database connections)")
+    parser.add_argument("--core-only", action="store_true", help="Run only core tests (no database connections required)")
+    parser.add_argument("--pg", action="store_true", help="Run only PostgreSQL tests")
+    parser.add_argument("--coverage", action="store_true", help="Collect test coverage information")
     
     return parser.parse_args()
 
+
 def main():
-    """Main entry point"""
+    """
+    Main entry point.
+    
+    This function runs the tests based on the provided arguments.
+    """
     args = parse_args()
-    exit_code = 0
+    exit_codes = []
     
-    # Always run core tests
-    core_result = run_core_tests()
-    if core_result != 0:
-        print("\n❌ Core tests failed. Stopping.")
-        return core_result
-    
-    if not args.core_only:
-        # Run generic adapter tests
-        generic_result = run_generic_adapter_tests()
-        if generic_result != 0:
-            print("\n❌ Generic adapter tests failed.")
-            exit_code = generic_result
-        
-        # Conditionally run PostgreSQL tests if --all or --pg flag is provided
-        if args.all or args.pg:
-            pg_success = run_postgresql_tests()
-            if not pg_success:
-                print("\n⚠️ PostgreSQL adapter tests were skipped or failed.")
-                exit_code = 1
-    
-    if args.coverage:
-        print("\nGenerating test coverage report...")
-        coverage_result = subprocess.run([
-            "python", "-m", "pytest",
-            "--cov=src/sql_batcher",
-            "--cov-report=term",
-            "--cov-report=html:coverage_html",
-            "tests/"
-        ])
-        if coverage_result.returncode != 0:
-            exit_code = coverage_result.returncode
-    
-    if exit_code == 0:
-        print("\n✅ All selected tests passed!")
+    if args.pg:
+        # Run only PostgreSQL tests
+        exit_codes.append(run_postgresql_tests())
+    elif args.core_only:
+        # Run only core tests
+        exit_codes.append(run_core_tests(coverage=args.coverage))
+        exit_codes.append(run_generic_adapter_tests())
     else:
-        print("\n❌ Some tests failed or were skipped.")
+        # Run all tests or tests that don't need connections
+        exit_codes.append(run_core_tests(coverage=args.coverage))
+        exit_codes.append(run_generic_adapter_tests())
+        
+        if args.all:
+            # Run database-specific tests
+            exit_codes.append(run_postgresql_tests())
     
-    return exit_code
+    # Return non-zero if any test failed
+    if any(code != 0 for code in exit_codes):
+        sys.exit(1)
+    else:
+        print("All selected tests passed!")
+
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()

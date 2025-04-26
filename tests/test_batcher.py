@@ -1,22 +1,19 @@
 """
 Unit tests for SQL Batcher core functionality.
 """
-import unittest
+import pytest
 from unittest import mock
-import sys
-import os
-
-# Add the src directory to the Python path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
 
 from sql_batcher.batcher import SQLBatcher
 from sql_batcher.query_collector import ListQueryCollector
 
 
-class TestSQLBatcher(unittest.TestCase):
+@pytest.mark.core
+class TestSQLBatcher:
     """Test cases for SQLBatcher class."""
     
-    def setUp(self):
+    @pytest.fixture(autouse=True)
+    def setup_batcher(self):
         """Set up test fixtures."""
         self.batcher = SQLBatcher(max_bytes=100)
         self.statements = [
@@ -28,16 +25,16 @@ class TestSQLBatcher(unittest.TestCase):
     def test_init_with_defaults(self):
         """Test initialization with default values."""
         batcher = SQLBatcher()
-        self.assertEqual(batcher.max_bytes, 1_000_000)
-        self.assertEqual(batcher.delimiter, ";")
-        self.assertFalse(batcher.dry_run)
+        assert batcher.max_bytes == 1_000_000
+        assert batcher.delimiter == ";"
+        assert batcher.dry_run is False
     
     def test_init_with_custom_values(self):
         """Test initialization with custom values."""
         batcher = SQLBatcher(max_bytes=500, delimiter="|", dry_run=True)
-        self.assertEqual(batcher.max_bytes, 500)
-        self.assertEqual(batcher.delimiter, "|")
-        self.assertTrue(batcher.dry_run)
+        assert batcher.max_bytes == 500
+        assert batcher.delimiter == "|"
+        assert batcher.dry_run is True
     
     def test_add_statement(self):
         """Test adding a statement to the batch."""
@@ -45,15 +42,15 @@ class TestSQLBatcher(unittest.TestCase):
         result = self.batcher.add_statement("INSERT INTO test VALUES (1)")
         
         # Should not need to flush yet
-        self.assertFalse(result)
-        self.assertEqual(len(self.batcher.current_batch), 1)
+        assert result is False
+        assert len(self.batcher.current_batch) == 1
         
         # Add more statements until batch is full
         while not result:
             result = self.batcher.add_statement("INSERT INTO test VALUES (2)")
         
         # Now we should need to flush
-        self.assertTrue(result)
+        assert result is True
     
     def test_reset(self):
         """Test resetting the batch."""
@@ -64,8 +61,8 @@ class TestSQLBatcher(unittest.TestCase):
         self.batcher.reset()
         
         # Batch should be empty
-        self.assertEqual(len(self.batcher.current_batch), 0)
-        self.assertEqual(self.batcher.current_size, 0)
+        assert len(self.batcher.current_batch) == 0
+        assert self.batcher.current_size == 0
     
     def test_flush(self):
         """Test flushing the batch."""
@@ -79,11 +76,11 @@ class TestSQLBatcher(unittest.TestCase):
         count = self.batcher.flush(mock_callback)
         
         # Should have executed one statement
-        self.assertEqual(count, 1)
+        assert count == 1
         mock_callback.assert_called_once()
         
         # Batch should be empty
-        self.assertEqual(len(self.batcher.current_batch), 0)
+        assert len(self.batcher.current_batch) == 0
     
     def test_process_statements(self):
         """Test processing multiple statements."""
@@ -94,13 +91,13 @@ class TestSQLBatcher(unittest.TestCase):
         count = self.batcher.process_statements(self.statements, mock_callback)
         
         # Should have processed all statements
-        self.assertEqual(count, 3)
+        assert count == 3
         
         # Should have called the callback at least once
         mock_callback.assert_called()
         
         # Batch should be empty
-        self.assertEqual(len(self.batcher.current_batch), 0)
+        assert len(self.batcher.current_batch) == 0
     
     def test_dry_run_mode(self):
         """Test dry run mode with query collector."""
@@ -122,17 +119,17 @@ class TestSQLBatcher(unittest.TestCase):
         )
         
         # Should have processed all statements
-        self.assertEqual(count, 3)
+        assert count == 3
         
         # Callback should not have been called in dry run mode
         mock_callback.assert_not_called()
         
         # Query collector should have collected queries
-        self.assertGreater(len(collector.get_queries()), 0)
+        assert len(collector.get_queries()) > 0
         
         # Check that metadata was included
         for query_info in collector.get_queries():
-            self.assertTrue(query_info["metadata"]["test"])
+            assert query_info["metadata"]["test"] is True
     
     def test_oversized_statement(self):
         """Test handling of statements that exceed the maximum batch size."""
@@ -149,7 +146,7 @@ class TestSQLBatcher(unittest.TestCase):
         count = batcher.process_statements([oversized_statement], mock_callback)
         
         # Should have processed the statement
-        self.assertEqual(count, 1)
+        assert count == 1
         
         # Callback should have been called once
         mock_callback.assert_called_once()
@@ -162,23 +159,23 @@ class TestSQLBatcher(unittest.TestCase):
         result = batcher.detect_column_count(
             "INSERT INTO users (id, name, email, age) VALUES (1, 'John', 'john@example.com', 30)"
         )
-        self.assertEqual(result, 4)
+        assert result == 4
         
         # Test with VALUES only
         result = batcher.detect_column_count(
             "INSERT INTO users VALUES (1, 'John', 'john@example.com', 30)"
         )
-        self.assertEqual(result, 4)
+        assert result == 4
         
         # Test with complex nested values
         result = batcher.detect_column_count(
             "INSERT INTO data VALUES (1, ARRAY[1, 2, 3], '{\"key\": \"value\"}', 'text')"
         )
-        self.assertEqual(result, 4)
+        assert result == 4
         
         # Test with non-INSERT statement
         result = batcher.detect_column_count("SELECT * FROM users")
-        self.assertIsNone(result)
+        assert result is None
     
     def test_auto_adjust_for_columns(self):
         """Test automatic batch size adjustment based on column count."""
@@ -198,13 +195,13 @@ class TestSQLBatcher(unittest.TestCase):
         batcher.process_statements(wide_statements, mock_callback)
         
         # Column count should be detected
-        self.assertEqual(batcher.column_count, 20)
+        assert batcher.column_count == 20
         
         # Adjustment factor should be less than 1.0 (smaller batches)
-        self.assertLess(batcher.adjustment_factor, 1.0)
+        assert batcher.adjustment_factor < 1.0
         
         # Adjusted max_bytes should be less than original
-        self.assertLess(batcher.get_adjusted_max_bytes(), batcher.max_bytes)
+        assert batcher.get_adjusted_max_bytes() < batcher.max_bytes
         
         # Create a batcher for narrow table test
         batcher = SQLBatcher(
@@ -222,13 +219,13 @@ class TestSQLBatcher(unittest.TestCase):
         batcher.process_statements(narrow_statements, mock_callback)
         
         # Column count should be detected
-        self.assertEqual(batcher.column_count, 3)
+        assert batcher.column_count == 3
         
         # Adjustment factor should be greater than 1.0 (larger batches)
-        self.assertGreater(batcher.adjustment_factor, 1.0)
+        assert batcher.adjustment_factor > 1.0
         
         # Adjusted max_bytes should be greater than original
-        self.assertGreater(batcher.get_adjusted_max_bytes(), batcher.max_bytes)
+        assert batcher.get_adjusted_max_bytes() > batcher.max_bytes
     
     def test_adjustment_factor_bounds(self):
         """Test that adjustment factor is properly bounded."""
@@ -245,7 +242,7 @@ class TestSQLBatcher(unittest.TestCase):
         batcher.update_adjustment_factor(wide_statement)
         
         # Should be clamped to min value
-        self.assertEqual(batcher.adjustment_factor, 0.2)
+        assert batcher.adjustment_factor == 0.2
         
         # Reset and test very narrow table
         batcher = SQLBatcher(
@@ -260,8 +257,4 @@ class TestSQLBatcher(unittest.TestCase):
         batcher.update_adjustment_factor(narrow_statement)
         
         # Should be clamped to max value
-        self.assertEqual(batcher.adjustment_factor, 3.0)
-
-
-if __name__ == "__main__":
-    unittest.main()
+        assert batcher.adjustment_factor == 3.0

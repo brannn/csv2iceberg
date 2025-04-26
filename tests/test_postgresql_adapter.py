@@ -1,21 +1,29 @@
 """
 Unit tests for the PostgreSQL adapter.
 """
-
-import unittest
+import pytest
 from unittest.mock import Mock, patch, MagicMock
+
+# Mark all tests in this file as requiring PostgreSQL
+pytestmark = [
+    pytest.mark.db,
+    pytest.mark.postgres
+]
 
 from sql_batcher.adapters.postgresql import PostgreSQLAdapter
 
 
-class TestPostgreSQLAdapter(unittest.TestCase):
+class TestPostgreSQLAdapter:
     """Test cases for PostgreSQLAdapter class."""
 
-    @patch('sql_batcher.adapters.postgresql._has_psycopg2', True)
-    @patch('sql_batcher.adapters.postgresql.psycopg2')
-    def setUp(self, mock_psycopg2):
+    @pytest.fixture(autouse=True)
+    def setup(self, monkeypatch):
         """Set up test fixtures."""
-        # Mock psycopg2 extensions
+        # Mock psycopg2 and its extensions
+        monkeypatch.setattr('sql_batcher.adapters.postgresql._has_psycopg2', True)
+        
+        # Create mock psycopg2 module
+        mock_psycopg2 = Mock()
         mock_psycopg2.extensions.ISOLATION_LEVEL_READ_COMMITTED = 1
         mock_psycopg2.extensions.ISOLATION_LEVEL_REPEATABLE_READ = 2
         mock_psycopg2.extensions.ISOLATION_LEVEL_SERIALIZABLE = 3
@@ -25,6 +33,9 @@ class TestPostgreSQLAdapter(unittest.TestCase):
         self.mock_connection = Mock()
         self.mock_connection.cursor.return_value = self.mock_cursor
         mock_psycopg2.connect.return_value = self.mock_connection
+        
+        # Apply the mock
+        monkeypatch.setattr('sql_batcher.adapters.postgresql.psycopg2', mock_psycopg2)
 
         # Initialize adapter
         self.adapter = PostgreSQLAdapter(
@@ -36,7 +47,7 @@ class TestPostgreSQLAdapter(unittest.TestCase):
 
     def test_get_max_query_size(self):
         """Test get_max_query_size method."""
-        self.assertEqual(self.adapter.get_max_query_size(), 1_000_000)
+        assert self.adapter.get_max_query_size() == 1_000_000
 
     def test_execute_select(self):
         """Test executing a SELECT statement."""
@@ -50,7 +61,7 @@ class TestPostgreSQLAdapter(unittest.TestCase):
         # Check behavior
         self.mock_cursor.execute.assert_called_once_with("SELECT * FROM users")
         self.mock_cursor.fetchall.assert_called_once()
-        self.assertEqual(result, [(1, 'Alice'), (2, 'Bob')])
+        assert result == [(1, 'Alice'), (2, 'Bob')]
 
     def test_execute_insert(self):
         """Test executing an INSERT statement."""
@@ -63,7 +74,7 @@ class TestPostgreSQLAdapter(unittest.TestCase):
         # Check behavior
         self.mock_cursor.execute.assert_called_once_with("INSERT INTO users VALUES (1, 'Alice')")
         self.mock_cursor.fetchall.assert_not_called()
-        self.assertEqual(result, [])
+        assert result == []
 
     def test_execute_copy(self):
         """Test executing a COPY statement."""
@@ -73,7 +84,7 @@ class TestPostgreSQLAdapter(unittest.TestCase):
         # Check behavior
         self.mock_cursor.execute.assert_called_once_with("COPY users FROM '/tmp/users.csv'")
         self.mock_connection.commit.assert_called_once()
-        self.assertEqual(result, [])
+        assert result == []
 
     def test_execute_error_handling(self):
         """Test error handling in execute method."""
@@ -81,7 +92,7 @@ class TestPostgreSQLAdapter(unittest.TestCase):
         self.mock_cursor.execute.side_effect = Exception("Database error")
 
         # Execute a query that will fail
-        with self.assertRaises(RuntimeError):
+        with pytest.raises(RuntimeError):
             self.adapter.execute("SELECT * FROM non_existent_table")
 
     def test_begin_transaction(self):
@@ -94,7 +105,7 @@ class TestPostgreSQLAdapter(unittest.TestCase):
 
         # Check behavior
         self.mock_cursor.execute.assert_called_once_with("BEGIN")
-        self.assertTrue(self.adapter._in_transaction)
+        assert self.adapter._in_transaction is True
 
     def test_commit_transaction(self):
         """Test committing a transaction."""
@@ -106,7 +117,7 @@ class TestPostgreSQLAdapter(unittest.TestCase):
 
         # Check behavior
         self.mock_connection.commit.assert_called_once()
-        self.assertFalse(self.adapter._in_transaction)
+        assert self.adapter._in_transaction is False
 
     def test_rollback_transaction(self):
         """Test rolling back a transaction."""
@@ -118,7 +129,7 @@ class TestPostgreSQLAdapter(unittest.TestCase):
 
         # Check behavior
         self.mock_connection.rollback.assert_called_once()
-        self.assertFalse(self.adapter._in_transaction)
+        assert self.adapter._in_transaction is False
 
     def test_close(self):
         """Test closing the connection."""
@@ -142,7 +153,7 @@ class TestPostgreSQLAdapter(unittest.TestCase):
         self.mock_cursor.execute.assert_called_once_with(
             "EXPLAIN (ANALYZE, VERBOSE, BUFFERS) SELECT * FROM users"
         )
-        self.assertEqual(result, [("Seq Scan on users",)])
+        assert result == [("Seq Scan on users",)]
 
     def test_create_temp_table(self):
         """Test creating a temporary table."""
@@ -165,12 +176,12 @@ class TestPostgreSQLAdapter(unittest.TestCase):
 
         # Check behavior
         self.mock_cursor.execute.assert_called_once_with("SHOW server_version")
-        self.assertEqual(result, (14, 2, 0))
+        assert result == (14, 2, 0)
 
-    @patch('sql_batcher.adapters.postgresql._has_psycopg2', False)
-    def test_missing_psycopg2(self):
+    def test_missing_psycopg2(self, monkeypatch):
         """Test behavior when psycopg2 is not installed."""
-        with self.assertRaises(ImportError):
+        monkeypatch.setattr('sql_batcher.adapters.postgresql._has_psycopg2', False)
+        with pytest.raises(ImportError):
             PostgreSQLAdapter(connection_params={"host": "localhost"})
 
     def test_execute_batch(self):
@@ -188,10 +199,10 @@ class TestPostgreSQLAdapter(unittest.TestCase):
         result = self.adapter.execute_batch(statements)
 
         # Check behavior (should execute each statement individually)
-        self.assertEqual(self.mock_cursor.execute.call_count, 2)
-        self.assertEqual(result, [])
+        assert self.mock_cursor.execute.call_count == 2
+        assert result == []
 
-    def test_use_copy_for_bulk_insert_stdin(self):
+    def test_use_copy_for_bulk_insert_stdin(self, monkeypatch):
         """Test using COPY for bulk insert via STDIN."""
         # Set up test data
         table_name = "users"
@@ -202,15 +213,17 @@ class TestPostgreSQLAdapter(unittest.TestCase):
         mock_copy = MagicMock()
         self.mock_cursor.copy.return_value.__enter__.return_value = mock_copy
         
+        # Ensure _has_psycopg2 is True
+        monkeypatch.setattr('sql_batcher.adapters.postgresql._has_psycopg2', True)
+        
         # Execute COPY
-        with patch('sql_batcher.adapters.postgresql._has_psycopg2', True):
-            result = self.adapter.use_copy_for_bulk_insert(table_name, column_names, data)
+        result = self.adapter.use_copy_for_bulk_insert(table_name, column_names, data)
         
         # Check behavior
         self.mock_connection.cursor.assert_called()
         self.mock_cursor.copy.assert_called_with("COPY users (id, name) FROM STDIN")
-        self.assertEqual(mock_copy.write_row.call_count, 2)
-        self.assertEqual(result, 2)
+        assert mock_copy.write_row.call_count == 2
+        assert result == 2
 
     def test_create_indices(self):
         """Test creating indices."""
@@ -233,7 +246,7 @@ class TestPostgreSQLAdapter(unittest.TestCase):
         self.adapter.create_indices(table_name, indices)
         
         # Check behavior
-        self.assertEqual(self.mock_cursor.execute.call_count, 2)
+        assert self.mock_cursor.execute.call_count == 2
         # First call should be for creating a unique index
         self.mock_cursor.execute.assert_any_call(
             "CREATE UNIQUE INDEX idx_users_name ON users (name) "
@@ -242,7 +255,3 @@ class TestPostgreSQLAdapter(unittest.TestCase):
         self.mock_cursor.execute.assert_any_call(
             "CREATE INDEX idx_users_email ON users USING hash (email) WHERE email IS NOT NULL"
         )
-
-
-if __name__ == '__main__':
-    unittest.main()
