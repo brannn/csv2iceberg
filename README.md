@@ -43,6 +43,7 @@ pip install sql-batcher
 Install with specific database adapters:
 
 ```bash
+pip install "sql-batcher[postgresql]" # For PostgreSQL optimized adapter
 pip install "sql-batcher[trino]"      # For Trino support
 pip install "sql-batcher[snowflake]"  # For Snowflake support
 pip install "sql-batcher[spark]"      # For PySpark support
@@ -54,49 +55,130 @@ pip install "sql-batcher[all]"        # All adapters
 
 ```python
 from sql_batcher import SQLBatcher
-from sql_batcher.adapters.generic import GenericAdapter
+from sql_batcher.adapters.postgresql import PostgreSQLAdapter
 import psycopg2  # PostgreSQL adapter
 
-# Create a connection to PostgreSQL
-connection = psycopg2.connect(
-    host="localhost",
-    database="mydb",
-    user="postgres",
-    password="password"
+# Connection parameters for PostgreSQL
+connection_params = {
+    "host": "localhost",
+    "database": "mydb",
+    "user": "postgres",
+    "password": "password"
+}
+
+# Create a PostgreSQL-specific adapter with optimized features
+adapter = PostgreSQLAdapter(
+    connection_params=connection_params, 
+    isolation_level="read_committed",
+    cursor_factory=psycopg2.extras.RealDictCursor,  # Return results as dictionaries
+    application_name="sql-batcher-demo"  # Helps identify the connection in pg_stat_activity
 )
 
-# Create an adapter
-adapter = GenericAdapter(connection=connection)
-
-# Create a table 
+# Create a table with appropriate PostgreSQL data types
 adapter.execute("""
 CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY,
+    id SERIAL PRIMARY KEY,
     name VARCHAR(100) NOT NULL,
     email VARCHAR(255) UNIQUE,
+    metadata JSONB DEFAULT '{}',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 )
 """)
+
+# Create an index to optimize queries
+adapter.execute("CREATE INDEX IF NOT EXISTS idx_users_email ON users (email)")
+
+print("Preparing batch of INSERT statements...")
 
 # Generate many INSERT statements with more complex data
 statements = []
 for i in range(1, 1001):
     email = f"user{i}@example.com"
     name = f"User {i}"
+    metadata = f'{{"source": "batch_insert", "group": "{i % 10}", "priority": {i % 3}}}'
+    
     statements.append(
-        f"INSERT INTO users (id, name, email) VALUES ({i}, '{name}', '{email}')"
+        f"INSERT INTO users (id, name, email, metadata) VALUES "
+        f"({i}, '{name}', '{email}', '{metadata}'::jsonb)"
     )
+
+print(f"Generated {len(statements)} INSERT statements")
 
 # Create a batcher with a 500KB size limit (practical for PostgreSQL)
 batcher = SQLBatcher(max_bytes=500_000)
 
-# Process all statements
-total_processed = batcher.process_statements(statements, adapter.execute)
-print(f"Processed {total_processed} statements")
+# Begin a transaction for atomicity
+adapter.begin_transaction()
 
-# Verify the data
-results = adapter.execute("SELECT COUNT(*) FROM users")
-print(f"Total users in database: {results[0][0]}")
+try:
+    # Process all statements
+    total_processed = batcher.process_statements(statements, adapter.execute)
+    print(f"Processed {total_processed} statements in batches")
+    
+    # Commit the transaction
+    adapter.commit_transaction()
+    print("Transaction committed successfully")
+except Exception as e:
+    # Rollback on error
+    adapter.rollback_transaction()
+    print(f"Error: {e}")
+    raise
+
+# Verify the data with a query that leverages PostgreSQL features
+results = adapter.execute("""
+SELECT 
+    metadata->>'group' AS user_group, 
+    COUNT(*) as user_count,
+    MIN(created_at) as first_created,
+    MAX(created_at) as last_created
+FROM users 
+GROUP BY metadata->>'group'
+ORDER BY user_group
+""")
+
+print("\nUser Groups Summary:")
+for row in results:
+    if isinstance(row, dict):  # When using RealDictCursor
+        print(f"  Group {row['user_group']}: {row['user_count']} users")
+    else:  # Default tuple result
+        print(f"  Group {row[0]}: {row[1]} users")
+
+# Demonstrate PostgreSQL-specific batch operations
+print("\nDemonstrating optimized COPY operations for bulk data:")
+
+# Prepare some additional users to insert with COPY
+additional_users = []
+for i in range(1001, 1501):
+    additional_users.append((
+        i,
+        f"Bulk User {i}",
+        f"bulk_user{i}@example.com",
+        f'{{"source": "copy_insert", "group": "{i % 5}", "priority": {i % 2}}}'
+    ))
+
+# Use PostgreSQL's COPY command for maximum insert performance  
+copied_count = adapter.use_copy_for_bulk_insert(
+    table_name="users",
+    column_names=["id", "name", "email", "metadata"],
+    data=additional_users
+)
+print(f"Added {copied_count} more users via COPY bulk insert")
+
+# Verify total count
+total_results = adapter.execute("SELECT COUNT(*) FROM users")
+print(f"Total users in database: {total_results[0][0] if isinstance(total_results[0], tuple) else total_results[0]['count']}")
+
+# Run EXPLAIN ANALYZE to check query performance
+explain_results = adapter.explain_analyze(
+    "SELECT * FROM users WHERE metadata->>'priority' = '0'"
+)
+print("\nQuery Execution Plan Preview:")
+print(f"  {explain_results[0][0]}")
+print("  ...")
+
+# Get PostgreSQL server version
+version = adapter.get_server_version()
+print(f"\nPostgreSQL Server Version: {version[0]}.{version[1]}.{version[2]}")
 
 # Close the connection
 adapter.close()
@@ -481,6 +563,138 @@ if event_name == "purchase":
 adapter.close()
 ```
 
+### Using PostgreSQL Adapter with Advanced Features
+
+```python
+from sql_batcher import SQLBatcher
+from sql_batcher.adapters.postgresql import PostgreSQLAdapter
+import psycopg2
+import psycopg2.extras
+import json
+import time
+
+# Create a PostgreSQL adapter with advanced features
+adapter = PostgreSQLAdapter(
+    connection_params={
+        "host": "localhost",
+        "database": "analytics",
+        "user": "postgres",
+        "password": "your_password"
+    },
+    isolation_level="read_committed",
+    cursor_factory=psycopg2.extras.RealDictCursor,  # Return dictionaries instead of tuples
+    application_name="data-pipeline"  # Helps with monitoring in pg_stat_activity
+)
+
+# Create a table with PostgreSQL-specific features like JSONB and arrays
+adapter.execute("""
+CREATE TABLE IF NOT EXISTS events (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    event_type VARCHAR(50) NOT NULL,
+    event_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    properties JSONB DEFAULT '{}'::jsonb,
+    tags TEXT[] DEFAULT '{}'
+)
+""")
+
+# Create some indices for better performance
+indices = [
+    {
+        "columns": ["user_id", "event_type"],
+        "name": "idx_events_user_event",
+        "method": "btree"
+    },
+    {
+        "columns": ["event_time"],
+        "name": "idx_events_time",
+        "method": "brin"  # BRIN indices are great for time-series data
+    },
+    {
+        "columns": ["properties"],
+        "name": "idx_events_properties",
+        "method": "gin"  # GIN indices for JSONB queries
+    },
+    {
+        "columns": ["tags"],
+        "name": "idx_events_tags",
+        "method": "gin"  # GIN for array queries
+    }
+]
+
+# Create all indices in a single operation
+adapter.create_indices("events", indices)
+
+# Generate event data
+events = []
+for i in range(1, 1001):
+    user_id = i % 100 + 1
+    event_type = ["pageview", "click", "signup", "purchase", "login"][i % 5]
+    
+    # Complex JSON properties
+    properties = {
+        "page": f"/page/{i % 20}",
+        "referrer": ["google", "facebook", "twitter", "direct"][i % 4],
+        "device": {
+            "type": ["mobile", "desktop", "tablet"][i % 3],
+            "browser": ["chrome", "firefox", "safari", "edge"][i % 4],
+            "os": ["windows", "macos", "linux", "ios", "android"][i % 5]
+        },
+        "metrics": {
+            "load_time": round(i % 10 * 0.1 + 0.5, 2),
+            "engagement": i % 5 + 1
+        }
+    }
+    
+    # Array of tags
+    tags = ["web"]
+    if i % 3 == 0:
+        tags.append("promotion")
+    if i % 5 == 0:
+        tags.append("new-user")
+    
+    events.append((user_id, event_type, json.dumps(properties), tags))
+
+# Use the COPY command for ultra-fast bulk loading
+start_time = time.time()
+row_count = adapter.use_copy_for_bulk_insert(
+    table_name="events",
+    column_names=["user_id", "event_type", "properties", "tags"],
+    data=events
+)
+elapsed = time.time() - start_time
+print(f"Inserted {row_count} events in {elapsed:.2f} seconds ({row_count/elapsed:.1f} rows/sec)")
+
+# Run a complex analytical query using PostgreSQL's JSONB operators
+results = adapter.execute("""
+SELECT 
+    e.event_type,
+    COUNT(*) as event_count,
+    e.properties->'device'->'type' as device_type,
+    COUNT(DISTINCT e.user_id) as unique_users,
+    ARRAY_AGG(DISTINCT t) as all_tags
+FROM 
+    events e,
+    UNNEST(e.tags) t
+WHERE 
+    e.properties->>'referrer' = 'google' AND
+    e.properties->'metrics'->>'engagement' >= '3'
+GROUP BY 
+    e.event_type, e.properties->'device'->'type'
+ORDER BY 
+    event_count DESC
+""")
+
+# Print results as a dictionary when using RealDictCursor
+for row in results:
+    print(f"Event: {row['event_type']}, Device: {row['device_type']}")
+    print(f"  Count: {row['event_count']}, Unique Users: {row['unique_users']}")
+    print(f"  Tags: {row['all_tags']}")
+
+# Close the connection
+adapter.close()
+```
+
 ### Using Snowflake Adapter
 
 ```python
@@ -676,13 +890,50 @@ For complete documentation, visit [the docs site](https://github.com/yourusernam
 
 SQL Batcher comes with several built-in adapters:
 
-- `GenericAdapter`: For generic database connections (PostgreSQL, MySQL, etc.) that follow the DB-API 2.0 specification
+- `GenericAdapter`: For generic database connections (MySQL, SQLite, etc.) that follow the DB-API 2.0 specification
+- `PostgreSQLAdapter`: For PostgreSQL databases with optimized features like COPY and specialized transaction management
 - `TrinoAdapter`: For Trino/Presto databases with specific size constraints
 - `SnowflakeAdapter`: For Snowflake databases with transaction support
 - `BigQueryAdapter`: For Google BigQuery with support for interactive and batch query modes
 - `SparkAdapter`: For PySpark SQL operations
 
 You can also create custom adapters by extending the `SQLAdapter` base class for other database systems.
+
+## Database-Specific Features
+
+Different databases have unique feature sets and limitations:
+
+### PostgreSQL
+- **Query Size Limit**: Practical limit ~500MB
+- **Transaction Support**: Full ACID compliance
+- **Batch Execution**: Multiple statements per query
+- **COPY Command**: Ultra-fast bulk data loading
+- **Advanced Features**: JSONB, Array types, GIN/GiST indices
+- **Ideal Batch Size**: 500KB-5MB
+
+### Trino (formerly PrestoSQL)
+- **Query Size Limit**: ~1MB
+- **Transaction Support**: Limited, depends on catalog (Hive ACID, etc.)
+- **Batch Execution**: Multiple statements per query
+- **Ideal Batch Size**: 500-900KB
+
+### Snowflake
+- **Query Size Limit**: 1MB for UI, 50MB for JDBC/ODBC
+- **Transaction Support**: Yes (multi-statement)
+- **Batch Execution**: Multiple statements per transaction
+- **Ideal Batch Size**: 1-10MB
+
+### BigQuery
+- **Query Size Limit**: 1MB for interactive, 20MB for batch
+- **Transaction Support**: Yes (since 2022)
+- **Batch Execution**: Jobs API for large operations
+- **Ideal Batch Size**: 10-15MB for batch mode
+
+### Spark SQL
+- **Query Size Limit**: Depends on driver memory
+- **Transaction Support**: Limited (Delta Lake adds ACID)
+- **Batch Execution**: SparkSession.sql() for multiple statements
+- **Ideal Batch Size**: 10-50MB
 
 ## License
 
