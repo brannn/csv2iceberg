@@ -85,3 +85,12 @@ disallow_incomplete_defs = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+markers = [
+    "core: Tests that don't require database connections",
+    "db: Tests that require actual database connections",
+    "postgres: Tests that require a PostgreSQL database",
+    "snowflake: Tests that require a Snowflake connection",
+    "trino: Tests that require a Trino connection",
+    "bigquery: Tests that require a BigQuery connection",
+    "spark: Tests that require a Spark connection",
+]

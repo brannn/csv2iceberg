@@ -1,102 +1,144 @@
-# SQL Batcher Testing Guide
+# Testing Guide for SQL Batcher
 
-SQL Batcher uses pytest as its primary testing framework. This document describes the testing approach, test categories, and how to run the tests.
+This document outlines the testing approach, organization, and methods used in the SQL Batcher project.
 
-## Test Categories
+## Testing Framework
 
-The tests are divided into several categories:
+SQL Batcher uses pytest as its primary testing framework. Tests are organized to allow running at different levels:
 
-1. **Core Tests**: Tests that don't require any database connections
-   - Test the SQLBatcher core functionality
-   - Test the abstract adapter interface
-   - Test the query collector functionality
+1. **Core Tests**: Tests for the core functionality that don't require any database connections
+2. **Adapter Tests**: Tests for specific database adapters, which may require actual database connections
+3. **Integration Tests**: End-to-end tests that verify SQL Batcher works correctly with actual databases
 
-2. **Generic Adapter Tests**: Tests that use mocked database connections
-   - Test the basic functionality of the generic adapter
-   - Don't require actual database connections
+## Test Organization
 
-3. **Database-Specific Tests**: Tests that require actual database connections
-   - PostgreSQL adapter tests
-   - Spark adapter tests (if applicable)
-   - Trino adapter tests (if applicable)
+Tests are organized in the `tests` directory with the following structure:
+
+- `test_batcher.py`: Core tests for the SQLBatcher class
+- `test_adapters.py`: Tests for the adapter base class and the generic adapter
+- `test_postgresql_adapter.py`: Tests for the PostgreSQL adapter
+- `test_snowflake_adapter.py`: Tests for the Snowflake adapter
+- `test_trino_adapter.py`: Tests for the Trino adapter
+- `test_bigquery_adapter.py`: Tests for the BigQuery adapter
+- `test_spark_adapter.py`: Tests for the Spark adapter
+
+## Test Markers
+
+We use pytest markers to categorize tests:
+
+- `@pytest.mark.core`: Tests that don't require database connections
+- `@pytest.mark.db`: Tests that require actual database connections
+- `@pytest.mark.postgres`: Tests that require a PostgreSQL database
+- `@pytest.mark.snowflake`: Tests that require a Snowflake connection
+- `@pytest.mark.trino`: Tests that require a Trino connection
+- `@pytest.mark.bigquery`: Tests that require a BigQuery connection
+- `@pytest.mark.spark`: Tests that require a Spark connection
 
 ## Running Tests
 
-### Basic Test Run
+The project includes a comprehensive test runner script that intelligently runs tests based on available connections.
 
-To run the core tests only (no database connections required):
+### Run All Tests
+
+```bash
+python run_full_tests.py
+```
+
+This will:
+1. Detect which database connections are available
+2. Run core tests that don't require connections
+3. Run adapter-specific tests for available databases
+4. Generate a summary report
+
+### Run Core Tests Only
 
 ```bash
 python run_full_tests.py --core-only
 ```
 
-### Running All Tests
-
-To run all tests (requires database connections if available):
-
-```bash
-python run_full_tests.py --all
-```
-
-### Running Specific Database Tests
-
-To run PostgreSQL-specific tests:
-
-```bash
-python run_full_tests.py --pg
-```
-
-### Test Coverage
-
-To generate a test coverage report:
+### Run with Coverage
 
 ```bash
 python run_full_tests.py --coverage
 ```
 
-This will create an HTML coverage report in the `coverage_html` directory.
+This will generate a coverage report in both terminal output and HTML format (in the `coverage_html` directory).
 
-## Test Structure
+### Run Individual Test Files
 
-The tests are organized as follows:
+You can also run individual test files directly with pytest:
 
-- `tests/test_batcher.py`: Tests for the core SQLBatcher class
-- `tests/test_adapters.py`: Tests for the abstract adapter and generic adapter
-- `tests/test_postgresql_adapter.py`: Tests for the PostgreSQL adapter
-- `tests/conftest.py`: Pytest fixtures and test configuration
+```bash
+python -m pytest tests/test_batcher.py -v
+```
+
+Or specific test cases:
+
+```bash
+python -m pytest tests/test_batcher.py::TestSQLBatcher::test_init_with_defaults -v
+```
+
+## Setting Up Database Connections for Testing
+
+The test suite will automatically detect available database connections using environment variables:
+
+### PostgreSQL
+
+```
+PGHOST=localhost
+PGPORT=5432
+PGUSER=postgres
+PGPASSWORD=password
+PGDATABASE=test
+```
+
+### Snowflake
+
+```
+SNOWFLAKE_ACCOUNT=your_account
+SNOWFLAKE_USER=your_user
+SNOWFLAKE_PASSWORD=your_password
+SNOWFLAKE_DATABASE=your_database
+SNOWFLAKE_WAREHOUSE=your_warehouse
+```
+
+### Trino
+
+```
+TRINO_HOST=localhost
+TRINO_PORT=8080
+TRINO_USER=trino
+TRINO_PASSWORD=password
+TRINO_CATALOG=catalog
+TRINO_SCHEMA=schema
+```
+
+### BigQuery
+
+BigQuery uses Application Default Credentials. Set up credentials with:
+
+```
+export GOOGLE_APPLICATION_CREDENTIALS=/path/to/credentials.json
+```
+
+## Mock Testing
+
+For adapter-specific tests that can't connect to a real database, most can still run using mock connections. This allows testing most of the adapter functionality without requiring actual database connections.
 
 ## Adding New Tests
 
 When adding new tests:
 
-1. Use the appropriate marker for the test category (core, db, postgres, etc.)
-2. Keep database-specific tests in their own files
-3. Use pytest fixtures for common setup
-4. Mock external dependencies when possible
-
-Example of adding a new test:
-
-```python
-@pytest.mark.core
-def test_new_feature():
-    batcher = SQLBatcher()
-    # Test the new feature
-    assert batcher.new_feature() == expected_result
-```
+1. Add test cases to the appropriate test file
+2. Use the correct markers to categorize the test
+3. If testing database-specific functionality, use mocks when possible
+4. Run the tests to ensure they pass
+5. Update the coverage report to check test coverage
 
 ## Continuous Integration
 
-The repository is configured to run core tests on every commit. Database-specific tests run only when the necessary environment variables for database connections are available.
+The test suite is designed to work well in CI/CD environments:
 
-## Database Requirements
-
-To run the database-specific tests:
-
-### PostgreSQL
-
-Set the following environment variables:
-- `PGHOST`: PostgreSQL host (default: "localhost")
-- `PGPORT`: PostgreSQL port (default: "5432")
-- `PGUSER`: PostgreSQL username (default: "postgres")
-- `PGDATABASE`: PostgreSQL database (default: "postgres")
-- `PGPASSWORD`: PostgreSQL password (if needed)
+- Core tests will always run
+- Database-specific tests will only run if connections are available
+- Coverage reports are generated for visibility into test quality
