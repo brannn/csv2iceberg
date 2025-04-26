@@ -1,3 +1,0 @@
-"""
-SQL Batcher test package.
-"""

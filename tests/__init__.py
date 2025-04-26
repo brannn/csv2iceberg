@@ -1,3 +1,3 @@
 """
-Test package for CSV to Iceberg conversion.
+SQL Batcher test package.
 """

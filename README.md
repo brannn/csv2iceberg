@@ -1,261 +1,142 @@
-# Milton: CSV to Iceberg Conversion Tool
+# SQL Batcher
 
-A web application and command-line tool for converting CSV files to Apache Iceberg tables.
+[![Python Version](https://img.shields.io/pypi/pyversions/sql-batcher.svg)](https://pypi.org/project/sql-batcher)
+[![PyPI Version](https://img.shields.io/pypi/v/sql-batcher.svg)](https://pypi.org/project/sql-batcher)
+[![License](https://img.shields.io/pypi/l/sql-batcher.svg)](https://github.com/yourusername/sql-batcher/blob/main/LICENSE)
 
-## Overview
-
-Milton (named after the iconic red stapler from "Office Space") allows data engineers to easily convert CSV data files to Apache Iceberg tables with automatic schema inference, smart batch processing, and real-time progress tracking. It connects to a Trino server for SQL operations and includes a user-friendly web interface for interactive use as well as a companion CLI for automation needs.
+SQL Batcher is a Python library for batching SQL statements to optimize database operations. It helps you manage large volumes of SQL statements by sending them to the database in optimized batches, improving performance and reducing server load.
 
 ## Features
 
-- Automatic schema inference from CSV files
-- Support for both append and overwrite modes
-- Progress tracking with percentage complete
-- Schema validation and compatibility checks
-- Configurable CSV parsing options (delimiter, quote character, headers)
-- Iceberg partitioning recommendations based on column cardinality analysis
-- Schema customization interface with data preview
-- Connection profile management for reusable configurations
-- Persistent job history with detailed logs and statistics
-
-## Requirements
-
-- Python 3.8+
-- Trino server with Iceberg catalog
-- Required Python packages:
-  - click
-  - email-validator
-  - flask
-  - flask-sqlalchemy
-  - gunicorn
-  - lmdb
-  - numpy
-  - polars
-  - psycopg2-binary
-  - pyarrow
-  - pyhive
-  - pyiceberg
-  - requests
-  - rich
-  - sqlalchemy
-  - thrift
-  - trino
-  - urllib3
-  - werkzeug
-
-Optional Features (Future Support):
-- Direct Hive metastore connection (currently disabled but code structure maintained for future implementation)
+- 🚀 **High Performance**: Optimize database operations by batching multiple SQL statements
+- 🧩 **Modularity**: Easily swap between different database adapters (Trino, Snowflake, Spark, etc.)
+- 🔍 **Transparency**: Dry run mode to inspect generated SQL without execution
+- 📊 **Monitoring**: Collect and analyze batched queries
+- 🔗 **Extensibility**: Create custom adapters for any database system
+- 🛡️ **Type Safety**: Full type annotations for better IDE support
 
 ## Installation
 
 ```bash
-# Install the required dependencies
-pip install -r requirements-equivalent.txt
-
-# Start the web application
-gunicorn --bind 0.0.0.0:5000 --reuse-port --reload main:app
-
-# Or run directly with Python
-python main.py
+pip install sql-batcher
 ```
 
-## Usage
+### Optional Dependencies
 
-### Web Interface
-
-The web interface provides an intuitive way to convert CSV files to Iceberg tables:
-
-1. Start the application:
-   ```bash
-   gunicorn --bind 0.0.0.0:5000 --reuse-port --reload main:app
-   ```
-
-2. Open your browser and navigate to http://localhost:5000
-
-3. From the web interface, you can:
-   - Manage connection profiles for different Trino clusters
-   - Upload and convert CSV files
-   - Customize schemas with the visual editor
-   - View partitioning recommendations
-   - Monitor job progress
-   - Review job history and logs
-
-### Command-Line Interface (CLI)
-
-For automation and scripting, you can use the command-line interface:
+Install with specific database adapters:
 
 ```bash
-python csv_to_iceberg.py convert \
-  --csv-file sample_data.csv \
-  --table-name catalog.schema.table \
-  --trino-host localhost \
-  --trino-port 443 \
-  --trino-user admin \
-  --trino-password your_password \
-  --http-scheme https \
-  --trino-role sysadmin \
-  --trino-catalog iceberg \
-  --trino-schema default
+pip install "sql-batcher[trino]"     # For Trino support
+pip install "sql-batcher[snowflake]"  # For Snowflake support
+pip install "sql-batcher[spark]"      # For PySpark support
+pip install "sql-batcher[all]"        # All adapters
 ```
 
-Note: Direct Hive metastore connection is currently disabled but may be supported in future versions. The following parameters exist in the codebase but are not active:
+## Quick Start
 
-```bash
-# Future support - not currently implemented
-python csv_to_iceberg.py convert \
-  # ... standard parameters as above ...
-  --hive-metastore-uri localhost:9083 \
-  --use-hive-metastore
+```python
+from sql_batcher import SQLBatcher
+from sql_batcher.adapters.generic import GenericAdapter
+import sqlite3
+
+# Create a connection
+connection = sqlite3.connect(":memory:")
+cursor = connection.cursor()
+
+# Create an adapter
+adapter = GenericAdapter(connection=connection)
+
+# Create a table
+adapter.execute("CREATE TABLE users (id INTEGER, name TEXT)")
+
+# Generate many INSERT statements
+statements = [f"INSERT INTO users VALUES ({i}, 'User {i}')" for i in range(1, 1001)]
+
+# Create a batcher with a 100KB size limit
+batcher = SQLBatcher(max_bytes=100_000)
+
+# Process all statements
+total_processed = batcher.process_statements(statements, adapter.execute)
+print(f"Processed {total_processed} statements")
+
+# Verify the data
+results = adapter.execute("SELECT COUNT(*) FROM users")
+print(f"Total users in database: {results[0][0]}")
+
+# Close the connection
+adapter.close()
 ```
 
-### CLI Options
+## Advanced Usage
 
-```
-Usage: csv_to_iceberg.py convert [OPTIONS]
+### Dry Run Mode
 
-  Convert a CSV file to an Iceberg table.
+```python
+from sql_batcher import SQLBatcher
+from sql_batcher.query_collector import ListQueryCollector
 
-Options:
-  -f, --csv-file TEXT            Path to the CSV file  [required]
-  -d, --delimiter TEXT           CSV delimiter (default: comma)
-  -h, --has-header               CSV has header row (default: True)
-  -q, --quote-char TEXT          CSV quote character (default: double quote)
-  -b, --batch-size INTEGER       Batch size for processing (default: 10000)
-  -t, --table-name TEXT          Target Iceberg table name (format:
-                                 catalog.schema.table)  [required]
-  --trino-host TEXT              Trino host  [required]
-  --trino-port INTEGER           Trino port (default: 443)
-  --trino-user TEXT              Trino user
-  --trino-password TEXT          Trino password (if authentication is enabled)
-  --http-scheme [http|https]     HTTP scheme for Trino connection (default: https)
-  --trino-role TEXT              Trino role for authorization (default: sysadmin)
-  --trino-catalog TEXT           Trino catalog  [required]
-  --trino-schema TEXT            Trino schema  [required]
-  --hive-metastore-uri TEXT      Hive metastore Thrift URI
-  --use-hive-metastore           Use direct Hive Metastore connection
-  -m, --mode [append|overwrite]  Write mode (append or overwrite, default: append)
-  --sample-size INTEGER          Number of rows to sample for schema inference
-                                 (default: 1000)
-  --custom-schema TEXT           Path to a JSON file containing a custom schema
-  --include-columns TEXT         Comma-separated list of column names to include
-  --exclude-columns TEXT         Comma-separated list of column names to exclude
-  -v, --verbose                  Enable verbose logging
-  --help                         Show this message and exit.
+# Create a query collector
+collector = ListQueryCollector()
+
+# Create a batcher in dry run mode
+batcher = SQLBatcher(max_bytes=50_000, dry_run=True)
+
+# Process statements without executing them
+batcher.process_statements(
+    statements, 
+    lambda x: None,  # This won't be called in dry run mode
+    query_collector=collector
+)
+
+# Get the collected queries
+for query_info in collector.get_queries():
+    print(f"Batch query: {query_info['query']}")
 ```
 
-## Examples
+### Using Trino Adapter
 
-### Convert a CSV with custom delimiter and quote character
+```python
+from sql_batcher import SQLBatcher
+from sql_batcher.adapters.trino import TrinoAdapter
 
-```bash
-python csv_to_iceberg.py convert \
-  --csv-file data.csv \
-  --delimiter ";" \
-  --quote-char "'" \
-  --table-name iceberg.default.my_table \
-  --trino-host localhost \
-  --trino-port 443 \
-  --trino-user admin \
-  --trino-password your_password \
-  --http-scheme https \
-  --trino-catalog iceberg \
-  --trino-schema default
+# Create a Trino adapter
+adapter = TrinoAdapter(
+    host="trino.example.com",
+    port=443,
+    user="admin",
+    catalog="hive",
+    schema="default"
+)
+
+# Create a batcher
+batcher = SQLBatcher(max_bytes=1_000_000)
+
+# Process statements
+batcher.process_statements(statements, adapter.execute)
+
+# Close the connection
+adapter.close()
 ```
 
-### Overwrite an existing table
+## Documentation
 
-```bash
-python csv_to_iceberg.py convert \
-  --csv-file updated_data.csv \
-  --table-name iceberg.default.existing_table \
-  --trino-host localhost \
-  --trino-port 443 \
-  --trino-user admin \
-  --trino-password your_password \
-  --http-scheme https \
-  --trino-catalog iceberg \
-  --trino-schema default \
-  --mode overwrite
-```
+For complete documentation, visit [the docs site](https://github.com/yourusername/sql-batcher).
 
-### Process a large CSV with custom batch size
+## Adapters
 
-```bash
-python csv_to_iceberg.py convert \
-  --csv-file large_data.csv \
-  --batch-size 50000 \
-  --table-name iceberg.default.large_table \
-  --trino-host localhost \
-  --trino-port 443 \
-  --trino-user admin \
-  --trino-password your_password \
-  --http-scheme https \
-  --trino-catalog iceberg \
-  --trino-schema default
-```
+SQL Batcher comes with several built-in adapters:
 
-## Troubleshooting
+- `GenericAdapter`: For generic database connections (SQLite, PostgreSQL, etc.)
+- `TrinoAdapter`: For Trino/Presto databases
+- `SnowflakeAdapter`: For Snowflake databases
+- `SparkAdapter`: For PySpark SQL
 
-If you encounter issues:
+You can also create custom adapters by extending the `SQLAdapter` base class.
 
-1. Use the `--verbose` flag to enable detailed logging
-2. Ensure Trino server is running and accessible 
-3. Verify connection parameters (host, port)
-4. Check CSV file format and encoding
-5. For authentication errors, verify Trino username and password are correct
+## License
 
-Note: Direct Hive metastore connection is not currently active in this version but the code structure is maintained for future implementation.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-### Authentication Issues
+## Contributing
 
-If you receive a "Cannot use authentication with HTTP" error:
-
-1. Use HTTPS instead of HTTP when connecting to a Trino server with authentication:
-   ```bash
-   python csv_to_iceberg.py convert \
-     --csv-file data.csv \
-     --table-name iceberg.default.my_table \
-     --trino-host trino-server.example.com \
-     --trino-port 8443 \
-     --trino-user admin \
-     --trino-password your_password \
-     --http-scheme https \   # Use HTTPS for authentication
-     --trino-catalog iceberg \
-     --trino-schema default
-   ```
-
-2. If you cannot use HTTPS:
-   - Consider using a Trino server configuration without authentication
-   - Configure Trino to accept HTTP authentication (not recommended for production)
-
-Note: For security reasons, passwords should only be transmitted over HTTPS connections.
-
-### Role-Based Authorization
-
-This tool supports Trino's role-based authorization system using the `--trino-role` parameter. The role is passed to Trino in the `X-Trino-Role` header in the format `system=ROLE{roleName}`.
-
-```bash
-python csv_to_iceberg.py convert \
-  --csv-file data.csv \
-  --table-name iceberg.default.my_table \
-  --trino-host trino-server.example.com \
-  --trino-user admin \
-  --trino-password your_password \
-  --http-scheme https \
-  --trino-role my_role \   # Specifies a custom role
-  --trino-catalog iceberg \
-  --trino-schema default
-```
-
-By default, the tool uses the `sysadmin` role if no role is specified. You may need to adjust this based on your Trino server's security configuration:
-
-1. **Common role options**:
-   - `sysadmin`: Administrative role with high privileges (default)
-   - `user`: Standard user role with more restricted permissions
-   - Custom roles configured in your Trino deployment
-
-2. **Using different roles**:
-   - For table creation and modification: A role with DDL permissions is required
-   - For read-only operations: A role with SELECT permissions may be sufficient
-
-Contact your Trino administrator if you're unsure which role to use for your specific scenario.
+Contributions are welcome! Please feel free to submit a Pull Request.
