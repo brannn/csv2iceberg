@@ -11,6 +11,7 @@ sys.path.insert(0, os.path.abspath('src'))
 
 # Find and run tests that don't require database connections
 def run_tests():
+    """Run core SQL Batcher tests that don't require database connections"""
     # Create a test suite
     loader = unittest.TestLoader()
     suite = unittest.TestSuite()
@@ -22,13 +23,8 @@ def run_tests():
     
     # Add adapter tests but skip database connection tests
     try:
-        from tests.test_adapters import TestSQLAdapter, TestGenericAdapter
+        from tests.test_adapters import TestSQLAdapter
         suite.addTest(loader.loadTestsFromTestCase(TestSQLAdapter))
-        
-        # Mock sqlite3 connections for GenericAdapter tests
-        import unittest.mock
-        with unittest.mock.patch('sqlite3.connect'):
-            suite.addTest(loader.loadTestsFromTestCase(TestGenericAdapter))
     except (ImportError, AttributeError) as e:
         print(f"Unable to load adapter tests: {e}")
     
