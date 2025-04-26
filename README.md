@@ -10,6 +10,7 @@ SQL Batcher is a Python library for batching SQL statements to optimize database
 
 - 🚀 **High Performance**: Optimize database operations by batching multiple SQL statements
 - 🧩 **Modularity**: Easily swap between different database adapters (Trino, Snowflake, Spark, etc.)
+- 📏 **Smart Sizing**: Automatic batch size adjustment based on column count 
 - 🔍 **Transparency**: Dry run mode to inspect generated SQL without execution
 - 📊 **Monitoring**: Collect and analyze batched queries
 - 🔗 **Extensibility**: Create custom adapters for any database system
@@ -105,8 +106,16 @@ for i in range(1, 1001):
 
 print(f"Generated {len(statements)} INSERT statements")
 
-# Create a batcher with a 500KB size limit (practical for PostgreSQL)
-batcher = SQLBatcher(max_bytes=500_000)
+# Create a batcher with dynamic column-based batch sizing
+# When tables have many columns, smaller batches will be used
+# When tables have few columns, larger batches will be used
+batcher = SQLBatcher(
+    max_bytes=500_000,             # Base maximum batch size
+    auto_adjust_for_columns=True,  # Enable dynamic column-based adjustment
+    reference_column_count=5,      # Reference point for column count (baseline)
+    min_adjustment_factor=0.2,     # Don't go below 20% of max_bytes
+    max_adjustment_factor=3.0      # Don't go above 300% of max_bytes
+)
 
 # Begin a transaction for atomicity
 adapter.begin_transaction()
@@ -186,6 +195,35 @@ adapter.close()
 ```
 
 ## Advanced Usage
+
+### Dynamic Column-Based Batch Sizing
+
+SQL Batcher now includes intelligent batch sizing based on the number of columns in your INSERT statements. This feature automatically adjusts the batch size to optimize performance based on table width.
+
+```python
+from sql_batcher import SQLBatcher
+
+# Create a batcher with dynamic column-based batch sizing
+batcher = SQLBatcher(
+    max_bytes=1_000_000,           # Base maximum batch size
+    auto_adjust_for_columns=True,  # Enable column-based adjustment (default: True)
+    reference_column_count=5,      # Baseline column count (default: 5)
+    min_adjustment_factor=0.2,     # Minimum adjustment multiplier (default: 0.2)
+    max_adjustment_factor=5.0      # Maximum adjustment multiplier (default: 5.0)
+)
+
+# How it works:
+# - The batcher automatically detects the number of columns in your INSERT statements
+# - For wide tables (many columns), it reduces the batch size to prevent oversized batches
+# - For narrow tables (few columns), it increases the batch size for better throughput
+# - Adjustment is proportional: tables with 2x more columns than reference get ~0.5x batch size
+
+# Example adjustment scenarios:
+# - 15-column table (with reference=5): uses ~0.33x max_bytes (smaller batches)
+# - 2-column table (with reference=5): uses ~2.5x max_bytes (larger batches)
+```
+
+This feature is especially valuable when working with tables of varying widths, as it intelligently balances the number of statements per batch based on the actual column count.
 
 ### Dry Run Mode
 
