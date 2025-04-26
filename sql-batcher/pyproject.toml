@@ -45,6 +45,9 @@ all = ["trino>=0.305", "pyspark>=3.0", "snowflake-connector-python>=2.7"]
 "Bug Tracker" = "https://github.com/example/sql-batcher/issues"
 "Documentation" = "https://sql-batcher.readthedocs.io"
 
+[project.scripts]
+sql-batcher = "sql_batcher.cli:main"
+
 [tool.setuptools.packages.find]
 where = ["src"]
 
