@@ -982,7 +982,30 @@ adapter.close()
 
 ## Documentation
 
-For complete documentation, visit [the docs site](https://github.com/yourusername/sql-batcher).
+SQL Batcher's documentation is available in several formats:
+
+- **API Reference**: Visit [sql-batcher.readthedocs.io](https://sql-batcher.readthedocs.io/) for the full API documentation
+- **Examples**: See the [`examples/`](https://github.com/yourusername/sql-batcher/tree/main/examples) directory for practical usage examples
+- **Source Code**: The [GitHub repository](https://github.com/yourusername/sql-batcher) contains the latest code and issue tracker
+- **In-Code Documentation**: All classes and methods include detailed docstrings that can be accessed via Python's `help()` function
+
+### Building Documentation Locally
+
+```bash
+# Clone the repository
+git clone https://github.com/yourusername/sql-batcher.git
+cd sql-batcher
+
+# Install documentation dependencies
+pip install -e ".[docs]"
+
+# Build the documentation
+cd docs
+make html
+
+# View documentation
+# Open _build/html/index.html in your browser
+```
 
 ## Adapters
 
