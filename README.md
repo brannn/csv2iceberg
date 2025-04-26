@@ -8,12 +8,12 @@ SQL Batcher is a high-performance Python library that solves the critical challe
 
 ## Why Use SQL Batcher?
 
-**For Data Engineers and Database Developers:**
+**For Data and Analytics Engineers:**
 - **Overcome Database Limitations:** Automatically manages query size constraints in systems like Trino (~1MB), BigQuery (1MB interactive/20MB batch), and Snowflake (1-8MB depending on edition)
 - **10x Performance Improvements:** Dramatically reduces execution time for large-scale operations by finding the optimal balance between batch size and round-trip overhead
 - **Smart Resource Management:** Prevents memory overflow errors and server rejections by intelligently sizing batches based on table structure (columns)
 
-**For Enterprise Applications:**
+**For Application Development:**
 - **Simplified Architecture:** Eliminates the need to build custom batching logic for each database system in your stack
 - **Production Reliability:** Handles transaction management, connection pooling, and error recovery through database-specific adapters
 - **Transparent Operations:** Includes dry-run capability and monitoring tools to inspect how statements are batched before execution
