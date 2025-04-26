@@ -1,0 +1,90 @@
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sql-batcher"
+version = "0.1.0"
+description = "Efficiently batch SQL statements based on size limits"
+readme = "README.md"
+requires-python = ">=3.7"
+license = {text = "MIT"}
+authors = [
+    {name = "SQL Batcher Team", email = "example@example.com"}
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.7",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Database",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+keywords = ["sql", "batch", "database", "trino", "spark", "snowflake"]
+dependencies = [
+    "typing-extensions>=4.0.0; python_version < '3.8'",
+]
+
+[project.optional-dependencies]
+trino = [
+    "trino>=0.305.0",
+]
+spark = [
+    "pyspark>=3.0.0",
+]
+snowflake = [
+    "snowflake-connector-python>=2.4.0",
+]
+all = [
+    "trino>=0.305.0",
+    "pyspark>=3.0.0",
+    "snowflake-connector-python>=2.4.0",
+]
+dev = [
+    "pytest>=6.0.0",
+    "pytest-cov>=2.12.0",
+    "black>=22.0.0",
+    "isort>=5.10.0",
+    "mypy>=0.910",
+    "flake8>=4.0.0",
+    "sphinx>=4.3.0",
+    "sphinx-rtd-theme>=1.0.0",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/username/sql-batcher"
+"Bug Tracker" = "https://github.com/username/sql-batcher/issues"
+"Documentation" = "https://sql-batcher.readthedocs.io/"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.black]
+line-length = 88
+target-version = ["py37"]
+include = '\.pyi?$'
+
+[tool.isort]
+profile = "black"
+line_length = 88
+src_paths = ["src", "tests"]
+
+[tool.mypy]
+python_version = "3.7"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
