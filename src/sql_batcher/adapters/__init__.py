@@ -38,3 +38,10 @@ try:
     __all__.append("BigQueryAdapter")
 except ImportError:
     pass
+
+# PostgreSQL adapter is lazily imported to avoid hard dependency
+try:
+    from sql_batcher.adapters.postgresql import PostgreSQLAdapter
+    __all__.append("PostgreSQLAdapter")
+except ImportError:
+    pass
