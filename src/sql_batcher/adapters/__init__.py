@@ -31,3 +31,10 @@ try:
     __all__.append("SparkAdapter")
 except ImportError:
     pass
+
+# BigQuery adapter is lazily imported to avoid hard dependency
+try:
+    from sql_batcher.adapters.bigquery import BigQueryAdapter
+    __all__.append("BigQueryAdapter")
+except ImportError:
+    pass

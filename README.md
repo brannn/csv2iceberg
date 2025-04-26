@@ -15,6 +15,23 @@ SQL Batcher is a Python library for batching SQL statements to optimize database
 - 🔗 **Extensibility**: Create custom adapters for any database system
 - 🛡️ **Type Safety**: Full type annotations for better IDE support
 
+## Which Databases Benefit from SQL Batcher?
+
+SQL Batcher is especially valuable for database systems with query size limitations:
+
+| Database/Engine | Query Size Limitations | Benefits from SQL Batcher |
+|-----------------|------------------------|---------------------------|
+| **Trino/Presto** | ~1MB query size limit | Essential for bulk operations |
+| **Snowflake** | 1MB-8MB statement size limits depending on edition | Significant for large data sets |
+| **BigQuery** | 1MB for interactive, 20MB for batch | Critical for complex operations |
+| **Redshift** | 16MB maximum query size | Important for ETL processes |
+| **MySQL/MariaDB** | 4MB default `max_allowed_packet` | Important for large INSERT operations |
+| **PostgreSQL** | 1GB limit, but practical performance issues with large queries | Helpful for bulk operations |
+| **Hive** | Configuration-dependent | Essential for data warehouse operations |
+| **Oracle** | ~4GB theoretical, much lower in practice | Useful for enterprise applications |
+| **SQL Server** | 2GB batch size, 4MB network packet size | Important for large-scale operations |
+| **DB2** | 2MB statement size by default | Significant for bulk processing |
+
 ## Installation
 
 ```bash
@@ -26,9 +43,10 @@ pip install sql-batcher
 Install with specific database adapters:
 
 ```bash
-pip install "sql-batcher[trino]"     # For Trino support
+pip install "sql-batcher[trino]"      # For Trino support
 pip install "sql-batcher[snowflake]"  # For Snowflake support
 pip install "sql-batcher[spark]"      # For PySpark support
+pip install "sql-batcher[bigquery]"   # For Google BigQuery support
 pip install "sql-batcher[all]"        # All adapters
 ```
 
@@ -283,6 +301,186 @@ print(f"Fact table now contains {count_result[0][0]} rows")
 adapter.close()
 ```
 
+### Using BigQuery Adapter
+
+```python
+from sql_batcher import SQLBatcher
+from sql_batcher.adapters.bigquery import BigQueryAdapter
+import datetime
+import os
+
+# Create a BigQuery adapter with authentication options
+# Note: This example uses Application Default Credentials
+# For other auth methods, see: https://cloud.google.com/docs/authentication
+adapter = BigQueryAdapter(
+    project_id="your-project-id",
+    dataset_id="analytics_data",
+    location="US",
+    # Optional: Use batch mode for large operations (increases max query size to 20MB)
+    use_batch_mode=True
+)
+
+# Create a table for event analytics data
+create_table_sql = """
+CREATE TABLE IF NOT EXISTS event_analytics (
+    event_id STRING,
+    event_timestamp TIMESTAMP,
+    user_id STRING,
+    session_id STRING,
+    event_name STRING,
+    platform STRING,
+    country STRING,
+    device_type STRING,
+    properties JSON
+)
+"""
+adapter.execute(create_table_sql)
+print("Created event_analytics table")
+
+# Generate INSERT statements for batch processing
+insert_statements = []
+
+# Generate event data for the last 3 days
+platforms = ["web", "ios", "android"]
+countries = ["US", "UK", "CA", "DE", "FR", "JP", "AU", "BR", "IN"]
+devices = ["mobile", "tablet", "desktop"]
+event_types = ["page_view", "click", "scroll", "form_submit", "purchase", "login", "signup"]
+
+# Generate sample event data
+base_time = datetime.datetime.now() - datetime.timedelta(days=3)
+for i in range(1, 1001):
+    # Create realistic but varied event data
+    event_id = f"evt_{i:06d}"
+    event_time = base_time + datetime.timedelta(
+        hours=i % 72,
+        minutes=i % 60,
+        seconds=i % 60
+    )
+    timestamp_str = event_time.strftime("%Y-%m-%d %H:%M:%S")
+    
+    user_id = f"user_{(i % 100) + 1:03d}"
+    session_id = f"session_{(i % 50) + 1:02d}_{(i % 10) + 1}"
+    event_name = event_types[i % len(event_types)]
+    platform = platforms[i % len(platforms)]
+    country = countries[i % len(countries)]
+    device = devices[i % len(devices)]
+    
+    # Create JSON properties with varying complexity
+    if event_name == "page_view":
+        props = f'{{"page_url": "/page/{i % 20}", "referrer": "google.com", "load_time": {(i % 5) + 0.5}}}'
+    elif event_name == "purchase":
+        props = f'{{"transaction_id": "TX{i:04d}", "amount": {(i % 100) + 9.99}, "currency": "USD", "items": [{{"id": "item1", "price": {(i % 50) + 4.99}}}]}}'
+    else:
+        props = f'{{"element_id": "btn_{i % 10}", "position": {{"x": {i % 100}, "y": {i % 200}}}}}'
+    
+    # Create the INSERT statement with proper formatting for BigQuery
+    insert_sql = f"""
+    INSERT INTO event_analytics (
+        event_id, event_timestamp, user_id, session_id, 
+        event_name, platform, country, device_type, properties
+    ) VALUES (
+        '{event_id}',
+        TIMESTAMP '{timestamp_str}',
+        '{user_id}',
+        '{session_id}',
+        '{event_name}',
+        '{platform}',
+        '{country}',
+        '{device}',
+        '{props}'
+    )
+    """
+    insert_statements.append(insert_sql)
+
+# For BigQuery, a larger batch size is effective in batch mode
+batcher = SQLBatcher(max_bytes=15_000_000)  # 15MB for batch mode operations
+
+print(f"Inserting {len(insert_statements)} events...")
+
+# Use a transaction for batch operations (BigQuery supports multi-statement transactions)
+try:
+    # Begin transaction
+    adapter.begin_transaction()
+    
+    # Process all INSERT statements
+    total_processed = batcher.process_statements(insert_statements, adapter.execute)
+    print(f"Processed {total_processed} INSERT statements")
+    
+    # Commit the transaction
+    adapter.commit_transaction()
+    print("Transaction committed successfully")
+except Exception as e:
+    # Rollback on error
+    adapter.rollback_transaction()
+    print(f"Error: {e}")
+    raise
+
+# Run some analytical queries to demonstrate BigQuery's strengths
+print("\nRunning analytical queries...")
+
+# Query 1: Events by platform and country
+platform_query = """
+SELECT
+  platform,
+  country,
+  COUNT(*) as event_count
+FROM 
+  event_analytics
+GROUP BY 
+  platform, country
+ORDER BY 
+  event_count DESC
+LIMIT 10
+"""
+platform_results = adapter.execute(platform_query)
+print("\nTop Platform-Country Combinations:")
+for row in platform_results:
+    print(f"  {row[0]} / {row[1]}: {row[2]} events")
+
+# Query 2: Event counts by hour of day
+hourly_query = """
+SELECT
+  EXTRACT(HOUR FROM event_timestamp) as hour_of_day,
+  COUNT(*) as event_count
+FROM 
+  event_analytics
+GROUP BY 
+  hour_of_day
+ORDER BY 
+  hour_of_day
+"""
+hourly_results = adapter.execute(hourly_query)
+print("\nEvents by Hour of Day:")
+for row in hourly_results:
+    hour = int(row[0])
+    count = row[1]
+    print(f"  {hour:02d}:00 - {hour:02d}:59: {count} events {'|' * (count // 10)}")
+
+# Query 3: Complex JSON property extraction and analysis
+if event_name == "purchase":
+    purchase_query = """
+    SELECT
+      JSON_VALUE(properties, '$.transaction_id') as transaction_id,
+      CAST(JSON_VALUE(properties, '$.amount') AS FLOAT64) as amount,
+      user_id,
+      event_timestamp
+    FROM 
+      event_analytics
+    WHERE 
+      event_name = 'purchase'
+    ORDER BY 
+      amount DESC
+    LIMIT 5
+    """
+    purchase_results = adapter.execute(purchase_query)
+    print("\nTop 5 Purchases:")
+    for row in purchase_results:
+        print(f"  Transaction: {row[0]}, Amount: ${row[1]:.2f}, User: {row[2]}, Time: {row[3]}")
+
+# Close the connection
+adapter.close()
+```
+
 ### Using Snowflake Adapter
 
 ```python
@@ -474,23 +672,6 @@ adapter.close()
 
 For complete documentation, visit [the docs site](https://github.com/yourusername/sql-batcher).
 
-## Which Databases Benefit from SQL Batcher?
-
-SQL Batcher is especially valuable for database systems with query size limitations:
-
-| Database/Engine | Query Size Limitations | Benefits from SQL Batcher |
-|-----------------|------------------------|---------------------------|
-| **Trino/Presto** | ~1MB query size limit | Essential for bulk operations |
-| **Snowflake** | 1MB-8MB statement size limits depending on edition | Significant for large data sets |
-| **BigQuery** | 1MB for interactive, 20MB for batch | Critical for complex operations |
-| **Redshift** | 16MB maximum query size | Important for ETL processes |
-| **PostgreSQL** | 1GB limit, but practical performance issues with large queries | Helpful for bulk operations |
-| **MySQL/MariaDB** | 4MB default `max_allowed_packet` | Important for large INSERT operations |
-| **Hive** | Configuration-dependent | Essential for data warehouse operations |
-| **Oracle** | ~4GB theoretical, much lower in practice | Useful for enterprise applications |
-| **SQL Server** | 2GB batch size, 4MB network packet size | Important for large-scale operations |
-| **DB2** | 2MB statement size by default | Significant for bulk processing |
-
 ## Adapters
 
 SQL Batcher comes with several built-in adapters:
@@ -498,6 +679,7 @@ SQL Batcher comes with several built-in adapters:
 - `GenericAdapter`: For generic database connections (PostgreSQL, MySQL, etc.) that follow the DB-API 2.0 specification
 - `TrinoAdapter`: For Trino/Presto databases with specific size constraints
 - `SnowflakeAdapter`: For Snowflake databases with transaction support
+- `BigQueryAdapter`: For Google BigQuery with support for interactive and batch query modes
 - `SparkAdapter`: For PySpark SQL operations
 
 You can also create custom adapters by extending the `SQLAdapter` base class for other database systems.
