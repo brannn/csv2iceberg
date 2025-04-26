@@ -4,7 +4,24 @@
 [![PyPI Version](https://img.shields.io/pypi/v/sql-batcher.svg)](https://pypi.org/project/sql-batcher)
 [![License](https://img.shields.io/pypi/l/sql-batcher.svg)](https://github.com/yourusername/sql-batcher/blob/main/LICENSE)
 
-SQL Batcher is a Python library for batching SQL statements to optimize database operations. It helps you manage large volumes of SQL statements by sending them to the database in optimized batches, improving performance and reducing server load.
+SQL Batcher is a high-performance Python library that solves the critical challenge of executing large volumes of SQL statements against databases with query size and memory limitations. By intelligently grouping statements into optimized batches, it eliminates common bottlenecks in data processing pipelines while providing database-specific optimizations through its specialized adapter system.
+
+## Why Use SQL Batcher?
+
+**For Data Engineers and Database Developers:**
+- **Overcome Database Limitations:** Automatically manages query size constraints in systems like Trino (~1MB), BigQuery (1MB interactive/20MB batch), and Snowflake (1-8MB depending on edition)
+- **10x Performance Improvements:** Dramatically reduces execution time for large-scale operations by finding the optimal balance between batch size and round-trip overhead
+- **Smart Resource Management:** Prevents memory overflow errors and server rejections by intelligently sizing batches based on table structure (columns)
+
+**For Enterprise Applications:**
+- **Simplified Architecture:** Eliminates the need to build custom batching logic for each database system in your stack
+- **Production Reliability:** Handles transaction management, connection pooling, and error recovery through database-specific adapters
+- **Transparent Operations:** Includes dry-run capability and monitoring tools to inspect how statements are batched before execution
+
+**For Database-Agnostic Code:**
+- **Uniform Interface:** Maintain a single codebase while supporting diverse database systems through consistent adapter interfaces
+- **Future-Proof Design:** Add support for new databases by implementing simple adapters without changing application logic
+- **Performance Portability:** Code optimized for one database system will automatically adapt to the performance characteristics of others
 
 ## Features
 
