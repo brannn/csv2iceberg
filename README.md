@@ -21,16 +21,17 @@ SQL Batcher is especially valuable for database systems with query size limitati
 
 | Database/Engine | Query Size Limitations | Benefits from SQL Batcher |
 |-----------------|------------------------|---------------------------|
-| **Trino/Presto** | ~1MB query size limit | Essential for bulk operations |
-| **Snowflake** | 1MB-8MB statement size limits depending on edition | Significant for large data sets |
-| **BigQuery** | 1MB for interactive, 20MB for batch | Critical for complex operations |
+| **Trino/Presto** ![Adapter](https://img.shields.io/badge/Dedicated%20Adapter-5cb85c) | ~1MB query size limit | Essential for bulk operations |
+| **Snowflake** ![Adapter](https://img.shields.io/badge/Dedicated%20Adapter-5cb85c) | 1MB-8MB statement size limits depending on edition | Significant for large data sets |
+| **BigQuery** ![Adapter](https://img.shields.io/badge/Dedicated%20Adapter-5cb85c) | 1MB for interactive, 20MB for batch | Critical for complex operations |
 | **Redshift** | 16MB maximum query size | Important for ETL processes |
 | **MySQL/MariaDB** | 4MB default `max_allowed_packet` | Important for large INSERT operations |
-| **PostgreSQL** | 1GB limit, but practical performance issues with large queries | Helpful for bulk operations |
+| **PostgreSQL** ![Adapter](https://img.shields.io/badge/Dedicated%20Adapter-5cb85c) | 1GB limit, but practical performance issues with large queries | Helpful for bulk operations |
 | **Hive** | Configuration-dependent | Essential for data warehouse operations |
 | **Oracle** | ~4GB theoretical, much lower in practice | Useful for enterprise applications |
 | **SQL Server** | 2GB batch size, 4MB network packet size | Important for large-scale operations |
 | **DB2** | 2MB statement size by default | Significant for bulk processing |
+| **Spark SQL** ![Adapter](https://img.shields.io/badge/Dedicated%20Adapter-5cb85c) | Depends on driver memory | Important for big data processing |
 
 ## Installation
 
