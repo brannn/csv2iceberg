@@ -72,6 +72,48 @@ pip install "sql-batcher[all]"        # All adapters
 
 ## Quick Start
 
+### Minimal Example
+
+```python
+from sql_batcher import SQLBatcher
+from sql_batcher.adapters.generic import GenericAdapter
+import sqlite3  # Any database driver
+
+# Create a simple in-memory SQLite database
+conn = sqlite3.connect(":memory:")
+cursor = conn.cursor()
+cursor.execute("CREATE TABLE users (id INTEGER, name TEXT)")
+
+# Create a generic adapter that can work with any database
+adapter = GenericAdapter(
+    connection=conn,
+    execute_func=lambda sql: cursor.execute(sql),
+    close_func=lambda: conn.close()
+)
+
+# Create a batcher with default settings
+batcher = SQLBatcher(max_bytes=100_000)
+
+# Generate some simple INSERT statements
+statements = [
+    f"INSERT INTO users VALUES ({i}, 'User {i}')"
+    for i in range(1, 1001)
+]
+
+# Process all statements in optimized batches
+total_processed = batcher.process_statements(statements, adapter.execute)
+print(f"Processed {total_processed} INSERT statements")
+
+# Verify the results
+cursor.execute("SELECT COUNT(*) FROM users")
+print(f"Total users: {cursor.fetchone()[0]}")
+
+# Clean up
+adapter.close()
+```
+
+### Comprehensive PostgreSQL Example
+
 ```python
 from sql_batcher import SQLBatcher
 from sql_batcher.adapters.postgresql import PostgreSQLAdapter
