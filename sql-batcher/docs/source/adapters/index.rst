@@ -2,88 +2,55 @@
 Adapters
 ########
 
-SQL Batcher comes with several database adapters that simplify integration with popular database systems. Each adapter handles the specifics of connecting to and executing SQL against its respective database.
-
-Available Adapters
-=================
-
 .. toctree::
-   :maxdepth: 1
+   :maxdepth: 2
    
+   overview
    generic
    trino
    spark
    snowflake
    custom
 
-Adapter Selection Guide
-=====================
-
-The following table can help you select the right adapter for your database system:
-
-+------------+-------------------+-------------------------+------------------------+
-| Database   | Adapter           | Strengths               | Limitations            |
-+============+===================+=========================+========================+
-| Trino      | TrinoAdapter      | - Native integration    | - Requires trino      |
-|            |                   | - Query size handling   |   Python package      |
-|            |                   | - Role-based auth       |                        |
-+------------+-------------------+-------------------------+------------------------+
-| Spark SQL  | SparkAdapter      | - Works with PySpark    | - Requires PySpark    |
-|            |                   | - Supports Spark SQL    |   package             |
-|            |                   | - DataFrame integration |                        |
-+------------+-------------------+-------------------------+------------------------+
-| Snowflake  | SnowflakeAdapter  | - Transaction support   | - Requires snowflake- |
-|            |                   | - Connection pooling    |   connector-python    |
-|            |                   | - Security integrations |                        |
-+------------+-------------------+-------------------------+------------------------+
-| Generic    | GenericAdapter    | - Works with any DBAPI  | - Minimal integration |
-|            |                   | - No dependencies       | - Basic feature set   |
-|            |                   | - Simple to use         |                        |
-+------------+-------------------+-------------------------+------------------------+
-
-Common Adapter Features
-=====================
-
-All adapters implement a common interface that includes:
-
-- ``execute(sql)``: Execute a SQL statement
-- ``get_max_query_size()``: Get the maximum recommended batch size
-- ``close()``: Close database connections
-- Transaction management methods (if supported by the database)
-
-Dependency Management
-===================
-
-Each adapter has specific dependencies:
-
-- **TrinoAdapter**: Requires ``trino`` package
-- **SparkAdapter**: Requires ``pyspark`` package
-- **SnowflakeAdapter**: Requires ``snowflake-connector-python`` package
-- **GenericAdapter**: No additional dependencies
-
-When an adapter's dependencies are not installed, SQL Batcher will raise an ImportError when you try to use it.
-
-Common Usage Pattern
+SQL Batcher Adapters
 ==================
 
-All adapters follow this common usage pattern:
+Adapters are the bridge between SQLBatcher and specific database systems. They handle the details of connecting to and executing SQL against different types of databases.
+
+All adapters implement a common interface defined by the ``SQLAdapter`` abstract base class, making it easy to switch between different database backends or create your own custom adapters.
+
+Available Adapters
+================
+
+Generic Adapter
+-------------
+
+The ``GenericAdapter`` works with any database connection that follows the Python Database API Specification (PEP 249), providing a simple way to use SQLBatcher with a wide range of database systems.
 
 .. code-block:: python
 
-    from sql_batcher import SQLBatcher
-    from sql_batcher.adapters.xyz import XYZAdapter
-    
-    # 1. Create the adapter with connection details
-    adapter = XYZAdapter(connection_params)
-    
-    # 2. Create a batcher with the adapter's recommended size limit
-    batcher = SQLBatcher(max_bytes=adapter.get_max_query_size())
-    
-    # 3. Define SQL statements to execute
-    statements = [...]
-    
-    # 4. Process statements using the adapter's execute method
-    batcher.process_statements(statements, adapter.execute)
-    
-    # 5. Clean up
-    adapter.close()
+   import sqlite3
+   from sql_batcher import SQLBatcher
+   from sql_batcher.adapters.generic import GenericAdapter
+   
+   # Create a connection and adapter
+   connection = sqlite3.connect(":memory:")
+   adapter = GenericAdapter(connection=connection)
+   
+   # Use the adapter with SQLBatcher
+   batcher = SQLBatcher(max_bytes=adapter.get_max_query_size())
+   batcher.process_statements(statements, adapter.execute)
+
+Specialized Adapters
+-----------------
+
+SQL Batcher includes specialized adapters for:
+
+- **Trino/Starburst**: Optimized for Trino with size limits and authentication options
+- **Spark SQL**: Works with PySpark's SparkSession for Spark SQL operations
+- **Snowflake**: Connects to Snowflake with transaction support and timeout handling
+
+Custom Adapters
+------------
+
+You can create your own adapters for other database systems by implementing the ``SQLAdapter`` interface. See the :doc:`custom` page for details.

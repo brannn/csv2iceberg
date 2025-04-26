@@ -1,127 +1,112 @@
 """
-Query collector for SQL Batcher to store and analyze queries in dry run mode.
+Query collector interface for SQL Batcher.
 
-This module provides a QueryCollector class for storing and analyzing SQL queries
-during dry run executions.
+This module defines the QueryCollector class and related interfaces for
+collecting SQL queries during dry run mode.
 """
-from typing import List, Dict, Any, Optional
-import logging
-
-logger = logging.getLogger(__name__)
+from abc import ABC, abstractmethod
+from typing import Any, Dict, List, Optional, Union
 
 
-class QueryCollector:
+class QueryCollector(ABC):
     """
-    Collects and stores SQL queries for analysis.
+    Abstract base class for query collectors.
     
-    This class provides a standardized way to collect SQL queries during dry run mode,
-    allowing for analysis and validation without actual execution.
+    QueryCollector classes are used to store SQL queries during dry run mode,
+    allowing applications to analyze, log, or otherwise process these queries
+    instead of executing them directly.
     
-    Example:
-        >>> from sql_batcher import SQLBatcher, QueryCollector
-        >>> 
-        >>> # Create a collector and batcher for dry run
-        >>> collector = QueryCollector()
-        >>> batcher = SQLBatcher(dry_run=True)
-        >>> 
-        >>> # Define some statements
-        >>> statements = [
-        ...     "INSERT INTO users VALUES (1, 'Alice')",
-        ...     "INSERT INTO users VALUES (2, 'Bob')"
-        ... ]
-        >>> 
-        >>> # Simple callback (not actually executed in dry run)
-        >>> def execute_sql(sql):
-        ...     pass
-        >>> 
-        >>> # Process statements, collecting info in the collector
-        >>> batcher.process_statements(
-        ...     statements, 
-        ...     execute_sql, 
-        ...     query_collector=collector,
-        ...     metadata={"table_name": "users", "type": "INSERT"}
-        ... )
-        >>> 
-        >>> # Analyze collected queries
-        >>> print(f"Collected {len(collector.queries)} queries")
-        >>> print(f"Estimated total rows: {collector.total_row_count}")
-    """
-    
-    def __init__(self):
-        """Initialize a new query collector."""
-        self.queries: List[Dict[str, Any]] = []
-        self.total_row_count = 0
+    Examples:
+        Custom implementation:
         
-    def add_query(self, query: str, query_type: str = "DML", 
-                 row_count: int = 1, table_name: str = "unknown") -> None:
+        >>> class MyQueryCollector(QueryCollector):
+        ...     def __init__(self):
+        ...         self.queries = []
+        ...     
+        ...     def add_query(self, query, metadata=None):
+        ...         self.queries.append({"query": query, "metadata": metadata})
+        ...     
+        ...     def get_queries(self):
+        ...         return self.queries
+    """
+    
+    @abstractmethod
+    def add_query(self, query: str, metadata: Optional[Dict[str, Any]] = None) -> None:
         """
         Add a query to the collector.
         
         Args:
             query: SQL query string
-            query_type: Type of query (DDL, DML, etc.)
-            row_count: Number of rows affected by this query (estimate)
-            table_name: Target table name
+            metadata: Additional metadata to associate with the query (optional)
+        """
+        pass
+    
+    @abstractmethod
+    def get_queries(self) -> List[Dict[str, Any]]:
+        """
+        Get all collected queries.
+        
+        Returns:
+            List of collected queries, typically as dictionaries
+        """
+        pass
+
+
+class ListQueryCollector(QueryCollector):
+    """
+    Simple query collector that stores queries in a list.
+    
+    This implementation stores queries as dictionaries with 'query' and 'metadata'
+    keys in a simple list.
+    
+    Examples:
+        >>> from sql_batcher import SQLBatcher
+        >>> from sql_batcher.query_collector import ListQueryCollector
+        >>> 
+        >>> collector = ListQueryCollector()
+        >>> batcher = SQLBatcher(max_bytes=1000000, dry_run=True)
+        >>> 
+        >>> statements = [
+        ...     "INSERT INTO users VALUES (1, 'Alice')",
+        ...     "INSERT INTO users VALUES (2, 'Bob')"
+        ... ]
+        >>> 
+        >>> # Process statements without executing them
+        >>> batcher.process_statements(
+        ...     statements,
+        ...     lambda x: None,  # No-op execution function
+        ...     query_collector=collector
+        ... )
+        >>> 
+        >>> # Access the collected queries
+        >>> for query_info in collector.get_queries():
+        ...     print(f"Query: {query_info['query']}")
+        ...     if query_info['metadata']:
+        ...         print(f"Metadata: {query_info['metadata']}")
+    """
+    
+    def __init__(self) -> None:
+        """Initialize an empty list collector."""
+        self.queries: List[Dict[str, Any]] = []
+    
+    def add_query(self, query: str, metadata: Optional[Dict[str, Any]] = None) -> None:
+        """
+        Add a query to the collector.
+        
+        Args:
+            query: SQL query string
+            metadata: Additional metadata to associate with the query (optional)
         """
         self.queries.append({
             "query": query,
-            "type": query_type,
-            "row_count": row_count,
-            "table_name": table_name
+            "metadata": metadata,
         })
-        self.total_row_count += row_count
-        logger.debug(f"Added query to collector: {query_type} on {table_name} ({row_count} rows)")
-        
-    def clear(self) -> None:
-        """Clear all collected queries."""
-        self.queries = []
-        self.total_row_count = 0
-        
-    def get_queries_by_table(self, table_name: str) -> List[Dict[str, Any]]:
-        """
-        Get all queries for a specific table.
-        
-        Args:
-            table_name: Table name to filter by
-            
-        Returns:
-            List of query dictionaries for the specified table
-        """
-        return [q for q in self.queries if q["table_name"] == table_name]
     
-    def get_queries_by_type(self, query_type: str) -> List[Dict[str, Any]]:
+    def get_queries(self) -> List[Dict[str, Any]]:
         """
-        Get all queries of a specific type.
-        
-        Args:
-            query_type: Query type to filter by (DDL, DML, etc.)
-            
-        Returns:
-            List of query dictionaries for the specified type
-        """
-        return [q for q in self.queries if q["type"] == query_type]
-    
-    def get_stats(self) -> Dict[str, Any]:
-        """
-        Get statistics about the collected queries.
+        Get all collected queries.
         
         Returns:
-            Dictionary with statistics like query counts by type, table, etc.
+            List of dictionaries with 'query' and 'metadata' keys
         """
-        tables = set(q["table_name"] for q in self.queries)
-        types = set(q["type"] for q in self.queries)
-        
-        stats = {
-            "total_queries": len(self.queries),
-            "total_row_count": self.total_row_count,
-            "tables": {
-                table: len(self.get_queries_by_table(table))
-                for table in tables
-            },
-            "query_types": {
-                qtype: len(self.get_queries_by_type(qtype))
-                for qtype in types
-            }
-        }
-        
-        return stats
+        return self.queries

@@ -1,150 +1,178 @@
 """
-Generic adapter for SQL Batcher.
+Generic DBAPI adapter for SQL Batcher.
 
-This module provides a generic adapter for SQLBatcher that works with
-any database that follows the Python DB-API 2.0 specification.
+This module provides a generic adapter that works with any database connection
+that follows the Python Database API Specification (PEP 249).
 """
 import logging
-from typing import Any, Optional, Dict, List, Callable
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from sql_batcher.adapters.base import SQLAdapter
+
 
 logger = logging.getLogger(__name__)
 
 
 class GenericAdapter(SQLAdapter):
     """
-    Generic adapter for connecting SQLBatcher to any DB-API compatible database.
+    Generic adapter for DBAPI 2.0 compliant database connections.
     
-    This adapter works with any database that follows the Python DB-API 2.0 
-    specification, such as SQLite, PostgreSQL, MySQL, etc.
+    This adapter works with any database connection that follows the
+    Python Database API Specification (PEP 249), providing a simple way
+    to use SQLBatcher with a wide range of database systems.
     
-    Example:
+    Attributes:
+        connection: DBAPI-compliant database connection
+        max_query_size: Maximum query size in bytes
+        fetch_results: Whether to fetch and return results for SELECT queries
+    
+    Examples:
+        Using with SQLite:
+        
         >>> import sqlite3
         >>> from sql_batcher import SQLBatcher
         >>> from sql_batcher.adapters.generic import GenericAdapter
         >>> 
-        >>> # Create a SQLite connection
-        >>> conn = sqlite3.connect(":memory:")
+        >>> connection = sqlite3.connect(":memory:")
+        >>> adapter = GenericAdapter(connection=connection)
+        >>> batcher = SQLBatcher(max_bytes=adapter.get_max_query_size())
         >>> 
-        >>> # Create a generic adapter
-        >>> adapter = GenericAdapter(
-        ...     connection=conn,
-        ...     max_query_size=100_000
-        ... )
-        >>> 
-        >>> # Create a batcher
-        >>> batcher = SQLBatcher()
-        >>> 
-        >>> # Define some statements
+        >>> # Execute some statements
+        >>> adapter.execute("CREATE TABLE users (id INTEGER, name TEXT)")
         >>> statements = [
-        ...     "CREATE TABLE users (id INTEGER, name TEXT)",
         ...     "INSERT INTO users VALUES (1, 'Alice')",
         ...     "INSERT INTO users VALUES (2, 'Bob')"
         ... ]
-        >>> 
-        >>> # Process statements using the adapter
         >>> batcher.process_statements(statements, adapter.execute)
+        >>> 
+        >>> # Query the data
+        >>> results = adapter.execute("SELECT * FROM users")
+        >>> for row in results:
+        ...     print(row)
     """
     
     def __init__(
         self,
         connection: Any,
-        create_cursor_fn: Optional[Callable] = None,
-        max_query_size: int = 500_000,
-        auto_commit: bool = True
-    ):
+        max_query_size: int = 1_000_000,
+        fetch_results: bool = True,
+    ) -> None:
         """
-        Initialize a generic DB-API adapter.
+        Initialize a new GenericAdapter instance.
         
         Args:
-            connection: A DB-API compatible connection object
-            create_cursor_fn: Optional function to create a cursor (defaults to connection.cursor())
-            max_query_size: Maximum query size in bytes
-            auto_commit: Whether to auto-commit after each statement
+            connection: DBAPI-compliant database connection
+            max_query_size: Maximum query size in bytes (default: 1,000,000)
+            fetch_results: Whether to fetch and return results (default: True)
         """
         self.connection = connection
-        self.create_cursor_fn = create_cursor_fn or (lambda conn: conn.cursor())
-        self._max_query_size = max_query_size
-        self.auto_commit = auto_commit
-        self._cursor = None
+        self.max_query_size = max_query_size
+        self.fetch_results = fetch_results
         
-        logger.debug(f"Initialized GenericAdapter with max_query_size={max_query_size}")
+        logger.debug(
+            f"Initialized GenericAdapter with max_query_size={max_query_size}, "
+            f"fetch_results={fetch_results}"
+        )
     
-    def _get_cursor(self) -> Any:
-        """Get a cursor, creating it if necessary."""
-        if self._cursor is None:
-            self._cursor = self.create_cursor_fn(self.connection)
-        return self._cursor
-    
-    def execute(self, sql: str) -> Any:
+    def execute(self, sql: str) -> List[Tuple]:
         """
-        Execute a SQL statement using the DB-API connection.
+        Execute a SQL statement using the provided connection.
+        
+        This method executes the SQL statement using the connection's cursor.
+        For SELECT queries, it fetches and returns the results as a list of tuples.
+        For other queries, it returns an empty list.
         
         Args:
-            sql: The SQL statement to execute
+            sql: SQL statement to execute
             
         Returns:
-            Result of the SQL execution
+            List of result rows as tuples
+            
+        Raises:
+            Exception: Any database-specific exception that occurs during execution
         """
-        cursor = self._get_cursor()
+        logger.debug(f"Executing SQL: {sql[:100]}...")
         
-        try:
-            logger.debug(f"Executing SQL: {sql}")
-            cursor.execute(sql)
-            
-            # Auto-commit if enabled
-            if self.auto_commit and hasattr(self.connection, 'commit'):
-                self.connection.commit()
-            
-            # For queries that return results
-            if cursor.description:
-                return cursor.fetchall()
-            
-            # For DDL/DML queries
-            return None
-        except Exception as e:
-            logger.error(f"Error executing SQL: {str(e)}", exc_info=True)
-            
-            # Attempt to rollback if auto_commit is enabled
-            if self.auto_commit and hasattr(self.connection, 'rollback'):
-                try:
-                    self.connection.rollback()
-                except Exception:
-                    pass  # Ignore rollback errors
-                
-            raise RuntimeError(f"Failed to execute SQL: {str(e)}") from e
+        cursor = self.connection.cursor()
+        cursor.execute(sql)
+        
+        results = []
+        # If it's a SELECT query and fetch_results is True, fetch the results
+        if self.fetch_results and hasattr(cursor, "description") and cursor.description:
+            results = cursor.fetchall()
+            logger.debug(f"Query returned {len(results)} rows")
+        
+        return results
     
     def get_max_query_size(self) -> int:
         """
-        Get the maximum query size in bytes.
+        Return the maximum query size in bytes.
         
         Returns:
             Maximum query size in bytes
         """
-        return self._max_query_size
+        return self.max_query_size
     
     def close(self) -> None:
-        """Close the cursor."""
-        if self._cursor:
-            self._cursor.close()
-            self._cursor = None
-            
-        logger.debug("Closed DB cursor")
+        """
+        Close the database connection.
+        
+        This method closes the database connection to release resources.
+        """
+        if self.connection:
+            logger.debug("Closing database connection")
+            self.connection.close()
     
     def begin_transaction(self) -> None:
-        """Begin a database transaction."""
-        if hasattr(self.connection, 'begin'):
+        """
+        Begin a database transaction.
+        
+        This method starts a transaction using the connection's begin() method,
+        if it exists, or by executing a BEGIN statement.
+        
+        Raises:
+            NotImplementedError: If the database doesn't support transactions
+        """
+        logger.debug("Beginning transaction")
+        
+        # Try connection.begin() method first (some DBAPI drivers support this)
+        if hasattr(self.connection, "begin"):
             self.connection.begin()
-        elif hasattr(self.connection, 'execute'):
-            self.connection.execute("BEGIN TRANSACTION")
+        else:
+            # Otherwise, try a standard BEGIN statement
+            cursor = self.connection.cursor()
+            cursor.execute("BEGIN")
     
     def commit_transaction(self) -> None:
-        """Commit the current database transaction."""
-        if hasattr(self.connection, 'commit'):
+        """
+        Commit the current transaction.
+        
+        This method commits the current transaction using the connection's
+        commit() method.
+        
+        Raises:
+            NotImplementedError: If the database doesn't support transactions
+        """
+        logger.debug("Committing transaction")
+        
+        if hasattr(self.connection, "commit"):
             self.connection.commit()
+        else:
+            raise NotImplementedError("This database connection does not support transactions")
     
     def rollback_transaction(self) -> None:
-        """Rollback the current database transaction."""
-        if hasattr(self.connection, 'rollback'):
+        """
+        Rollback the current transaction.
+        
+        This method rolls back the current transaction using the connection's
+        rollback() method.
+        
+        Raises:
+            NotImplementedError: If the database doesn't support transactions
+        """
+        logger.debug("Rolling back transaction")
+        
+        if hasattr(self.connection, "rollback"):
             self.connection.rollback()
+        else:
+            raise NotImplementedError("This database connection does not support transactions")

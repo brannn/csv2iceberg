@@ -1,50 +1,87 @@
 """
-Base adapter interface for SQL Batcher.
+Base adapter classes for SQL Batcher.
 
-This module defines the base adapter interface that all specific
-database adapters should implement.
+This module defines the abstract base class for database adapters,
+which serve as the interface between SQLBatcher and specific database systems.
 """
 from abc import ABC, abstractmethod
-from typing import Any, Optional, Dict, List
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 
 class SQLAdapter(ABC):
     """
-    Base class for database-specific adapters.
+    Abstract base class for SQL database adapters.
     
-    This abstract class defines the interface that all database adapters
-    must implement. It provides a standard way for SQLBatcher to interact
-    with different database systems.
+    This class defines the interface that all database adapters must implement
+    to work with SQLBatcher. Adapters handle the details of connecting to and
+    executing SQL against specific database systems.
+    
+    At a minimum, concrete adapters must implement:
+    - execute(): Execute a SQL statement
+    - get_max_query_size(): Return the maximum query size in bytes
+    - close(): Clean up resources
+    
+    Optional methods (can be overridden if the database supports them):
+    - begin_transaction(): Start a transaction
+    - commit_transaction(): Commit a transaction
+    - rollback_transaction(): Rollback a transaction
+    
+    Examples:
+        Creating a custom adapter:
+        
+        >>> class MyAdapter(SQLAdapter):
+        ...     def execute(self, sql):
+        ...         # Execute SQL using database-specific API
+        ...         return []
+        ...     
+        ...     def get_max_query_size(self):
+        ...         return 1000000
+        ...     
+        ...     def close(self):
+        ...         # Clean up resources
+        ...         pass
     """
     
     @abstractmethod
-    def execute(self, sql: str) -> Any:
+    def execute(self, sql: str) -> List[Tuple]:
         """
-        Execute a SQL statement.
+        Execute a SQL statement and return results.
+        
+        This method is responsible for executing the provided SQL statement
+        against the database and returning any results.
         
         Args:
-            sql: The SQL statement to execute
+            sql: SQL statement to execute
             
         Returns:
-            Result of the SQL execution (implementation-specific)
+            List of result rows as tuples
+            
+        Raises:
+            Exception: Any database-specific exception that occurs during execution
         """
         pass
     
     @abstractmethod
     def get_max_query_size(self) -> int:
         """
-        Get the maximum query size in bytes for this database.
+        Return the maximum recommended query size in bytes.
+        
+        This method returns the maximum query size in bytes that the
+        database can handle efficiently. This value is used by SQLBatcher
+        to determine when to flush a batch.
         
         Returns:
             Maximum query size in bytes
         """
         pass
     
+    @abstractmethod
     def close(self) -> None:
         """
-        Close any open database connections.
+        Close the database connection and clean up resources.
         
-        Default implementation does nothing, override as needed.
+        This method should perform any necessary cleanup, such as
+        closing database connections, releasing locks, etc.
         """
         pass
     
@@ -52,22 +89,34 @@ class SQLAdapter(ABC):
         """
         Begin a database transaction.
         
-        Default implementation does nothing, override as needed.
+        This method starts a transaction, if the database supports
+        transactions. The default implementation does nothing.
+        
+        Raises:
+            NotImplementedError: If the database doesn't support transactions
         """
         pass
     
     def commit_transaction(self) -> None:
         """
-        Commit the current database transaction.
+        Commit the current transaction.
         
-        Default implementation does nothing, override as needed.
+        This method commits the current transaction, if the database
+        supports transactions. The default implementation does nothing.
+        
+        Raises:
+            NotImplementedError: If the database doesn't support transactions
         """
         pass
     
     def rollback_transaction(self) -> None:
         """
-        Rollback the current database transaction.
+        Rollback the current transaction.
         
-        Default implementation does nothing, override as needed.
+        This method rolls back the current transaction, if the database
+        supports transactions. The default implementation does nothing.
+        
+        Raises:
+            NotImplementedError: If the database doesn't support transactions
         """
         pass
