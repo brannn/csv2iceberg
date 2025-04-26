@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="50" height="30" viewBox="0 0 50 30">
-  <!-- Main stapler body -->
-  <rect x="0" y="0" width="50" height="20" rx="3" fill="#ff0000" stroke="#990000" stroke-width="1"/>
-  <!-- Silver front part -->
-  <rect x="4" y="5" width="20" height="10" rx="2" fill="#cccccc"/>
-  <!-- Top bar -->
-  <rect x="20" y="-7" width="25" height="7" rx="3" fill="#ff0000" stroke="#990000" stroke-width="1"/>
-</svg>
