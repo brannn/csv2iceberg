@@ -37,23 +37,40 @@ pip install "sql-batcher[all]"        # All adapters
 ```python
 from sql_batcher import SQLBatcher
 from sql_batcher.adapters.generic import GenericAdapter
-import sqlite3
+import psycopg2  # PostgreSQL adapter
 
-# Create a connection
-connection = sqlite3.connect(":memory:")
-cursor = connection.cursor()
+# Create a connection to PostgreSQL
+connection = psycopg2.connect(
+    host="localhost",
+    database="mydb",
+    user="postgres",
+    password="password"
+)
 
 # Create an adapter
 adapter = GenericAdapter(connection=connection)
 
-# Create a table
-adapter.execute("CREATE TABLE users (id INTEGER, name TEXT)")
+# Create a table 
+adapter.execute("""
+CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    email VARCHAR(255) UNIQUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)
+""")
 
-# Generate many INSERT statements
-statements = [f"INSERT INTO users VALUES ({i}, 'User {i}')" for i in range(1, 1001)]
+# Generate many INSERT statements with more complex data
+statements = []
+for i in range(1, 1001):
+    email = f"user{i}@example.com"
+    name = f"User {i}"
+    statements.append(
+        f"INSERT INTO users (id, name, email) VALUES ({i}, '{name}', '{email}')"
+    )
 
-# Create a batcher with a 100KB size limit
-batcher = SQLBatcher(max_bytes=100_000)
+# Create a batcher with a 500KB size limit (practical for PostgreSQL)
+batcher = SQLBatcher(max_bytes=500_000)
 
 # Process all statements
 total_processed = batcher.process_statements(statements, adapter.execute)
@@ -457,16 +474,33 @@ adapter.close()
 
 For complete documentation, visit [the docs site](https://github.com/yourusername/sql-batcher).
 
+## Which Databases Benefit from SQL Batcher?
+
+SQL Batcher is especially valuable for database systems with query size limitations:
+
+| Database/Engine | Query Size Limitations | Benefits from SQL Batcher |
+|-----------------|------------------------|---------------------------|
+| **Trino/Presto** | ~1MB query size limit | Essential for bulk operations |
+| **Snowflake** | 1MB-8MB statement size limits depending on edition | Significant for large data sets |
+| **BigQuery** | 1MB for interactive, 20MB for batch | Critical for complex operations |
+| **Redshift** | 16MB maximum query size | Important for ETL processes |
+| **PostgreSQL** | 1GB limit, but practical performance issues with large queries | Helpful for bulk operations |
+| **MySQL/MariaDB** | 4MB default `max_allowed_packet` | Important for large INSERT operations |
+| **Hive** | Configuration-dependent | Essential for data warehouse operations |
+| **Oracle** | ~4GB theoretical, much lower in practice | Useful for enterprise applications |
+| **SQL Server** | 2GB batch size, 4MB network packet size | Important for large-scale operations |
+| **DB2** | 2MB statement size by default | Significant for bulk processing |
+
 ## Adapters
 
 SQL Batcher comes with several built-in adapters:
 
-- `GenericAdapter`: For generic database connections (SQLite, PostgreSQL, etc.)
-- `TrinoAdapter`: For Trino/Presto databases
-- `SnowflakeAdapter`: For Snowflake databases
-- `SparkAdapter`: For PySpark SQL
+- `GenericAdapter`: For generic database connections (PostgreSQL, MySQL, etc.) that follow the DB-API 2.0 specification
+- `TrinoAdapter`: For Trino/Presto databases with specific size constraints
+- `SnowflakeAdapter`: For Snowflake databases with transaction support
+- `SparkAdapter`: For PySpark SQL operations
 
-You can also create custom adapters by extending the `SQLAdapter` base class.
+You can also create custom adapters by extending the `SQLAdapter` base class for other database systems.
 
 ## License
 
