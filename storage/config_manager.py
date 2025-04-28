@@ -12,6 +12,7 @@ DEFAULT_CONFIG_FILE = os.path.expanduser("~/.csv_to_iceberg_config.json")
 # Default profile template
 DEFAULT_PROFILE = {
     "name": "Default",
+    "profile_type": "trino",  # Can be "trino" or "s3tables"
     "trino_host": "sep.sdp-dev.pd.switchnet.nv",
     "trino_port": 443,
     "trino_user": "",
@@ -23,6 +24,17 @@ DEFAULT_PROFILE = {
     "hive_metastore_uri": "localhost:9083",
     "use_hive_metastore": False,
     "description": "Default connection profile"
+}
+
+# S3 Tables profile template
+S3TABLES_PROFILE = {
+    "name": "S3 Tables Default",
+    "profile_type": "s3tables",
+    "region": "us-east-1",
+    "table_bucket_arn": "",
+    "aws_access_key_id": "",
+    "aws_secret_access_key": "",
+    "description": "Default S3 Tables connection profile"
 }
 
 class ConfigManager:

@@ -28,7 +28,9 @@
                             <select class="form-select" id="profile" name="profile" required>
                                 <option value="" disabled selected>Select a profile</option>
                                 {% for profile in profiles %}
-                                <option value="{{ profile.name }}" {% if last_used_profile == profile.name %}selected{% endif %}>
+                                <option value="{{ profile.name }}" 
+                                        data-type="{{ profile.profile_type }}"
+                                        {% if last_used_profile == profile.name %}selected{% endif %}>
                                     {{ profile.name }} - {{ profile.description }}
                                 </option>
                                 {% endfor %}
@@ -38,630 +40,182 @@
                                 <a href="{{ url_for('routes.profiles') }}">Manage profiles</a>
                             </div>
                         </div>
-                        
+
+                        <!-- Trino-specific fields -->
+                        <div id="trino_fields" class="connection-fields" style="display: none;">
+                            <div class="mb-3">
+                                <h5>Trino Connection</h5>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="trino_host" class="form-label">Trino Host</label>
+                                <input type="text" class="form-control" id="trino_host" name="trino_host" required>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="trino_port" class="form-label">Trino Port</label>
+                                <input type="number" class="form-control" id="trino_port" name="trino_port" required>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="trino_user" class="form-label">Trino User</label>
+                                <input type="text" class="form-control" id="trino_user" name="trino_user">
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="trino_password" class="form-label">Trino Password</label>
+                                <input type="password" class="form-control" id="trino_password" name="trino_password">
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="http_scheme" class="form-label">HTTP Scheme</label>
+                                <select class="form-select" id="http_scheme" name="http_scheme">
+                                    <option value="http">HTTP</option>
+                                    <option value="https" selected>HTTPS</option>
+                                </select>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="trino_role" class="form-label">Trino Role</label>
+                                <input type="text" class="form-control" id="trino_role" name="trino_role">
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="trino_catalog" class="form-label">Catalog</label>
+                                <input type="text" class="form-control" id="trino_catalog" name="trino_catalog" required>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="trino_schema" class="form-label">Schema</label>
+                                <input type="text" class="form-control" id="trino_schema" name="trino_schema" required>
+                            </div>
+                        </div>
+
+                        <!-- S3 Tables-specific fields -->
+                        <div id="s3tables_fields" class="connection-fields" style="display: none;">
+                            <div class="mb-3">
+                                <h5>S3 Tables Connection</h5>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="region" class="form-label">AWS Region</label>
+                                <input type="text" class="form-control" id="region" name="region" required>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="table_bucket_arn" class="form-label">Table Bucket ARN</label>
+                                <input type="text" class="form-control" id="table_bucket_arn" name="table_bucket_arn" required>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="aws_access_key_id" class="form-label">AWS Access Key ID</label>
+                                <input type="text" class="form-control" id="aws_access_key_id" name="aws_access_key_id">
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="aws_secret_access_key" class="form-label">AWS Secret Access Key</label>
+                                <input type="password" class="form-control" id="aws_secret_access_key" name="aws_secret_access_key">
+                            </div>
+                        </div>
+
                         <div class="mb-3">
-                            <h5>Step 2: CSV File</h5>
+                            <h5>Step 2: Upload CSV File</h5>
                         </div>
                         
                         <div class="mb-3">
                             <label for="csv_file" class="form-label">CSV File</label>
                             <input type="file" class="form-control" id="csv_file" name="csv_file" accept=".csv" required>
-                            <div class="form-text">Select a CSV file to convert to Iceberg table format</div>
-                        </div>
-                        
-                        <div class="mb-3">
-                            <div class="row g-3">
-                                <div class="col-md-3">
-                                    <label for="delimiter" class="form-label">Delimiter</label>
-                                    <input type="text" class="form-control" id="delimiter" name="delimiter" value="," maxlength="1">
-                                    <div class="form-text">Field separator (default: comma)</div>
-                                </div>
-                                
-                                <div class="col-md-3">
-                                    <label for="quote_char" class="form-label">Quote Character</label>
-                                    <input type="text" class="form-control" id="quote_char" name="quote_char" value='"' maxlength="1">
-                                    <div class="form-text">Field quoting character</div>
-                                </div>
-                                
-                                <div class="col-md-6">
-                                    <label class="form-label">Header Row</label>
-                                    <div class="form-check mt-2">
-                                        <input class="form-check-input" type="radio" name="has_header" id="has_header_yes" value="true" checked>
-                                        <label class="form-check-label" for="has_header_yes">
-                                            Yes, first row contains column names
-                                        </label>
-                                    </div>
-                                    <div class="form-check">
-                                        <input class="form-check-input" type="radio" name="has_header" id="has_header_no" value="false">
-                                        <label class="form-check-label" for="has_header_no">
-                                            No, generate column names automatically
-                                        </label>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <div class="mb-3">
-                            <h5>Step 3: Target Table</h5>
                         </div>
                         
                         <div class="mb-3">
                             <label for="table_name" class="form-label">Table Name</label>
                             <input type="text" class="form-control" id="table_name" name="table_name" required>
-                            <div class="form-text">
-                                Enter just the table name. Catalog and schema will be automatically taken from the selected profile.<br>
-                                Example: <code>mytable</code>
-                            </div>
+                            <div class="form-text">For Trino: catalog.schema.table, For S3 Tables: namespace.table</div>
                         </div>
                         
                         <div class="mb-3">
-                            <div class="row g-3">
-                                <div class="col-md-6">
-                                    <label for="write_mode" class="form-label">Write Mode</label>
-                                    <select class="form-select" id="write_mode" name="write_mode">
-                                        <option value="append" selected>Append (add to existing table)</option>
-                                        <option value="overwrite">Overwrite (replace existing table)</option>
-                                    </select>
-                                    <div class="form-text">How to handle existing table data</div>
-                                </div>
-                                
-                                <div class="col-md-6">
-                                    <label for="batch_size" class="form-label">Batch Size</label>
-                                    <input type="number" class="form-control" id="batch_size" name="batch_size" value="20000" min="1">
-                                    <div class="form-text">Number of rows to process in each batch</div>
-                                </div>
-                            </div>
+                            <label for="delimiter" class="form-label">CSV Delimiter</label>
+                            <input type="text" class="form-control" id="delimiter" name="delimiter" value=",">
                         </div>
                         
                         <div class="mb-3">
-                            <h5>Advanced Options <button class="btn btn-sm btn-link" type="button" data-bs-toggle="collapse" data-bs-target="#advancedOptions" aria-expanded="false" aria-controls="advancedOptions">
-                                Show/Hide
-                            </button></h5>
+                            <label for="has_header" class="form-label">CSV Has Header</label>
+                            <select class="form-select" id="has_header" name="has_header">
+                                <option value="true" selected>Yes</option>
+                                <option value="false">No</option>
+                            </select>
                         </div>
                         
-                        <div class="collapse mb-3" id="advancedOptions">
-                            <div class="card card-body">
-                                <div class="mb-3">
-                                    <div class="form-check mb-2">
-                                        <input class="form-check-input" type="checkbox" id="dry_run" name="dry_run" value="true">
-                                        <label class="form-check-label" for="dry_run">
-                                            <strong>Dry Run Mode</strong> - Simulate conversion without connecting to Trino
-                                        </label>
-                                        <div class="form-text">
-                                            When enabled, the system will report the operations that would be performed without actually connecting to Trino or executing any commands. 
-                                            Use this to test configurations and preview operations.
-                                        </div>
-                                    </div>
-                                </div>
-                                
-                                <div class="mb-3">
-                                    <label for="sample_size" class="form-label">Sample Size for Schema Inference</label>
-                                    <input type="number" class="form-control" id="sample_size" name="sample_size" value="1000" min="1">
-                                    <div class="form-text">Number of rows to sample for schema inference</div>
-                                </div>
-                                
-                                <div class="mb-3">
-                                    <label for="max_query_size" class="form-label">Max Query Size (KB)</label>
-                                    <input type="number" class="form-control" id="max_query_size" name="max_query_size" value="700" min="100" max="900" step="100">
-                                    <div class="form-text">Maximum SQL query size in KB. Default: 700KB (70% of Trino's 1MB limit). Increase for better performance, decrease if errors occur.</div>
-                                </div>
-                                
-                                <div class="mb-3">
-                                    <label for="include_columns" class="form-label">Include Columns (comma-separated)</label>
-                                    <input type="text" class="form-control" id="include_columns" name="include_columns">
-                                    <div class="form-text">Specify columns to include (leave empty to include all)</div>
-                                </div>
-                                
-                                <div class="mb-3">
-                                    <label for="exclude_columns" class="form-label">Exclude Columns (comma-separated)</label>
-                                    <input type="text" class="form-control" id="exclude_columns" name="exclude_columns">
-                                    <div class="form-text">Specify columns to exclude</div>
-                                </div>
-                                
-                                <div class="mb-3">
-                                    <div class="form-check mb-2">
-                                        <input class="form-check-input" type="checkbox" id="use_custom_schema" name="use_custom_schema" value="true">
-                                        <label class="form-check-label" for="use_custom_schema">
-                                            Customize column schema
-                                        </label>
-                                    </div>
-                                    <div id="custom_schema_container" style="display: none;">
-                                        <!-- Schema preview section that will be filled by JavaScript -->
-                                        <div id="schema_preview_section" class="mb-3">
-                                            <div class="d-flex justify-content-between align-items-center mb-2">
-                                                <h6 class="mb-0">Schema Preview</h6>
-                                                <div>
-                                                    <button type="button" id="analyze_csv_btn" class="btn btn-sm btn-primary me-2">
-                                                        Analyze CSV
-                                                    </button>
-                                                    <button type="button" id="add_column_btn" class="btn btn-sm btn-success">
-                                                        Add Column
-                                                    </button>
-                                                </div>
-                                            </div>
-                                            <div class="alert alert-info" id="schema_preview_placeholder">
-                                                Click "Analyze CSV" to infer schema from your file
-                                            </div>
-                                            <div id="schema_preview_table_container" style="display: none;">
-                                                <div class="table-responsive">
-                                                    <table class="table table-sm table-hover" id="schema_preview_table">
-                                                        <thead>
-                                                            <tr>
-                                                                <th>Column Name</th>
-                                                                <th>Data Type</th>
-                                                                <th>Required</th>
-                                                                <th>Actions</th>
-                                                            </tr>
-                                                        </thead>
-                                                        <tbody id="schema_columns_body">
-                                                            <!-- Will be filled by JavaScript -->
-                                                        </tbody>
-                                                    </table>
-                                                </div>
-                                            </div>
-                                        </div>
-                                        
-                                        <!-- Hidden input field to store the schema JSON -->
-                                        <input type="hidden" id="custom_schema" name="custom_schema">
-                                    </div>
-                                </div>
-                            </div>
+                        <div class="mb-3">
+                            <label for="quote_char" class="form-label">CSV Quote Character</label>
+                            <input type="text" class="form-control" id="quote_char" name="quote_char" value='"'>
                         </div>
                         
-                        <div class="d-grid">
-                            <button type="submit" class="btn btn-primary btn-lg">Start Conversion</button>
+                        <div class="mb-3">
+                            <label for="batch_size" class="form-label">Batch Size</label>
+                            <input type="number" class="form-control" id="batch_size" name="batch_size" value="10000">
                         </div>
+                        
+                        <div class="mb-3">
+                            <label for="mode" class="form-label">Write Mode</label>
+                            <select class="form-select" id="mode" name="mode">
+                                <option value="append" selected>Append</option>
+                                <option value="overwrite">Overwrite</option>
+                            </select>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="sample_size" class="form-label">Schema Inference Sample Size</label>
+                            <input type="number" class="form-control" id="sample_size" name="sample_size" value="1000">
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="include_columns" class="form-label">Include Columns (comma-separated)</label>
+                            <input type="text" class="form-control" id="include_columns" name="include_columns">
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="exclude_columns" class="form-label">Exclude Columns (comma-separated)</label>
+                            <input type="text" class="form-control" id="exclude_columns" name="exclude_columns">
+                        </div>
+                        
+                        <button type="submit" class="btn btn-primary">Convert</button>
                     </form>
                 </div>
             </div>
         </div>
     </div>
 </div>
-{% endblock %}
 
 {% block scripts %}
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    // Auto-populate table name based on file name
-    const csvFileInput = document.getElementById('csv_file');
-    const tableNameInput = document.getElementById('table_name');
-    
-    csvFileInput.addEventListener('change', function() {
-        if (tableNameInput.value === '') {
-            const fileName = csvFileInput.files[0].name;
-            const baseName = fileName.replace(/\.[^/.]+$/, ""); // Remove extension
-            const cleanName = baseName.replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase(); // Clean up name
-            tableNameInput.value = cleanName;
-        }
-    });
-    
-    // Custom schema toggle
-    const useCustomSchemaCheckbox = document.getElementById('use_custom_schema');
-    const customSchemaContainer = document.getElementById('custom_schema_container');
-    
-    useCustomSchemaCheckbox.addEventListener('change', function() {
-        if (this.checked) {
-            customSchemaContainer.style.display = 'block';
-        } else {
-            customSchemaContainer.style.display = 'none';
-        }
-    });
-    
-    // Schema analysis and editing
-    const analyzeCsvBtn = document.getElementById('analyze_csv_btn');
-    const addColumnBtn = document.getElementById('add_column_btn');
-    const schemaPreviewPlaceholder = document.getElementById('schema_preview_placeholder');
-    const schemaPreviewTableContainer = document.getElementById('schema_preview_table_container');
-    const schemaColumnsBody = document.getElementById('schema_columns_body');
-    const customSchemaInput = document.getElementById('custom_schema');
-    
-    // Array to store the schema columns
-    let schemaColumns = [];
-    
-    // Available Iceberg types
-    const icebergTypes = [
-        'boolean',
-        'int',
-        'long',
-        'float',
-        'double',
-        'decimal(38,18)',
-        'date',
-        'timestamp',
-        'string'
-    ];
-    
-    // Update the hidden input with the current schema
-    function updateSchemaJson() {
-        customSchemaInput.value = JSON.stringify(schemaColumns);
-    }
-    
-    // Render the partition recommendations section
-    function renderPartitionRecommendations(recommendations) {
-        // Create the partition recommendations container if it doesn't exist
-        let partitionSection = document.getElementById('partition_recommendations_section');
-        if (!partitionSection) {
-            partitionSection = document.createElement('div');
-            partitionSection.id = 'partition_recommendations_section';
-            partitionSection.className = 'mt-4';
-            
-            // Insert it after the schema preview table
-            const schemaTableContainer = document.getElementById('schema_preview_table_container');
-            schemaTableContainer.after(partitionSection);
-        }
-        
-        // Clear the container
-        partitionSection.innerHTML = '';
-        
-        // If there are no recommendations, show a message
-        // Create the header
-        const header = document.createElement('h5');
-        header.textContent = 'Iceberg Partitioning Recommendations';
-        partitionSection.appendChild(header);
-        
-        // Create the info alert
-        const infoAlert = document.createElement('div');
-        infoAlert.className = 'alert alert-info';
-        infoAlert.innerHTML = `
-        <i class="fas fa-info-circle me-2"></i>
-        These recommendations are based on column cardinality analysis. Effective partitioning can significantly improve query performance.
-        <p class="mt-2 mb-0"><strong>Note:</strong> Only high-quality recommendations (score ≥ 75) are shown. Color coding indicates quality:</p>
-        <div class="mt-1 d-flex gap-2">
-            <span class="badge bg-success">Perfect (90-100)</span>
-            <span class="badge bg-primary">Excellent (80-89)</span>
-            <span class="badge bg-info">Very Good (75-79)</span>
-        </div>`;
-        partitionSection.appendChild(infoAlert);
-        
-        if (!recommendations || recommendations.length === 0) {
-            const noRecsAlert = document.createElement('div');
-            noRecsAlert.className = 'alert alert-warning';
-            noRecsAlert.innerHTML = `
-            <i class="fas fa-exclamation-triangle me-2"></i>
-            No high-quality partition recommendations available for this dataset. Your columns may have distributions that are not optimal for partitioning.`;
-            partitionSection.appendChild(noRecsAlert);
-            return;
-        }
-        
-        // Create the row container
-        const row = document.createElement('div');
-        row.className = 'row';
-        partitionSection.appendChild(row);
-        
-        // Add a card for each recommendation
-        recommendations.forEach(rec => {
-            // Create the column
-            const col = document.createElement('div');
-            col.className = 'col-md-6 mb-3';
-            
-            // Create the card
-            const card = document.createElement('div');
-            card.className = 'card h-100';
-            
-            // Create the card header
-            const cardHeader = document.createElement('div');
-            cardHeader.className = 'd-flex justify-content-between align-items-center card-header';
-            
-            // Add the column name
-            const columnName = document.createElement('h6');
-            columnName.className = 'mb-0';
-            columnName.textContent = rec.column;
-            cardHeader.appendChild(columnName);
-            
-            // Add the suitability badge - using a color-coded system within top tier (75+)
-            const badge = document.createElement('span');
-            let badgeClass, badgeText;
-            
-            if (rec.suitability_score >= 90) {
-                badgeClass = 'success';
-                badgeText = 'Perfect';
-            } else if (rec.suitability_score >= 80) {
-                badgeClass = 'primary';
-                badgeText = 'Excellent';
-            } else {
-                badgeClass = 'info';
-                badgeText = 'Very Good';
-            }
-            
-            badge.className = `badge bg-${badgeClass}`;
-            badge.textContent = `${badgeText} (${rec.suitability_score}/100)`;
-            cardHeader.appendChild(badge);
-            
-            card.appendChild(cardHeader);
-            
-            // Create the card body
-            const cardBody = document.createElement('div');
-            cardBody.className = 'card-body';
-            
-            // Add the column metadata
-            const metadata = document.createElement('div');
-            metadata.className = 'mb-3';
-            metadata.innerHTML = `
-            <div class="d-flex justify-content-between">
-                <small class="text-muted">Type: <span class="fw-bold">${rec.type}</span></small>
-                <small class="text-muted">Unique values: <span class="fw-bold">${rec.unique_values}</span></small>
-            </div>
-            <div class="d-flex justify-content-between">
-                <small class="text-muted">Cardinality: <span class="fw-bold">${rec.cardinality_ratio}%</span></small>
-                <small class="text-muted">Total values: <span class="fw-bold">${rec.total_values}</span></small>
-            </div>`;
-            cardBody.appendChild(metadata);
-            
-            // Add transform recommendations
-            const transformsTitle = document.createElement('h6');
-            transformsTitle.className = 'card-subtitle mb-2';
-            transformsTitle.textContent = 'Recommended Transforms:';
-            cardBody.appendChild(transformsTitle);
-            
-            const transformsList = document.createElement('ul');
-            transformsList.className = 'list-group';
-            
-            // Add each transform
-            rec.transforms.forEach(transform => {
-                const item = document.createElement('li');
-                item.className = 'list-group-item';
-                item.innerHTML = `
-                <div class="d-flex justify-content-between align-items-center">
-                    <div>
-                        <span class="fw-bold text-primary">${transform.name}</span>
-                        <p class="mb-0 small">${transform.description}</p>
-                    </div>
-                </div>
-                <div class="mt-1">
-                    <pre class="bg-light p-2 rounded small">${transform.example}</pre>
-                </div>`;
-                transformsList.appendChild(item);
-            });
-            
-            cardBody.appendChild(transformsList);
-            card.appendChild(cardBody);
-            col.appendChild(card);
-            row.appendChild(col);
-        });
-        
-        // Add a note about Iceberg partitioning
-        const note = document.createElement('div');
-        note.className = 'alert alert-secondary mt-3';
-        note.innerHTML = `
-        <h6 class="mb-2">About Iceberg Partitioning</h6>
-        <p class="mb-1">Partitioning divides data into separate files based on column values, improving query performance when those columns are used for filtering.</p>
-        <p class="mb-0">
-            <strong>Common transforms:</strong>
-            <code>year(timestamp)</code>, 
-            <code>month(timestamp)</code>, 
-            <code>day(timestamp)</code>, 
-            <code>bucket(n, column)</code>,
-            <code>truncate(width, column)</code>
-        </p>`;
-        partitionSection.appendChild(note);
-    }
-
-    // Render the schema table
-    function renderSchemaTable() {
-        // Clear the table
-        schemaColumnsBody.innerHTML = '';
-        
-        // Add a row for each column
-        schemaColumns.forEach((column, index) => {
-            const row = document.createElement('tr');
-            
-            // Column name cell
-            const nameCell = document.createElement('td');
-            const nameInput = document.createElement('input');
-            nameInput.type = 'text';
-            nameInput.className = 'form-control form-control-sm';
-            nameInput.value = column.name;
-            nameInput.dataset.index = index;
-            nameInput.addEventListener('change', function() {
-                schemaColumns[this.dataset.index].name = this.value;
-                updateSchemaJson();
-            });
-            nameCell.appendChild(nameInput);
-            
-            // Column type cell
-            const typeCell = document.createElement('td');
-            const typeSelect = document.createElement('select');
-            typeSelect.className = 'form-select form-select-sm';
-            typeSelect.dataset.index = index;
-            
-            // Add options for each type
-            icebergTypes.forEach(type => {
-                const option = document.createElement('option');
-                option.value = type;
-                option.textContent = type;
-                
-                // Match the type more precisely - exact match with the start of the type string
-                // This handles cases like 'decimal(10,2)' matching with 'decimal'
-                if (type === column.type || 
-                    (column.type.startsWith(type) && 
-                     (type === 'decimal' || type === column.type))) {
-                    option.selected = true;
-                }
-                typeSelect.appendChild(option);
-            });
-            
-            typeSelect.addEventListener('change', function() {
-                schemaColumns[this.dataset.index].type = this.value;
-                updateSchemaJson();
-            });
-            typeCell.appendChild(typeSelect);
-            
-            // Required checkbox cell
-            const requiredCell = document.createElement('td');
-            const requiredCheckbox = document.createElement('input');
-            requiredCheckbox.type = 'checkbox';
-            requiredCheckbox.className = 'form-check-input';
-            requiredCheckbox.checked = column.required;
-            requiredCheckbox.dataset.index = index;
-            requiredCheckbox.addEventListener('change', function() {
-                schemaColumns[this.dataset.index].required = this.checked;
-                updateSchemaJson();
-            });
-            requiredCell.appendChild(requiredCheckbox);
-            
-            // Actions cell
-            const actionsCell = document.createElement('td');
-            const deleteBtn = document.createElement('button');
-            deleteBtn.type = 'button';
-            deleteBtn.className = 'btn btn-sm btn-danger';
-            deleteBtn.textContent = 'Remove';
-            deleteBtn.dataset.index = index;
-            deleteBtn.addEventListener('click', function() {
-                schemaColumns.splice(this.dataset.index, 1);
-                renderSchemaTable();
-                updateSchemaJson();
-            });
-            actionsCell.appendChild(deleteBtn);
-            
-            // Add all cells to the row
-            row.appendChild(nameCell);
-            row.appendChild(typeCell);
-            row.appendChild(requiredCell);
-            row.appendChild(actionsCell);
-            
-            // Add the row to the table
-            schemaColumnsBody.appendChild(row);
-        });
-        
-        // Update the schema JSON
-        updateSchemaJson();
-        
-        // Show the table and hide the placeholder
-        if (schemaColumns.length > 0) {
-            schemaPreviewPlaceholder.style.display = 'none';
-            schemaPreviewTableContainer.style.display = 'block';
-        } else {
-            schemaPreviewPlaceholder.style.display = 'block';
-            schemaPreviewTableContainer.style.display = 'none';
-        }
-    }
-    
-    // Handle analyze CSV button click
-    analyzeCsvBtn.addEventListener('click', function() {
-        // Check if a file is selected
-        if (!csvFileInput.files || csvFileInput.files.length === 0) {
-            alert('Please select a CSV file first');
-            return;
-        }
-        
-        // Get form values
-        const delimiter = document.getElementById('delimiter').value;
-        const quoteChar = document.getElementById('quote_char').value;
-        const hasHeader = document.getElementById('has_header_yes').checked;
-        const sampleSize = document.getElementById('sample_size') ? document.getElementById('sample_size').value : 1000;
-        
-        // Create form data for the request
-        const formData = new FormData();
-        formData.append('csv_file', csvFileInput.files[0]);
-        formData.append('delimiter', delimiter);
-        formData.append('quote_char', quoteChar);
-        formData.append('has_header', hasHeader ? 'true' : 'false');
-        formData.append('sample_size', sampleSize);
-        
-        // Show loading state
-        schemaPreviewPlaceholder.textContent = 'Analyzing CSV file...';
-        schemaPreviewPlaceholder.style.display = 'block';
-        schemaPreviewTableContainer.style.display = 'none';
-        
-        // Send the request to the server
-        fetch('/analyze-csv', {
-            method: 'POST',
-            body: formData
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.error) {
-                schemaPreviewPlaceholder.textContent = `Error: ${data.error}`;
-                schemaPreviewPlaceholder.className = 'alert alert-danger';
-            } else {
-                // Update the schema columns array
-                schemaColumns = data.schema;
-                
-                // Store partition recommendations if available
-                const partitionRecommendations = data.partition_recommendations || [];
-                console.log('Partition recommendations:', partitionRecommendations);
-                
-                // Render the schema table
-                renderSchemaTable();
-                
-                // Render the partition recommendations section
-                renderPartitionRecommendations(partitionRecommendations);
-            }
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            schemaPreviewPlaceholder.textContent = `Error: ${error.message}`;
-            schemaPreviewPlaceholder.className = 'alert alert-danger';
-        });
-    });
-    
-    // Handle add column button click
-    addColumnBtn.addEventListener('click', function() {
-        // Add a new column to the schema
-        schemaColumns.push({
-            name: `column_${schemaColumns.length + 1}`,
-            type: 'string',
-            required: false
-        });
-        
-        // Render the schema table
-        renderSchemaTable();
-    });
-    
-    // Profile selector dynamic target fields
     const profileSelect = document.getElementById('profile');
+    const trinoFields = document.getElementById('trino_fields');
+    const s3tablesFields = document.getElementById('s3tables_fields');
     
-    // Auto-populate table name prefix based on profile selection
-    profileSelect.addEventListener('change', function() {
-        // Get the selected profile
-        const selectedProfileName = this.value;
-        console.log('Selected profile:', selectedProfileName);
-        if (!selectedProfileName) return;
+    function updateFields() {
+        const selectedOption = profileSelect.options[profileSelect.selectedIndex];
+        const profileType = selectedOption.dataset.type;
         
-        // Make a request to get the profile details
-        const profileUrl = `/profiles/get/${selectedProfileName}`;
-        console.log('Fetching profile from:', profileUrl);
-        
-        fetch(profileUrl)
-            .then(response => {
-                console.log('Response status:', response.status);
-                return response.json();
-            })
-            .then(data => {
-                console.log('Profile data received:', data);
-                
-                if (data.error) {
-                    console.error('Error fetching profile:', data.error);
-                    return;
-                }
-                
-                // Get the catalog and schema from the profile
-                const catalog = data.profile.trino_catalog;
-                const schema = data.profile.trino_schema;
-                console.log('Catalog:', catalog, 'Schema:', schema);
-                
-                // Update the table name input with catalog.schema prefix
-                if (catalog && schema) {
-                    // If the user has already entered a name, check if it has a prefix
-                    const currentTableName = tableNameInput.value;
-                    console.log('Current table name:', currentTableName);
-                    
-                    // If the table name doesn't already have a catalog/schema prefix
-                    if (!currentTableName.includes('.')) {
-                        // Set the new format: catalog.schema.tablename
-                        if (currentTableName) {
-                            tableNameInput.value = `${catalog}.${schema}.${currentTableName}`;
-                        } else {
-                            tableNameInput.value = `${catalog}.${schema}.`;
-                        }
-                        console.log('Updated table name to:', tableNameInput.value);
-                    }
-                }
-            })
-            .catch(error => {
-                console.error('Error fetching profile:', error);
-            });
-    });
+        if (profileType === 'trino') {
+            trinoFields.style.display = 'block';
+            s3tablesFields.style.display = 'none';
+        } else if (profileType === 's3tables') {
+            trinoFields.style.display = 'none';
+            s3tablesFields.style.display = 'block';
+        } else {
+            trinoFields.style.display = 'none';
+            s3tablesFields.style.display = 'none';
+        }
+    }
+    
+    // Initial update
+    updateFields();
+    
+    // Update on change
+    profileSelect.addEventListener('change', updateFields);
 });
 </script>
+{% endblock %}
 {% endblock %}

@@ -25,71 +25,114 @@
                         <input type="text" class="form-control" id="description" name="description" value="{{ profile.description if profile else '' }}">
                         <div class="form-text">Optional description to help identify this profile.</div>
                     </div>
-                    
+
                     <div class="mb-3">
-                        <h5>Trino Connection</h5>
-                    </div>
-                    
-                    <div class="mb-3">
-                        <label for="trino_host" class="form-label">Trino Host</label>
-                        <input type="text" class="form-control" id="trino_host" name="trino_host" value="{{ profile.trino_host if profile else 'sep.sdp-dev.pd.switchnet.nv' }}" required>
-                    </div>
-                    
-                    <div class="mb-3">
-                        <label for="trino_port" class="form-label">Trino Port</label>
-                        <input type="number" class="form-control" id="trino_port" name="trino_port" value="{{ profile.trino_port if profile else 443 }}" required>
-                    </div>
-                    
-                    <div class="mb-3">
-                        <label for="trino_user" class="form-label">Trino User</label>
-                        <input type="text" class="form-control" id="trino_user" name="trino_user" value="{{ profile.trino_user if profile else '' }}">
-                    </div>
-                    
-                    <div class="mb-3">
-                        <label for="trino_password" class="form-label">Trino Password</label>
-                        <input type="password" class="form-control" id="trino_password" name="trino_password" value="{{ profile.trino_password if profile else '' }}">
-                        <div class="form-text">Leave blank to keep existing password. Note: Password is stored in plain text in your config file.</div>
-                    </div>
-                    
-                    <div class="mb-3">
-                        <label for="http_scheme" class="form-label">HTTP Scheme</label>
-                        <select class="form-select" id="http_scheme" name="http_scheme">
-                            <option value="http" {% if profile and profile.http_scheme == 'http' %}selected{% elif not profile %}{% endif %}>HTTP</option>
-                            <option value="https" {% if profile and profile.http_scheme == 'https' %}selected{% elif not profile %}selected{% endif %}>HTTPS (Required for authentication)</option>
+                        <label for="profile_type" class="form-label">Profile Type</label>
+                        <select class="form-select" id="profile_type" name="profile_type" required>
+                            <option value="trino" {% if profile and profile.profile_type == 'trino' %}selected{% elif not profile %}selected{% endif %}>Trino</option>
+                            <option value="s3tables" {% if profile and profile.profile_type == 's3tables' %}selected{% endif %}>S3 Tables</option>
                         </select>
-                        <div class="form-text">Use HTTPS if Trino authentication is enabled</div>
+                        <div class="form-text">Select the type of connection profile.</div>
                     </div>
                     
-                    <div class="mb-3">
-                        <label for="trino_role" class="form-label">Trino Role</label>
-                        <input type="text" class="form-control" id="trino_role" name="trino_role" value="{{ profile.trino_role if profile else 'sysadmin' }}">
+                    <!-- Trino Connection Fields -->
+                    <div id="trino_fields" class="connection-fields">
+                        <div class="mb-3">
+                            <h5>Trino Connection</h5>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="trino_host" class="form-label">Trino Host</label>
+                            <input type="text" class="form-control" id="trino_host" name="trino_host" value="{{ profile.trino_host if profile else 'sep.sdp-dev.pd.switchnet.nv' }}" required>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="trino_port" class="form-label">Trino Port</label>
+                            <input type="number" class="form-control" id="trino_port" name="trino_port" value="{{ profile.trino_port if profile else 443 }}" required>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="trino_user" class="form-label">Trino User</label>
+                            <input type="text" class="form-control" id="trino_user" name="trino_user" value="{{ profile.trino_user if profile else '' }}">
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="trino_password" class="form-label">Trino Password</label>
+                            <input type="password" class="form-control" id="trino_password" name="trino_password" value="{{ profile.trino_password if profile else '' }}">
+                            <div class="form-text">Leave blank to keep existing password. Note: Password is stored in plain text in your config file.</div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="http_scheme" class="form-label">HTTP Scheme</label>
+                            <select class="form-select" id="http_scheme" name="http_scheme">
+                                <option value="http" {% if profile and profile.http_scheme == 'http' %}selected{% elif not profile %}{% endif %}>HTTP</option>
+                                <option value="https" {% if profile and profile.http_scheme == 'https' %}selected{% elif not profile %}selected{% endif %}>HTTPS (Required for authentication)</option>
+                            </select>
+                            <div class="form-text">Use HTTPS if Trino authentication is enabled</div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="trino_role" class="form-label">Trino Role</label>
+                            <input type="text" class="form-control" id="trino_role" name="trino_role" value="{{ profile.trino_role if profile else 'sysadmin' }}">
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="trino_catalog" class="form-label">Default Catalog</label>
+                            <input type="text" class="form-control" id="trino_catalog" name="trino_catalog" value="{{ profile.trino_catalog if profile else 'iceberg' }}" required>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="trino_schema" class="form-label">Default Schema</label>
+                            <input type="text" class="form-control" id="trino_schema" name="trino_schema" value="{{ profile.trino_schema if profile else 'default' }}" required>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <h5>Hive Metastore</h5>
+                        </div>
+                        
+                        <div class="mb-3 form-check">
+                            <input type="checkbox" class="form-check-input" id="use_hive_metastore" name="use_hive_metastore" value="true" 
+                                   {% if profile and profile.use_hive_metastore %}checked{% elif not profile %}checked{% endif %}>
+                            <label class="form-check-label" for="use_hive_metastore">Use direct Hive Metastore connection</label>
+                            <div class="form-text">When disabled, all operations will be performed through Trino only. Hive Metastore URI is optional when disabled.</div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="hive_metastore_uri" class="form-label">Hive Metastore URI</label>
+                            <input type="text" class="form-control" id="hive_metastore_uri" name="hive_metastore_uri" value="{{ profile.hive_metastore_uri if profile else 'localhost:9083' }}">
+                            <div class="form-text">Format: host:port</div>
+                        </div>
                     </div>
-                    
-                    <div class="mb-3">
-                        <label for="trino_catalog" class="form-label">Default Catalog</label>
-                        <input type="text" class="form-control" id="trino_catalog" name="trino_catalog" value="{{ profile.trino_catalog if profile else 'iceberg' }}" required>
-                    </div>
-                    
-                    <div class="mb-3">
-                        <label for="trino_schema" class="form-label">Default Schema</label>
-                        <input type="text" class="form-control" id="trino_schema" name="trino_schema" value="{{ profile.trino_schema if profile else 'default' }}" required>
-                    </div>
-                    
-                    <div class="mb-3">
-                        <h5>Hive Metastore</h5>
-                    </div>
-                    
-                    <div class="mb-3 form-check">
-                        <input type="checkbox" class="form-check-input" id="use_hive_metastore" name="use_hive_metastore" value="true" 
-                               {% if profile and profile.use_hive_metastore %}checked{% elif not profile %}checked{% endif %}>
-                        <label class="form-check-label" for="use_hive_metastore">Use direct Hive Metastore connection</label>
-                        <div class="form-text">When disabled, all operations will be performed through Trino only. Hive Metastore URI is optional when disabled.</div>
-                    </div>
-                    
-                    <div class="mb-3">
-                        <label for="hive_metastore_uri" class="form-label">Hive Metastore URI</label>
-                        <input type="text" class="form-control" id="hive_metastore_uri" name="hive_metastore_uri" value="{{ profile.hive_metastore_uri if profile else 'localhost:9083' }}">
-                        <div class="form-text">Format: host:port</div>
+
+                    <!-- S3 Tables Connection Fields -->
+                    <div id="s3tables_fields" class="connection-fields" style="display: none;">
+                        <div class="mb-3">
+                            <h5>S3 Tables Connection</h5>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="region" class="form-label">AWS Region</label>
+                            <input type="text" class="form-control" id="region" name="region" value="{{ profile.region if profile else 'us-east-1' }}" required>
+                            <div class="form-text">The AWS region where your S3 Tables are located.</div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="table_bucket_arn" class="form-label">Table Bucket ARN</label>
+                            <input type="text" class="form-control" id="table_bucket_arn" name="table_bucket_arn" value="{{ profile.table_bucket_arn if profile else '' }}" required>
+                            <div class="form-text">Format: arn:aws:s3tables:region:account-id:bucket/bucket-name</div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="aws_access_key_id" class="form-label">AWS Access Key ID</label>
+                            <input type="text" class="form-control" id="aws_access_key_id" name="aws_access_key_id" value="{{ profile.aws_access_key_id if profile else '' }}">
+                            <div class="form-text">Optional if using IAM role or environment credentials.</div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="aws_secret_access_key" class="form-label">AWS Secret Access Key</label>
+                            <input type="password" class="form-control" id="aws_secret_access_key" name="aws_secret_access_key" value="{{ profile.aws_secret_access_key if profile else '' }}">
+                            <div class="form-text">Optional if using IAM role or environment credentials.</div>
+                        </div>
                     </div>
                     
                     <div class="d-flex gap-2">
@@ -105,42 +148,26 @@
 {% block scripts %}
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    // Function to toggle Hive Metastore URI field based on checkbox
-    const useHiveMetastoreCheckbox = document.getElementById('use_hive_metastore');
-    const hiveMetastoreUriField = document.getElementById('hive_metastore_uri');
+    const profileTypeSelect = document.getElementById('profile_type');
+    const trinoFields = document.getElementById('trino_fields');
+    const s3tablesFields = document.getElementById('s3tables_fields');
     
-    function toggleHiveMetastoreField() {
-        if (useHiveMetastoreCheckbox.checked) {
-            hiveMetastoreUriField.required = true;
-            hiveMetastoreUriField.disabled = false;
+    function updateFields() {
+        const selectedType = profileTypeSelect.value;
+        if (selectedType === 'trino') {
+            trinoFields.style.display = 'block';
+            s3tablesFields.style.display = 'none';
         } else {
-            hiveMetastoreUriField.required = false;
-            hiveMetastoreUriField.disabled = true;
+            trinoFields.style.display = 'none';
+            s3tablesFields.style.display = 'block';
         }
     }
     
-    // Initial toggle state
-    toggleHiveMetastoreField();
+    // Initial update
+    updateFields();
     
-    // Toggle on checkbox change
-    useHiveMetastoreCheckbox.addEventListener('change', toggleHiveMetastoreField);
-    
-    // Automatically switch to HTTPS when password is entered
-    const passwordField = document.getElementById('trino_password');
-    const httpSchemeSelect = document.getElementById('http_scheme');
-    
-    passwordField.addEventListener('input', function() {
-        if (passwordField.value.trim().length > 0) {
-            httpSchemeSelect.value = 'https';
-        }
-    });
-    
-    // Warn when trying to use password with HTTP
-    httpSchemeSelect.addEventListener('change', function() {
-        if (httpSchemeSelect.value === 'http' && passwordField.value.trim().length > 0) {
-            alert('Warning: Password authentication requires HTTPS. Your password will be ignored when using HTTP.');
-        }
-    });
+    // Update on change
+    profileTypeSelect.addEventListener('change', updateFields);
 });
 </script>
 {% endblock %}

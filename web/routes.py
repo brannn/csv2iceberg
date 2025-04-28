@@ -294,6 +294,10 @@ def convert():
     if last_used:
         last_used_profile = last_used.get('name')
     
+    # Add debug logging
+    logger.debug(f"Profiles list: {profiles_list}")
+    logger.debug(f"Last used profile: {last_used_profile}")
+    
     if request.method == 'POST':
         try:
             # Get the uploaded file
@@ -649,20 +653,34 @@ def profile_add():
     logger.debug("Profile add route called")
     if request.method == 'POST':
         # Process the form submission
-        profile = {
-            'name': request.form.get('name'),
-            'description': request.form.get('description'),
-            'trino_host': request.form.get('trino_host'),
-            'trino_port': int(request.form.get('trino_port', 443)),
-            'trino_user': request.form.get('trino_user'),
-            'trino_password': request.form.get('trino_password', ''),
-            'http_scheme': request.form.get('http_scheme', 'https'),
-            'trino_role': request.form.get('trino_role', 'sysadmin'),
-            'trino_catalog': request.form.get('trino_catalog', 'iceberg'),
-            'trino_schema': request.form.get('trino_schema', 'default'),
-            'use_hive_metastore': request.form.get('use_hive_metastore') == 'true',
-            'hive_metastore_uri': request.form.get('hive_metastore_uri', 'localhost:9083')
-        }
+        profile_type = request.form.get('profile_type', 'trino')
+        
+        if profile_type == 'trino':
+            profile = {
+                'name': request.form.get('name'),
+                'profile_type': 'trino',
+                'description': request.form.get('description'),
+                'trino_host': request.form.get('trino_host'),
+                'trino_port': int(request.form.get('trino_port', 443)),
+                'trino_user': request.form.get('trino_user'),
+                'trino_password': request.form.get('trino_password', ''),
+                'http_scheme': request.form.get('http_scheme', 'https'),
+                'trino_role': request.form.get('trino_role', 'sysadmin'),
+                'trino_catalog': request.form.get('trino_catalog', 'iceberg'),
+                'trino_schema': request.form.get('trino_schema', 'default'),
+                'use_hive_metastore': request.form.get('use_hive_metastore') == 'true',
+                'hive_metastore_uri': request.form.get('hive_metastore_uri', 'localhost:9083')
+            }
+        else:  # s3tables
+            profile = {
+                'name': request.form.get('name'),
+                'profile_type': 's3tables',
+                'description': request.form.get('description'),
+                'region': request.form.get('region', 'us-east-1'),
+                'table_bucket_arn': request.form.get('table_bucket_arn'),
+                'aws_access_key_id': request.form.get('aws_access_key_id', ''),
+                'aws_secret_access_key': request.form.get('aws_secret_access_key', '')
+            }
         
         success = config_manager.add_profile(profile)
         if success:
@@ -686,20 +704,34 @@ def profile_edit(name):
     
     if request.method == 'POST':
         # Process the form submission
-        updated_profile = {
-            'name': request.form.get('name'),
-            'description': request.form.get('description'),
-            'trino_host': request.form.get('trino_host'),
-            'trino_port': int(request.form.get('trino_port', 443)),
-            'trino_user': request.form.get('trino_user'),
-            'trino_password': request.form.get('trino_password', ''),
-            'http_scheme': request.form.get('http_scheme', 'https'),
-            'trino_role': request.form.get('trino_role', 'sysadmin'),
-            'trino_catalog': request.form.get('trino_catalog', 'iceberg'),
-            'trino_schema': request.form.get('trino_schema', 'default'),
-            'use_hive_metastore': request.form.get('use_hive_metastore') == 'true',
-            'hive_metastore_uri': request.form.get('hive_metastore_uri', 'localhost:9083')
-        }
+        profile_type = request.form.get('profile_type', 'trino')
+        
+        if profile_type == 'trino':
+            updated_profile = {
+                'name': request.form.get('name'),
+                'profile_type': 'trino',
+                'description': request.form.get('description'),
+                'trino_host': request.form.get('trino_host'),
+                'trino_port': int(request.form.get('trino_port', 443)),
+                'trino_user': request.form.get('trino_user'),
+                'trino_password': request.form.get('trino_password', ''),
+                'http_scheme': request.form.get('http_scheme', 'https'),
+                'trino_role': request.form.get('trino_role', 'sysadmin'),
+                'trino_catalog': request.form.get('trino_catalog', 'iceberg'),
+                'trino_schema': request.form.get('trino_schema', 'default'),
+                'use_hive_metastore': request.form.get('use_hive_metastore') == 'true',
+                'hive_metastore_uri': request.form.get('hive_metastore_uri', 'localhost:9083')
+            }
+        else:  # s3tables
+            updated_profile = {
+                'name': request.form.get('name'),
+                'profile_type': 's3tables',
+                'description': request.form.get('description'),
+                'region': request.form.get('region', 'us-east-1'),
+                'table_bucket_arn': request.form.get('table_bucket_arn'),
+                'aws_access_key_id': request.form.get('aws_access_key_id', ''),
+                'aws_secret_access_key': request.form.get('aws_secret_access_key', '')
+            }
         
         success = config_manager.update_profile(name, updated_profile)
         if success:
