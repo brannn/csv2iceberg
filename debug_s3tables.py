@@ -9,8 +9,8 @@ import time
 def signed_s3tables_request(method: str, path: str, body: bytes = b'', bucket_arn: str = None, is_table_operation: bool = False):
     # Use static credentials directly
     credentials = Credentials(
-        access_key='AKIAWYED7MW4OEHJV7N6',
-        secret_key='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'
+        access_key='',
+        secret_key=''
     )
 
     # Base endpoint without any path
