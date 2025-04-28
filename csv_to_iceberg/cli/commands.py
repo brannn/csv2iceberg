@@ -15,6 +15,7 @@ from rich.progress import Progress, TextColumn, BarColumn, TimeElapsedColumn, Ti
 from csv_to_iceberg.core.schema_inferrer import infer_schema_from_csv
 from csv_to_iceberg.connectors.trino_client import TrinoClient
 from csv_to_iceberg.connectors.hive_client import HiveMetastoreClient
+from csv_to_iceberg.connectors.s3tables_client import S3TablesClient
 from csv_to_iceberg.core.iceberg_writer import IcebergWriter
 from csv_to_iceberg.utils import setup_logging, validate_csv_file, validate_connection_params
 
@@ -30,7 +31,8 @@ def cli():
     """
     CSV to Iceberg - CLI tool for converting CSV files to Iceberg tables.
     
-    This tool allows converting CSV files to Iceberg tables using Trino and Hive metastore.
+    This tool allows converting CSV files to Iceberg tables using Trino and Hive metastore,
+    or directly to S3 Tables.
     """
     pass
 
@@ -41,17 +43,24 @@ def cli():
 @click.option('--quote-char', '-q', default='"', help='CSV quote character (default: double quote)')
 @click.option('--batch-size', '-b', default=10000, type=int, help='Batch size for processing (default: 10000)')
 @click.option('--table-name', '-t', required=True, help='Target Iceberg table name (format: catalog.schema.table)')
-@click.option('--trino-host', required=True, help='Trino host')
+@click.option('--profile-type', type=click.Choice(['trino', 's3tables']), default='trino', 
+              help='Type of connection profile (default: trino)')
+@click.option('--trino-host', help='Trino host (required for trino profile)')
 @click.option('--trino-port', default=443, help='Trino port (default: 443)')
 @click.option('--trino-user', default=os.getenv('USER', 'admin'), help='Trino user')
 @click.option('--trino-password', help='Trino password (if authentication is enabled)')
 @click.option('--http-scheme', type=click.Choice(['http', 'https']), default='https', 
               help='HTTP scheme for Trino connection (http or https, default: https)')
 @click.option('--trino-role', default='sysadmin', help='Trino role for authorization (default: sysadmin)')
-@click.option('--trino-catalog', required=True, help='Trino catalog')
-@click.option('--trino-schema', required=True, help='Trino schema')
+@click.option('--trino-catalog', help='Trino catalog (required for trino profile)')
+@click.option('--trino-schema', help='Trino schema (required for trino profile)')
 @click.option('--hive-metastore-uri', default="localhost:9083", help='Hive metastore Thrift URI')
 @click.option('--use-hive-metastore/--no-hive-metastore', default=True, help='Use direct Hive Metastore connection')
+@click.option('--region', help='AWS region (required for s3tables profile)')
+@click.option('--table-bucket-arn', help='S3 bucket ARN for tables (required for s3tables profile)')
+@click.option('--namespace', help='S3 Tables namespace (required for s3tables profile)')
+@click.option('--aws-access-key-id', help='AWS access key ID (optional)')
+@click.option('--aws-secret-access-key', help='AWS secret access key (optional)')
 @click.option('--mode', '-m', type=click.Choice(['append', 'overwrite']), default='append', 
               help='Write mode (append or overwrite, default: append)')
 @click.option('--sample-size', default=1000, help='Number of rows to sample for schema inference (default: 1000)')
@@ -60,15 +69,20 @@ def cli():
 @click.option('--exclude-columns', help='Comma-separated list of column names to exclude')
 @click.option('--verbose', '-v', is_flag=True, help='Enable verbose logging')
 def convert(csv_file: str, delimiter: str, has_header: bool, quote_char: str, batch_size: int,
-            table_name: str, trino_host: str, trino_port: int, trino_user: str, trino_password: Optional[str],
-            http_scheme: str, trino_role: str, trino_catalog: str, trino_schema: str, hive_metastore_uri: str,
-            use_hive_metastore: bool, mode: str, sample_size: int, custom_schema: Optional[str], 
-            include_columns: Optional[str], exclude_columns: Optional[str], verbose: bool):
+            table_name: str, profile_type: str, trino_host: Optional[str], trino_port: int, 
+            trino_user: str, trino_password: Optional[str], http_scheme: str, trino_role: str, 
+            trino_catalog: Optional[str], trino_schema: Optional[str], hive_metastore_uri: str,
+            use_hive_metastore: bool, region: Optional[str], table_bucket_arn: Optional[str],
+            namespace: Optional[str], aws_access_key_id: Optional[str], 
+            aws_secret_access_key: Optional[str], mode: str, sample_size: int, 
+            custom_schema: Optional[str], include_columns: Optional[str], 
+            exclude_columns: Optional[str], verbose: bool):
     """
     Convert a CSV file to an Iceberg table.
     
     This command reads a CSV file, infers its schema, creates an Iceberg table,
-    and loads the data into the table using Trino and Hive metastore.
+    and loads the data into the table using either Trino and Hive metastore,
+    or directly to S3 Tables.
     """
     if verbose:
         logging.getLogger().setLevel(logging.DEBUG)
@@ -79,16 +93,27 @@ def convert(csv_file: str, delimiter: str, has_header: bool, quote_char: str, ba
             console.print(f"[bold red]Error:[/bold red] Invalid CSV file: {csv_file}")
             sys.exit(1)
         
-        # Validate connection parameters
-        if not validate_connection_params(trino_host, trino_port, hive_metastore_uri, use_hive_metastore):
-            console.print("[bold red]Error:[/bold red] Invalid connection parameters")
-            sys.exit(1)
+        # Validate profile-specific parameters
+        if profile_type == 'trino':
+            if not all([trino_host, trino_catalog, trino_schema]):
+                console.print("[bold red]Error:[/bold red] Missing required Trino parameters")
+                sys.exit(1)
+            if not validate_connection_params(trino_host, trino_port, hive_metastore_uri, use_hive_metastore):
+                console.print("[bold red]Error:[/bold red] Invalid Trino connection parameters")
+                sys.exit(1)
+        else:  # s3tables
+            if not all([region, table_bucket_arn, namespace]):
+                console.print("[bold red]Error:[/bold red] Missing required S3 Tables parameters")
+                sys.exit(1)
             
         # Parse table name components
-        catalog, schema, table = parse_table_name(table_name)
-        if not catalog or not schema or not table:
-            console.print("[bold red]Error:[/bold red] Invalid table name format. Use: catalog.schema.table")
-            sys.exit(1)
+        if profile_type == 'trino':
+            catalog, schema, table = parse_table_name(table_name)
+            if not catalog or not schema or not table:
+                console.print("[bold red]Error:[/bold red] Invalid table name format. Use: catalog.schema.table")
+                sys.exit(1)
+        else:  # s3tables
+            table = table_name  # For S3 Tables, we use the simple table name
         
         # Get schema (either from custom schema file or by inference)
         if custom_schema:
@@ -173,84 +198,149 @@ def convert(csv_file: str, delimiter: str, has_header: bool, quote_char: str, ba
                 logger.debug(f"Inferred schema: {iceberg_schema}")
             console.print(f"[bold green]✓[/bold green] Schema inferred successfully")
         
-        # 2. Connect to Trino
-        with console.status("[bold blue]Connecting to Trino...[/bold blue]") as status:
-            logger.info(f"Connecting to Trino at {trino_host}:{trino_port}")
-            trino_client = TrinoClient(
-                host=trino_host,
-                port=trino_port,
-                user=trino_user,
-                password=trino_password,
-                catalog=trino_catalog,
-                schema=trino_schema,
-                http_scheme=http_scheme,
-                role=trino_role
-            )
-        console.print(f"[bold green]✓[/bold green] Connected to Trino")
-        
-        # 3. Connect to Hive metastore (if enabled)
-        hive_client = None
-        if use_hive_metastore:
-            with console.status("[bold blue]Connecting to Hive metastore...[/bold blue]") as status:
-                logger.info(f"Connecting to Hive metastore at {hive_metastore_uri}")
-                try:
-                    hive_client = HiveMetastoreClient(hive_metastore_uri)
-                    console.print(f"[bold green]✓[/bold green] Connected to Hive metastore")
-                except Exception as e:
-                    logger.warning(f"Failed to connect to Hive metastore: {str(e)}")
-                    console.print(f"[bold yellow]![/bold yellow] Could not connect to Hive metastore: {str(e)}")
-                    console.print(f"[bold yellow]![/bold yellow] Continuing without direct Hive metastore connection")
-        else:
-            logger.info("Hive metastore connection disabled via --no-hive-metastore flag")
-            console.print("[bold blue]i[/bold blue] Hive metastore connection disabled, using Trino for all operations")
-        
-        # 4. Create Iceberg table or verify it exists
-        with console.status(f"[bold blue]Creating/verifying Iceberg table {table_name}...[/bold blue]") as status:
-            table_exists = trino_client.table_exists(catalog, schema, table)
+        if profile_type == 'trino':
+            # 2. Connect to Trino
+            with console.status("[bold blue]Connecting to Trino...[/bold blue]") as status:
+                logger.info(f"Connecting to Trino at {trino_host}:{trino_port}")
+                trino_client = TrinoClient(
+                    host=trino_host,
+                    port=trino_port,
+                    user=trino_user,
+                    password=trino_password,
+                    catalog=trino_catalog,
+                    schema=trino_schema,
+                    http_scheme=http_scheme,
+                    role=trino_role
+                )
+            console.print(f"[bold green]✓[/bold green] Connected to Trino")
             
-            if table_exists and mode == 'overwrite':
-                logger.info(f"Table {table_name} exists and mode is overwrite, dropping table")
-                trino_client.drop_table(catalog, schema, table)
-                table_exists = False
-            
-            if not table_exists:
-                logger.info(f"Creating table {table_name}")
-                trino_client.create_iceberg_table(catalog, schema, table, iceberg_schema)
+            # 3. Connect to Hive metastore (if enabled)
+            hive_client = None
+            if use_hive_metastore:
+                with console.status("[bold blue]Connecting to Hive metastore...[/bold blue]") as status:
+                    logger.info(f"Connecting to Hive metastore at {hive_metastore_uri}")
+                    try:
+                        hive_client = HiveMetastoreClient(hive_metastore_uri)
+                        console.print(f"[bold green]✓[/bold green] Connected to Hive metastore")
+                    except Exception as e:
+                        logger.warning(f"Failed to connect to Hive metastore: {str(e)}")
+                        console.print(f"[bold yellow]![/bold yellow] Could not connect to Hive metastore: {str(e)}")
+                        console.print(f"[bold yellow]![/bold yellow] Continuing without direct Hive metastore connection")
             else:
-                logger.info(f"Table {table_name} already exists, verifying schema compatibility")
-                if not trino_client.validate_table_schema(catalog, schema, table, iceberg_schema):
-                    console.print("[bold red]Error:[/bold red] Existing table schema is incompatible with inferred schema")
-                    sys.exit(1)
-        console.print(f"[bold green]✓[/bold green] Iceberg table ready")
-        
-        # 5. Write data to Iceberg table
-        logger.info(f"Writing data from {csv_file} to {table_name} in {mode} mode")
-        writer = IcebergWriter(
-            trino_client=trino_client,
-            hive_client=hive_client,
-            catalog=catalog,
-            schema=schema,
-            table=table
-        )
-        
-        # Simple progress tracking without Rich Progress
-        def progress_update(percent):
-            console.print(f"[bold blue]Writing data: {percent}% complete[/bold blue]")
+                logger.info("Hive metastore connection disabled via --no-hive-metastore flag")
+                console.print("[bold blue]i[/bold blue] Hive metastore connection disabled, using Trino for all operations")
             
-        writer.write_csv_to_iceberg(
-            csv_file=csv_file,
-            mode=mode,
-            delimiter=delimiter,
-            has_header=has_header,
-            quote_char=quote_char,
-            batch_size=batch_size,
-            include_columns=include_cols,
-            exclude_columns=exclude_cols,
-            progress_callback=progress_update
-        )
-        
-        console.print(f"[bold green]✓[/bold green] Data written successfully to {table_name}")
-        
+            # 4. Create Iceberg table or verify it exists
+            with console.status(f"[bold blue]Creating/verifying Iceberg table {table_name}...[/bold blue]") as status:
+                table_exists = trino_client.table_exists(catalog, schema, table)
+                
+                if table_exists and mode == 'overwrite':
+                    logger.info(f"Table {table_name} exists and mode is overwrite, dropping table")
+                    trino_client.drop_table(catalog, schema, table)
+                    table_exists = False
+                
+                if not table_exists:
+                    logger.info(f"Creating table {table_name}")
+                    trino_client.create_iceberg_table(catalog, schema, table, iceberg_schema)
+                else:
+                    logger.info(f"Table {table_name} already exists, verifying schema compatibility")
+                    if not trino_client.validate_table_schema(catalog, schema, table, iceberg_schema):
+                        console.print("[bold red]Error:[/bold red] Existing table schema is incompatible with inferred schema")
+                        sys.exit(1)
+            console.print(f"[bold green]✓[/bold green] Iceberg table ready")
+            
+            # 5. Write data to Iceberg table
+            logger.info(f"Writing data from {csv_file} to {table_name} in {mode} mode")
+            writer = IcebergWriter(
+                trino_client=trino_client,
+                hive_client=hive_client,
+                catalog=catalog,
+                schema=schema,
+                table=table
+            )
+            
+            # Simple progress tracking without Rich Progress
+            def progress_update(percent):
+                console.print(f"[bold blue]Writing data: {percent}% complete[/bold blue]")
+                
+            writer.write_csv_to_iceberg(
+                csv_file=csv_file,
+                mode=mode,
+                delimiter=delimiter,
+                has_header=has_header,
+                quote_char=quote_char,
+                batch_size=batch_size,
+                include_columns=include_cols,
+                exclude_columns=exclude_cols,
+                progress_callback=progress_update
+            )
+            
+        else:  # s3tables
+            # 2. Create S3 Tables client
+            with console.status("[bold blue]Connecting to S3 Tables...[/bold blue]") as status:
+                logger.info(f"Connecting to AWS region: {region}")
+                s3tables_client = S3TablesClient(
+                    endpoint=f"https://{region}.amazonaws.com",
+                    region=region,
+                    aws_access_key_id=aws_access_key_id,
+                    aws_secret_access_key=aws_secret_access_key
+                )
+            console.print(f"[bold green]✓[/bold green] Connected to S3 Tables")
+            
+            # 3. Create table if it doesn't exist
+            with console.status(f"[bold blue]Creating/verifying S3 Tables table {namespace}.{table}...[/bold blue]") as status:
+                table_exists = s3tables_client.table_exists(namespace, table)
+                
+                if table_exists and mode == 'overwrite':
+                    logger.info(f"Table {namespace}.{table} exists and mode is overwrite, dropping table")
+                    s3tables_client.delete_table(namespace, table)
+                    table_exists = False
+                
+                if not table_exists:
+                    logger.info(f"Creating table {namespace}.{table}")
+                    s3tables_client.create_table(
+                        namespace=namespace,
+                        table_name=table,
+                        schema=iceberg_schema
+                    )
+            console.print(f"[bold green]✓[/bold green] S3 Tables table ready")
+            
+            # 4. Write data to S3 Tables
+            logger.info(f"Writing data from {csv_file} to {namespace}.{table} in {mode} mode")
+            
+            # Simple progress tracking without Rich Progress
+            def progress_update(percent):
+                console.print(f"[bold blue]Writing data: {percent}% complete[/bold blue]")
+            
+            # Use the conversion service for S3 Tables
+            from csv_to_iceberg.core.conversion_service import convert_csv_to_iceberg
+            
+            result = convert_csv_to_iceberg(
+                csv_file=csv_file,
+                table_name=table,
+                profile_type='s3tables',
+                region=region,
+                table_bucket_arn=table_bucket_arn,
+                namespace=namespace,
+                aws_access_key_id=aws_access_key_id,
+                aws_secret_access_key=aws_secret_access_key,
+                delimiter=delimiter,
+                has_header=has_header,
+                quote_char=quote_char,
+                batch_size=batch_size,
+                mode=mode,
+                sample_size=sample_size,
+                include_columns=include_cols,
+                exclude_columns=exclude_cols,
+                progress_callback=progress_update
+            )
+            
+            if not result['success']:
+                console.print(f"[bold red]Error:[/bold red] {result['error']}")
+                sys.exit(1)
+            
+            console.print(f"[bold green]✓[/bold green] Successfully wrote {result['rows_processed']} rows to {namespace}.{table}")
+            
     except Exception as e:
         logger.error(f"Error during conversion: {str(e)}", exc_info=True)
         console.print(f"[bold red]Error:[/bold red] {str(e)}")
