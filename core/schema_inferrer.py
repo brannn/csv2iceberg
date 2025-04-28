@@ -361,7 +361,7 @@ def _infer_schema_from_large_csv(
             sample_size = 1000
         sample_factor = max(0.01, min(1.0, sample_size / row_count))
         
-        # Use Polars lazy API to sample the data efficiently
+        # Use Polars lazy API with random filtering for efficient sampling
         df_sampled = pl.scan_csv(
             csv_file,
             separator=delimiter,
@@ -372,7 +372,7 @@ def _infer_schema_from_large_csv(
             try_parse_dates=True,
             low_memory=True,
             ignore_errors=True
-        ).sample(fraction=sample_factor, seed=42)
+        ).filter(pl.random().lt(sample_factor))
         
         # Collect the sample
         df = df_sampled.collect(streaming=True)
