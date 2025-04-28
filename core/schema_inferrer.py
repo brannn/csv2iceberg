@@ -372,7 +372,7 @@ def _infer_schema_from_large_csv(
             try_parse_dates=True,
             low_memory=True,
             ignore_errors=True
-        ).sample(n=sample_size, with_replacement=False)
+        ).collect().sample(n=sample_size, with_replacement=False)
         
         # Collect the sample
         df = df_sampled.collect(streaming=True)
