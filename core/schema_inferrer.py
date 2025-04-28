@@ -374,22 +374,14 @@ def _infer_schema_from_large_csv(
             ignore_errors=True
         ).collect().sample(n=sample_size, with_replacement=False)
         
-        # Collect the sample
-        df = df_sampled.collect(streaming=True)
-        
-        # If no header was provided, generate column names
-        if not has_header:
-            df.columns = [f"col_{i}" for i in range(len(df.columns))]
-        
         # Convert to PyArrow table for schema inference
-        arrow_table = df.to_arrow()
-        arrow_schema = arrow_table.schema
+        arrow_table = df_sampled.to_arrow()
         
         # Create schema fields
         fields = []
         field_id = 1
         
-        for i, field in enumerate(arrow_schema):
+        for i, field in enumerate(arrow_table.schema):
             col_name = field.name if i < len(column_names) else f"col_{i}"
             clean_col_name = str(col_name).strip()
             
