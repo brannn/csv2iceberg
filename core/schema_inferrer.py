@@ -8,6 +8,7 @@ import re
 from typing import Dict, List, Any, Optional, Tuple, Set
 
 import polars as pl
+from polars.expr import random
 import pyarrow as pa
 
 from pyiceberg.schema import Schema
@@ -372,7 +373,7 @@ def _infer_schema_from_large_csv(
             try_parse_dates=True,
             low_memory=True,
             ignore_errors=True
-        ).filter(pl.random().lt(sample_factor))
+        ).filter(random().lt(sample_factor))
         
         # Collect the sample
         df = df_sampled.collect(streaming=True)
