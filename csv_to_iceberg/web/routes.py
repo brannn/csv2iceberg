@@ -286,259 +286,155 @@ def analyze_csv():
 
 @routes.route('/convert', methods=['GET', 'POST'])
 def convert():
-    """Render the conversion page and handle conversion requests."""
+    """Handle CSV to Iceberg conversion."""
     logger.debug("Convert route called")
-    profiles_list = config_manager.get_profiles()
-    last_used_profile = None
-    last_used = config_manager.get_last_used_profile()
-    if last_used:
-        last_used_profile = last_used.get('name')
-    
-    if request.method == 'POST':
-        try:
-            # Get the uploaded file
-            csv_file = request.files.get('csv_file')
-            if not csv_file:
+    try:
+        if request.method == 'POST':
+            # Handle form submission
+            if 'csv_file' not in request.files:
                 flash('No file selected', 'error')
-                return render_template('convert.html', profiles=profiles_list, last_used_profile=last_used_profile)
-            
-            # Get form parameters
+                return redirect(request.url)
+                
+            csv_file = request.files['csv_file']
+            if not csv_file or csv_file.filename == '':
+                flash('No file selected', 'error')
+                return redirect(request.url)
+                
+            if not allowed_file(csv_file.filename):
+                flash('Invalid file type. Only CSV files are allowed.', 'error')
+                return redirect(request.url)
+                
+            # Get form data
             profile_name = request.form.get('profile')
             table_name = request.form.get('table_name')
             delimiter = request.form.get('delimiter', ',')
-            has_header = request.form.get('has_header') == 'true'
             quote_char = request.form.get('quote_char', '"')
-            write_mode = request.form.get('write_mode', 'append')
+            has_header = request.form.get('has_header') == 'true'
             batch_size = int(request.form.get('batch_size', 10000))
+            write_mode = request.form.get('write_mode', 'append')
             sample_size = int(request.form.get('sample_size', 1000))
-            include_columns = request.form.get('include_columns', '')
-            exclude_columns = request.form.get('exclude_columns', '')
+            include_columns = request.form.get('include_columns', '').split(',') if request.form.get('include_columns') else None
+            exclude_columns = request.form.get('exclude_columns', '').split(',') if request.form.get('exclude_columns') else None
             use_custom_schema = request.form.get('use_custom_schema') == 'true'
-            custom_schema = request.form.get('custom_schema', '') if use_custom_schema else ''
+            custom_schema = json.loads(request.form.get('custom_schema', '[]'))
             
-            # Parse column lists
-            include_cols_list = [col.strip() for col in include_columns.split(',')] if include_columns.strip() else None
-            exclude_cols_list = [col.strip() for col in exclude_columns.split(',')] if exclude_columns.strip() else None
-            
-            # Validate required fields
-            if not profile_name:
-                flash('Profile is required', 'error')
-                return render_template('convert.html', profiles=profiles_list, last_used_profile=last_used_profile)
-            
-            if not table_name:
-                flash('Table name is required', 'error')
-                return render_template('convert.html', profiles=profiles_list, last_used_profile=last_used_profile)
-            
-            # Get the profile
+            # Get profile
             profile = config_manager.get_profile(profile_name)
             if not profile:
                 flash(f'Profile {profile_name} not found', 'error')
-                return render_template('convert.html', profiles=profiles_list, last_used_profile=last_used_profile)
-            
-            # Set last used profile
-            config_manager.set_last_used_profile(profile_name)
-            
-            # Save the file to a temporary location
-            temp_dir = os.path.join(os.getcwd(), 'uploads')
-            os.makedirs(temp_dir, exist_ok=True)
-            
-            # Create a unique filename
-            file_id = str(uuid.uuid4())
-            file_path = os.path.join(temp_dir, f'{file_id}_{secure_filename(csv_file.filename)}')
-            
-            # Save the file
-            csv_file.save(file_path)
-            
-            # Create a job ID
+                return redirect(request.url)
+                
+            # Create job
             job_id = str(uuid.uuid4())
-            
-            # Get file size
-            file_size = os.path.getsize(file_path)
-            
-            # Get catalog and schema from the profile
-            catalog = profile.get('trino_catalog')
-            schema = profile.get('trino_schema')
-            
-            # Construct the fully qualified table name if needed
-            # If the user entered a bare table name (no dots), prepend catalog and schema
-            if table_name and '.' not in table_name:
-                full_table_name = f"{catalog}.{schema}.{table_name}"
-                logger.info(f"Constructing full table name: {full_table_name} from catalog: {catalog}, schema: {schema}, table: {table_name}")
-            else:
-                # User provided a qualified name already, use as-is
-                full_table_name = table_name
-                logger.info(f"Using user-provided qualified table name: {full_table_name}")
-            
-            # Create job parameters
-            job_params = {
-                'csv_file': file_path,
+            job = {
+                'id': job_id,
+                'status': 'running',
+                'start_time': datetime.now().timestamp(),
+                'profile': profile_name,
+                'table_name': table_name,
+                'file_name': csv_file.filename,
+                'file_size': get_file_size(csv_file),
                 'delimiter': delimiter,
-                'has_header': has_header,
                 'quote_char': quote_char,
+                'has_header': has_header,
                 'batch_size': batch_size,
-                'table_name': full_table_name,
-                'trino_host': profile.get('trino_host'),
-                'trino_port': profile.get('trino_port'),
-                'trino_user': profile.get('trino_user'),
-                'trino_password': profile.get('trino_password'),
-                'http_scheme': profile.get('http_scheme'),
-                'trino_role': profile.get('trino_role'),
-                'trino_catalog': profile.get('trino_catalog'),
-                'trino_schema': profile.get('trino_schema'),
-                'hive_metastore_uri': profile.get('hive_metastore_uri'),
-                'use_hive_metastore': profile.get('use_hive_metastore'),
-                'mode': write_mode,
+                'write_mode': write_mode,
                 'sample_size': sample_size,
-                'file_size': file_size,
-                'original_filename': secure_filename(csv_file.filename),
-                'include_columns': include_cols_list,
-                'exclude_columns': exclude_cols_list,
-                'custom_schema': custom_schema if custom_schema.strip() else None
+                'include_columns': include_columns,
+                'exclude_columns': exclude_columns,
+                'use_custom_schema': use_custom_schema,
+                'custom_schema': custom_schema
             }
             
-            # Create the job
-            job = job_manager.create_job(job_id, job_params)
+            # Save job
+            job_manager.save_job(job)
             
-            # Run the job in a background thread
+            # Start conversion in background
             def run_conversion_job():
                 try:
-                    # Import the centralized conversion service
-                    from csv_to_iceberg.core.conversion_service import convert_csv_to_iceberg
+                    # Save file temporarily
+                    temp_dir = os.path.join(os.getcwd(), 'uploads')
+                    os.makedirs(temp_dir, exist_ok=True)
+                    file_path = os.path.join(temp_dir, f'{job_id}_{secure_filename(csv_file.filename)}')
+                    csv_file.save(file_path)
                     
-                    # Update job status to running
-                    job_manager.update_job(job_id, {
-                        'status': 'running',
-                        'started_at': datetime.now(),
-                    })
-                    job_manager.update_job_progress(job_id, 0)
+                    # Update job with file path
+                    job['file_path'] = file_path
+                    job_manager.save_job(job)
                     
-                    # Progress callback function
+                    # Run conversion
                     def update_progress(percent):
-                        job_manager.update_job_progress(job_id, percent)
+                        job['progress'] = percent
+                        job_manager.save_job(job)
                     
-                    # Run the conversion using our centralized service
-                    result = convert_csv_to_iceberg(
-                        # File parameters
-                        csv_file=job_params['csv_file'],
-                        table_name=job_params['table_name'],
-                        
-                        # Connection parameters
-                        trino_host=job_params['trino_host'],
-                        trino_port=job_params['trino_port'],
-                        trino_user=job_params['trino_user'],
-                        trino_password=job_params['trino_password'],
-                        http_scheme=job_params['http_scheme'],
-                        trino_role=job_params['trino_role'],
-                        trino_catalog=job_params['trino_catalog'],
-                        trino_schema=job_params['trino_schema'],
-                        use_hive_metastore=job_params['use_hive_metastore'],
-                        hive_metastore_uri=job_params['hive_metastore_uri'],
-                        
-                        # CSV handling parameters
-                        delimiter=job_params['delimiter'],
-                        quote_char=job_params['quote_char'],
-                        has_header=job_params['has_header'],
-                        batch_size=job_params['batch_size'],
-                        
-                        # Schema/data parameters
-                        mode=job_params['mode'],
-                        sample_size=job_params['sample_size'],
-                        include_columns=job_params['include_columns'],
-                        exclude_columns=job_params['exclude_columns'],
-                        custom_schema=job_params['custom_schema'],
-                        
-                        # Progress callback
+                    # Get client based on profile type
+                    if profile.get('profile_type') == 's3tables':
+                        from csv_to_iceberg.connectors.s3tables_client import S3TablesClient
+                        client = S3TablesClient(profile)
+                    else:
+                        client = TrinoClient(profile)
+                    
+                    # Run conversion
+                    client.convert_csv_to_iceberg(
+                        file_path=file_path,
+                        table_name=table_name,
+                        delimiter=delimiter,
+                        quote_char=quote_char,
+                        has_header=has_header,
+                        batch_size=batch_size,
+                        write_mode=write_mode,
+                        sample_size=sample_size,
+                        include_columns=include_columns,
+                        exclude_columns=exclude_columns,
+                        use_custom_schema=use_custom_schema,
+                        custom_schema=custom_schema,
                         progress_callback=update_progress
                     )
                     
-                    # Handle the result
-                    if result['success']:
-                        # Get the row count 
-                        rows_processed = result.get('rows_processed', 0)
-                        stdout = result.get('stdout', '')
-                        
-                        # Update job with row count and stdout
-                        updates = {
-                            'rows_processed': rows_processed,
-                            'stdout': stdout
-                        }
-                        job_manager.update_job(job_id, updates)
-                        
-                        # Mark job as completed with success, stdout, and ensure rows_processed stays
-                        job_manager.mark_job_completed(
-                            job_id, 
-                            success=True,
-                            stdout=stdout
-                        )
-                        
-                        # Make a final update to ensure rows_processed is preserved
-                        job_manager.update_job(job_id, {'rows_processed': rows_processed})
-                    else:
-                        # Mark job as failed with error and traceback if available
-                        error = result['error']
-                        traceback_info = result.get('traceback', '')
-                        stdout = result.get('stdout', '')
-                        
-                        # Create a detailed error message with traceback
-                        stderr_info = f"Error: {error}\n\n"
-                        if traceback_info:
-                            stderr_info += f"Traceback:\n{traceback_info}"
-                            
-                        # First update the job with any collected stdout/logs
-                        if stdout:
-                            job_manager.update_job(job_id, {'stdout': stdout})
-                            
-                        # Then mark the job as failed with complete error details    
-                        job_manager.mark_job_completed(
-                            job_id, 
-                            success=False, 
-                            error=error,
-                            stderr=stderr_info,
-                            stdout=stdout
-                        )
+                    # Update job status
+                    job['status'] = 'completed'
+                    job['end_time'] = datetime.now().timestamp()
+                    job_manager.save_job(job)
                     
-                    # Clean up temporary file in either case
-                    try:
-                        os.remove(job_params['csv_file'])
-                    except OSError:
-                        logger.warning(f"Could not remove temporary file: {job_params['csv_file']}")
-                        
                 except Exception as e:
-                    import traceback
-                    error_msg = str(e)
-                    # Get the full traceback
-                    tb = traceback.format_exc()
-                    logger.error(f"Error in conversion job {job_id}: {error_msg}", exc_info=True)
+                    logger.error(f"Error in conversion job: {str(e)}", exc_info=True)
+                    job['status'] = 'failed'
+                    job['error'] = str(e)
+                    job['end_time'] = datetime.now().timestamp()
+                    job_manager.save_job(job)
                     
-                    # Create a detailed error message with traceback
-                    detailed_error = f"Error: {error_msg}\n\nTraceback:\n{tb}"
-                    
-                    # Store both the summary error and detailed stderr output
-                    job_manager.mark_job_completed(
-                        job_id, 
-                        success=False, 
-                        error=error_msg, 
-                        stderr=detailed_error
-                    )
-                    
-                    # Clean up temporary file on error
-                    try:
-                        os.remove(job_params['csv_file'])
-                    except OSError:
-                        logger.warning(f"Could not remove temporary file: {job_params['csv_file']}")
+            # Start background thread
+            thread = threading.Thread(target=run_conversion_job)
+            thread.daemon = True
+            thread.start()
             
-            # Start the job in a background thread
-            threading.Thread(target=run_conversion_job, daemon=True).start()
-            
-            flash(f'Conversion started with job ID: {job_id}', 'success')
-            # Redirect to the job detail page instead of the jobs list
+            # Redirect to job detail page
             return redirect(url_for('routes.job_detail', job_id=job_id))
             
-        except Exception as e:
-            logger.error(f"Error starting conversion: {str(e)}", exc_info=True)
-            flash(f'Error starting conversion: {str(e)}', 'error')
-    
-    return render_template('convert.html', profiles=profiles_list, last_used_profile=last_used_profile)
+        else:
+            # Get profiles for dropdown
+            profiles = config_manager.get_all_profiles()
+            last_used_profile = session.get('last_used_profile')
+            
+            # Get default values for advanced options
+            default_values = {
+                'sample_size': 1000,
+                'batch_size': 10000,
+                'write_mode': 'append',
+                'use_custom_schema': False,
+                'custom_schema': []
+            }
+            
+            return render_template('convert.html', 
+                                 profiles=profiles,
+                                 last_used_profile=last_used_profile,
+                                 git_version=get_git_info(),
+                                 default_values=default_values)
+                                 
+    except Exception as e:
+        logger.error(f"Error in convert route: {str(e)}", exc_info=True)
+        flash(f'Error: {str(e)}', 'error')
+        return redirect(url_for('routes.index'))
 
 @routes.route('/jobs')
 def jobs():

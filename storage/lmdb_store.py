@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 class LMDBProfileStore:
     """LMDB-based storage for connection profiles"""
     
-    def __init__(self, path: str = "~/.csv_to_iceberg/lmdb_profiles", max_size: int = 10_485_760):
+    def __init__(self, path: str = "~/.csv_to_iceberg/lmdb_config", max_size: int = 10_485_760):
         """Initialize the LMDB environment for profiles.
         
         Args:
@@ -88,16 +88,22 @@ class LMDBProfileStore:
             logger.error("Cannot add profile without a name")
             return False
             
-        with self.env.begin(write=True, db=self.profiles_db) as txn:
-            # Check if profile exists
-            if txn.get(name.encode()):
-                logger.warning(f"Profile with name '{name}' already exists")
-                return False
-                
-            # Add profile
-            txn.put(name.encode(), json.dumps(profile).encode())
-            logger.debug(f"Added profile: {name}")
-        return True
+        try:
+            with self.env.begin(write=True, db=self.profiles_db) as txn:
+                # Check if profile exists
+                if txn.get(name.encode()):
+                    logger.warning(f"Profile with name '{name}' already exists")
+                    return False
+                    
+                # Add profile
+                profile_json = json.dumps(profile)
+                logger.debug(f"Adding profile with JSON: {profile_json}")
+                txn.put(name.encode(), profile_json.encode())
+                logger.debug(f"Added profile: {name}")
+            return True
+        except Exception as e:
+            logger.error(f"Error adding profile {name}: {str(e)}", exc_info=True)
+            return False
     
     def update_profile(self, name: str, profile: Dict[str, Any]) -> bool:
         """Update an existing profile.

@@ -43,47 +43,53 @@
                         
                         <div class="mb-3">
                             <label for="trino_host" class="form-label">Trino Host</label>
-                            <input type="text" class="form-control" id="trino_host" name="trino_host" value="{{ profile.trino_host if profile else 'sep.sdp-dev.pd.switchnet.nv' }}" required>
+                            <input type="text" class="form-control trino-field" id="trino_host" name="trino_host" value="{{ profile.trino_host if profile else 'sep.sdp-dev.pd.switchnet.nv' }}">
+                            <div class="form-text">The hostname of your Trino server.</div>
                         </div>
                         
                         <div class="mb-3">
                             <label for="trino_port" class="form-label">Trino Port</label>
-                            <input type="number" class="form-control" id="trino_port" name="trino_port" value="{{ profile.trino_port if profile else 443 }}" required>
+                            <input type="number" class="form-control trino-field" id="trino_port" name="trino_port" value="{{ profile.trino_port if profile else 443 }}">
+                            <div class="form-text">The port number of your Trino server.</div>
                         </div>
                         
                         <div class="mb-3">
                             <label for="trino_user" class="form-label">Trino User</label>
                             <input type="text" class="form-control" id="trino_user" name="trino_user" value="{{ profile.trino_user if profile else '' }}">
+                            <div class="form-text">Your Trino username.</div>
                         </div>
                         
                         <div class="mb-3">
                             <label for="trino_password" class="form-label">Trino Password</label>
                             <input type="password" class="form-control" id="trino_password" name="trino_password" value="{{ profile.trino_password if profile else '' }}">
-                            <div class="form-text">Leave blank to keep existing password. Note: Password is stored in plain text in your config file.</div>
+                            <div class="form-text">Your Trino password.</div>
                         </div>
                         
                         <div class="mb-3">
                             <label for="http_scheme" class="form-label">HTTP Scheme</label>
                             <select class="form-select" id="http_scheme" name="http_scheme">
                                 <option value="http" {% if profile and profile.http_scheme == 'http' %}selected{% elif not profile %}{% endif %}>HTTP</option>
-                                <option value="https" {% if profile and profile.http_scheme == 'https' %}selected{% elif not profile %}selected{% endif %}>HTTPS (Required for authentication)</option>
+                                <option value="https" {% if profile and profile.http_scheme == 'https' %}selected{% elif not profile %}selected{% endif %}>HTTPS</option>
                             </select>
-                            <div class="form-text">Use HTTPS if Trino authentication is enabled</div>
+                            <div class="form-text">The HTTP scheme to use for connecting to Trino.</div>
                         </div>
                         
                         <div class="mb-3">
                             <label for="trino_role" class="form-label">Trino Role</label>
                             <input type="text" class="form-control" id="trino_role" name="trino_role" value="{{ profile.trino_role if profile else 'sysadmin' }}">
+                            <div class="form-text">Your Trino role.</div>
                         </div>
                         
                         <div class="mb-3">
                             <label for="trino_catalog" class="form-label">Default Catalog</label>
-                            <input type="text" class="form-control" id="trino_catalog" name="trino_catalog" value="{{ profile.trino_catalog if profile else 'iceberg' }}" required>
+                            <input type="text" class="form-control trino-field" id="trino_catalog" name="trino_catalog" value="{{ profile.trino_catalog if profile else 'iceberg' }}">
+                            <div class="form-text">The default catalog to use.</div>
                         </div>
                         
                         <div class="mb-3">
                             <label for="trino_schema" class="form-label">Default Schema</label>
-                            <input type="text" class="form-control" id="trino_schema" name="trino_schema" value="{{ profile.trino_schema if profile else 'default' }}" required>
+                            <input type="text" class="form-control trino-field" id="trino_schema" name="trino_schema" value="{{ profile.trino_schema if profile else 'default' }}">
+                            <div class="form-text">The default schema to use.</div>
                         </div>
                         
                         <div class="mb-3">
@@ -112,16 +118,26 @@
                         
                         <div class="mb-3">
                             <label for="region" class="form-label">AWS Region</label>
-                            <input type="text" class="form-control" id="region" name="region" value="{{ profile.region if profile else 'us-east-1' }}" required>
+                            <input type="text" class="form-control s3tables-field" id="region" name="region" value="{{ profile.region if profile else 'us-east-1' }}">
                             <div class="form-text">The AWS region where your S3 Tables are located.</div>
                         </div>
                         
                         <div class="mb-3">
                             <label for="table_bucket_arn" class="form-label">Table Bucket ARN</label>
-                            <input type="text" class="form-control" id="table_bucket_arn" name="table_bucket_arn" value="{{ profile.table_bucket_arn if profile else '' }}" required>
-                            <div class="form-text">Format: arn:aws:s3tables:region:account-id:bucket/bucket-name</div>
+                            <input type="text" class="form-control s3tables-field" id="table_bucket_arn" name="table_bucket_arn" value="{{ profile.table_bucket_arn if profile else '' }}">
+                            <div class="form-text">
+                                The full ARN of your S3 bucket where tables will be stored.<br>
+                                Format: <code>arn:aws:s3:::bucket-name</code><br>
+                                Example: <code>arn:aws:s3:::my-iceberg-tables</code>
+                            </div>
                         </div>
                         
+                        <div class="mb-3">
+                            <label for="namespace" class="form-label">Namespace</label>
+                            <input type="text" class="form-control s3tables-field" id="namespace" name="namespace" value="{{ profile.namespace if profile else '' }}">
+                            <div class="form-text">The namespace for your S3 Tables (equivalent to schema in Trino)</div>
+                        </div>
+
                         <div class="mb-3">
                             <label for="aws_access_key_id" class="form-label">AWS Access Key ID</label>
                             <input type="text" class="form-control" id="aws_access_key_id" name="aws_access_key_id" value="{{ profile.aws_access_key_id if profile else '' }}">
@@ -148,12 +164,30 @@
 {% block scripts %}
 <script>
 document.addEventListener('DOMContentLoaded', function() {
+    console.log('Profile form script loaded');
+    
     const profileTypeSelect = document.getElementById('profile_type');
     const trinoFields = document.getElementById('trino_fields');
     const s3tablesFields = document.getElementById('s3tables_fields');
     
+    console.log('Profile type select element:', profileTypeSelect);
+    console.log('Trino fields element:', trinoFields);
+    console.log('S3 Tables fields element:', s3tablesFields);
+    
     function updateFields() {
+        console.log('Updating fields based on profile type');
         const selectedType = profileTypeSelect.value;
+        console.log('Selected profile type:', selectedType);
+        
+        // Update required attributes based on profile type
+        document.querySelectorAll('.trino-field').forEach(field => {
+            field.required = selectedType === 'trino';
+        });
+        
+        document.querySelectorAll('.s3tables-field').forEach(field => {
+            field.required = selectedType === 's3tables';
+        });
+        
         if (selectedType === 'trino') {
             trinoFields.style.display = 'block';
             s3tablesFields.style.display = 'none';
@@ -167,7 +201,10 @@ document.addEventListener('DOMContentLoaded', function() {
     updateFields();
     
     // Update on change
-    profileTypeSelect.addEventListener('change', updateFields);
+    profileTypeSelect.addEventListener('change', function() {
+        console.log('Profile type changed to:', this.value);
+        updateFields();
+    });
 });
 </script>
 {% endblock %}

@@ -652,8 +652,10 @@ def profile_add():
     """Add a new profile."""
     logger.debug("Profile add route called")
     if request.method == 'POST':
+        logger.debug(f"Form data received: {request.form}")
         # Process the form submission
         profile_type = request.form.get('profile_type', 'trino')
+        logger.debug(f"Profile type from form: {profile_type}")
         
         if profile_type == 'trino':
             profile = {
@@ -678,11 +680,15 @@ def profile_add():
                 'description': request.form.get('description'),
                 'region': request.form.get('region', 'us-east-1'),
                 'table_bucket_arn': request.form.get('table_bucket_arn'),
+                'namespace': request.form.get('namespace'),
                 'aws_access_key_id': request.form.get('aws_access_key_id', ''),
                 'aws_secret_access_key': request.form.get('aws_secret_access_key', '')
             }
         
+        logger.debug(f"Constructed profile: {profile}")
         success = config_manager.add_profile(profile)
+        logger.debug(f"Profile add result: {success}")
+        
         if success:
             flash('Profile added successfully', 'success')
             return redirect(url_for('routes.profiles'))
@@ -696,52 +702,71 @@ def profile_add():
 def profile_edit(name):
     """Edit an existing profile."""
     logger.debug(f"Profile edit route called for {name}")
-    profile = config_manager.get_profile(name)
-    
-    if not profile:
-        flash(f'Profile {name} not found', 'error')
-        return redirect(url_for('routes.profiles'))
-    
-    if request.method == 'POST':
-        # Process the form submission
-        profile_type = request.form.get('profile_type', 'trino')
+    try:
+        profile = config_manager.get_profile(name)
         
-        if profile_type == 'trino':
-            updated_profile = {
-                'name': request.form.get('name'),
-                'profile_type': 'trino',
-                'description': request.form.get('description'),
-                'trino_host': request.form.get('trino_host'),
-                'trino_port': int(request.form.get('trino_port', 443)),
-                'trino_user': request.form.get('trino_user'),
-                'trino_password': request.form.get('trino_password', ''),
-                'http_scheme': request.form.get('http_scheme', 'https'),
-                'trino_role': request.form.get('trino_role', 'sysadmin'),
-                'trino_catalog': request.form.get('trino_catalog', 'iceberg'),
-                'trino_schema': request.form.get('trino_schema', 'default'),
-                'use_hive_metastore': request.form.get('use_hive_metastore') == 'true',
-                'hive_metastore_uri': request.form.get('hive_metastore_uri', 'localhost:9083')
-            }
-        else:  # s3tables
-            updated_profile = {
-                'name': request.form.get('name'),
-                'profile_type': 's3tables',
-                'description': request.form.get('description'),
-                'region': request.form.get('region', 'us-east-1'),
-                'table_bucket_arn': request.form.get('table_bucket_arn'),
-                'aws_access_key_id': request.form.get('aws_access_key_id', ''),
-                'aws_secret_access_key': request.form.get('aws_secret_access_key', '')
-            }
-        
-        success = config_manager.update_profile(name, updated_profile)
-        if success:
-            flash('Profile updated successfully', 'success')
+        if not profile:
+            flash(f'Profile {name} not found', 'error')
             return redirect(url_for('routes.profiles'))
-        else:
-            flash('Failed to update profile', 'error')
-    
-    # For GET requests, show the form with existing data
-    return render_template('profile_form.html', profile=profile, mode='edit')
+        
+        if request.method == 'POST':
+            logger.debug(f"Processing POST request for profile {name}")
+            logger.debug(f"Form data: {request.form}")
+            
+            # Process the form submission
+            profile_type = request.form.get('profile_type', 'trino')
+            logger.debug(f"Profile type: {profile_type}")
+            
+            try:
+                if profile_type == 'trino':
+                    updated_profile = {
+                        'name': request.form.get('name'),
+                        'profile_type': 'trino',
+                        'description': request.form.get('description'),
+                        'trino_host': request.form.get('trino_host'),
+                        'trino_port': int(request.form.get('trino_port', 443)),
+                        'trino_user': request.form.get('trino_user'),
+                        'trino_password': request.form.get('trino_password', ''),
+                        'http_scheme': request.form.get('http_scheme', 'https'),
+                        'trino_role': request.form.get('trino_role', 'sysadmin'),
+                        'trino_catalog': request.form.get('trino_catalog', 'iceberg'),
+                        'trino_schema': request.form.get('trino_schema', 'default'),
+                        'use_hive_metastore': request.form.get('use_hive_metastore') == 'true',
+                        'hive_metastore_uri': request.form.get('hive_metastore_uri', 'localhost:9083')
+                    }
+                else:  # s3tables
+                    updated_profile = {
+                        'name': request.form.get('name'),
+                        'profile_type': 's3tables',
+                        'description': request.form.get('description'),
+                        'region': request.form.get('region', 'us-east-1'),
+                        'table_bucket_arn': request.form.get('table_bucket_arn'),
+                        'namespace': request.form.get('namespace'),
+                        'aws_access_key_id': request.form.get('aws_access_key_id', ''),
+                        'aws_secret_access_key': request.form.get('aws_secret_access_key', '')
+                    }
+                
+                logger.debug(f"Updated profile data: {updated_profile}")
+                
+                success = config_manager.update_profile(name, updated_profile)
+                logger.debug(f"Profile update result: {success}")
+                
+                if success:
+                    flash('Profile updated successfully', 'success')
+                    return redirect(url_for('routes.profiles'))
+                else:
+                    flash('Failed to update profile', 'error')
+                    logger.error(f"Failed to update profile {name}")
+            except Exception as e:
+                logger.error(f"Error updating profile: {str(e)}", exc_info=True)
+                flash(f'Error updating profile: {str(e)}', 'error')
+        
+        # For GET requests, show the form with existing data
+        return render_template('profile_form.html', profile=profile, mode='edit')
+    except Exception as e:
+        logger.error(f"Error in profile edit route: {str(e)}", exc_info=True)
+        flash(f'Error: {str(e)}', 'error')
+        return redirect(url_for('routes.profiles'))
 
 @routes.route('/profiles/delete/<name>')
 def profile_delete(name):
