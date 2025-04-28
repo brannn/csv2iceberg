@@ -8,7 +8,7 @@ import re
 from typing import Dict, List, Any, Optional, Tuple, Set
 
 import polars as pl
-from polars.expr import random
+from polars.expr.random import random
 import pyarrow as pa
 
 from pyiceberg.schema import Schema
